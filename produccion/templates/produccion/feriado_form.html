@@ -1,0 +1,411 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }} - ABBAMAT</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <style>
+        :root {
+            --primary-color: #0d6efd;
+            --secondary-color: #6c757d;
+            --success-color: #198754;
+            --danger-color: #dc3545;
+            --warning-color: #ffc107;
+            --info-color: #0dcaf0;
+            --light-bg: #f8f9fa;
+            --border-color: #dee2e6;
+        }
+
+        body {
+            background-color: var(--light-bg);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: #212529;
+        }
+
+        .page-header {
+            background: white;
+            border-bottom: 2px solid var(--border-color);
+            padding: 1.5rem 0;
+            margin-bottom: 2rem;
+        }
+
+        .page-title {
+            color: var(--primary-color);
+            margin: 0;
+            font-size: 1.75rem;
+            font-weight: 600;
+        }
+
+        .page-title i {
+            margin-right: 0.5rem;
+        }
+
+        .form-container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .card {
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+            background: white;
+            margin-bottom: 1.5rem;
+        }
+
+        .card-header {
+            background: linear-gradient(to bottom, #f8f9fa, #e9ecef);
+            border-bottom: 1px solid var(--border-color);
+            padding: 1rem 1.5rem;
+            border-radius: 8px 8px 0 0;
+        }
+
+        .card-header h5 {
+            margin: 0;
+            color: #495057;
+            font-weight: 600;
+            font-size: 1.1rem;
+        }
+
+        .card-body {
+            padding: 2rem;
+        }
+
+        .form-label {
+            font-weight: 600;
+            color: #495057;
+            margin-bottom: 0.5rem;
+            font-size: 0.95rem;
+        }
+
+        .form-control, .form-select {
+            border-radius: 4px;
+            border: 1px solid #ced4da;
+            padding: 0.625rem 0.75rem;
+            transition: all 0.2s ease;
+            font-size: 0.95rem;
+        }
+
+        .form-control:focus, .form-select:focus {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.15);
+        }
+
+        .form-check {
+            padding: 1rem;
+            background: #f8f9fa;
+            border-radius: 6px;
+            margin-bottom: 1rem;
+            border: 1px solid #e9ecef;
+        }
+
+        .form-check-input {
+            width: 1.25rem;
+            height: 1.25rem;
+            margin-top: 0.125rem;
+            cursor: pointer;
+        }
+
+        .form-check-input:checked {
+            background-color: var(--success-color);
+            border-color: var(--success-color);
+        }
+
+        .form-check-label {
+            margin-left: 0.5rem;
+            cursor: pointer;
+            font-weight: 500;
+            color: #495057;
+        }
+
+        .help-text {
+            font-size: 0.875rem;
+            color: #6c757d;
+            margin-top: 0.25rem;
+        }
+
+        .btn {
+            border-radius: 4px;
+            padding: 0.625rem 1.25rem;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            font-size: 0.95rem;
+        }
+
+        .btn-success {
+            background: #86efac; /* verde suave */
+            color: #065f46; /* texto verde oscuro */
+            border: 2px solid #059669; /* borde verde oscuro */
+        }
+
+        .btn-success:hover {
+            background: #6ee7b7; /* verde un poco más intenso */
+            color: #065f46;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(5, 150, 105, 0.3);
+            border-color: #047857;
+        }
+
+        .btn-secondary {
+            background-color: var(--secondary-color);
+            border-color: var(--secondary-color);
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background-color: #5c636a;
+            border-color: #565e64;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        .btn-outline-secondary {
+            color: var(--secondary-color);
+            border-color: var(--secondary-color);
+        }
+
+        .btn-outline-secondary:hover {
+            background-color: var(--secondary-color);
+            color: white;
+        }
+
+        .error-message {
+            background: #f8d7da;
+            border-left: 4px solid var(--danger-color);
+            padding: 1rem;
+            border-radius: 4px;
+            margin-bottom: 1rem;
+            color: #842029;
+        }
+
+        .error-message ul {
+            margin: 0;
+            padding-left: 1.5rem;
+        }
+
+        .required-field::after {
+            content: " *";
+            color: var(--danger-color);
+        }
+
+        .alert {
+            border-radius: 4px;
+            border: 1px solid transparent;
+            padding: 1rem 1.25rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .alert-success {
+            background-color: #d1e7dd;
+            border-color: #badbcc;
+            color: #0f5132;
+        }
+
+        .alert-danger, .alert-error {
+            background-color: #f8d7da;
+            border-color: #f5c2c7;
+            color: #842029;
+        }
+
+        .alert-info {
+            background-color: #cff4fc;
+            border-color: #b6effb;
+            color: #055160;
+        }
+
+        .info-box {
+            background: #e7f1ff;
+            border: 1px solid #b6d4fe;
+            border-radius: 6px;
+            padding: 1rem;
+            margin-top: 1.5rem;
+        }
+
+        .info-box h6 {
+            color: #084298;
+            font-weight: 600;
+            margin-bottom: 0.75rem;
+        }
+
+        .info-box ul {
+            margin: 0;
+            padding-left: 1.5rem;
+            color: #084298;
+            font-size: 0.9rem;
+        }
+
+        .info-box ul li {
+            margin-bottom: 0.25rem;
+        }
+    </style>
+</head>
+<body>
+    <!-- Page Header -->
+    <div class="page-header">
+        <div class="container">
+            <h4 class="page-title">
+                <i class="bi bi-calendar-event"></i> {{ title }}
+            </h4>
+        </div>
+    </div>
+
+    <div class="container form-container">
+
+        <!-- Messages -->
+        {% if messages %}
+            {% for message in messages %}
+                <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                    <i class="bi bi-{% if message.tags == 'success' %}check-circle{% elif message.tags == 'error' %}exclamation-triangle{% else %}info-circle{% endif %}"></i>
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+
+        <!-- Form Card -->
+        <div class="card">
+            <div class="card-header">
+                <h5>
+                    <i class="bi bi-{% if feriado %}pencil-square{% else %}plus-circle{% endif %}"></i>
+                    Datos del Feriado
+                </h5>
+            </div>
+            <div class="card-body">
+                <!-- Form Errors -->
+                {% if form.errors %}
+                    <div class="error-message">
+                        <strong><i class="bi bi-exclamation-triangle"></i> Por favor corrija los siguientes errores:</strong>
+                        <ul>
+                            {% for field in form %}
+                                {% for error in field.errors %}
+                                    <li>{{ field.label }}: {{ error }}</li>
+                                {% endfor %}
+                            {% endfor %}
+                            {% for error in form.non_field_errors %}
+                                <li>{{ error }}</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                {% endif %}
+
+                <form method="post" id="feriadoForm">
+                    {% csrf_token %}
+                    
+                    <!-- Fecha -->
+                    <div class="mb-3">
+                        <label for="{{ form.fecha.id_for_label }}" class="form-label required-field">
+                            <i class="bi bi-calendar3"></i> {{ form.fecha.label }}
+                        </label>
+                        {{ form.fecha }}
+                        {% if form.fecha.help_text %}
+                            <div class="help-text">{{ form.fecha.help_text }}</div>
+                        {% endif %}
+                        {% if form.fecha.errors %}
+                            <div class="text-danger mt-1">
+                                {% for error in form.fecha.errors %}
+                                    <small>{{ error }}</small>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                    </div>
+
+                    <!-- Descripción -->
+                    <div class="mb-3">
+                        <label for="{{ form.descripcion.id_for_label }}" class="form-label required-field">
+                            <i class="bi bi-text-left"></i> {{ form.descripcion.label }}
+                        </label>
+                        {{ form.descripcion }}
+                        {% if form.descripcion.help_text %}
+                            <div class="help-text">{{ form.descripcion.help_text }}</div>
+                        {% endif %}
+                        {% if form.descripcion.errors %}
+                            <div class="text-danger mt-1">
+                                {% for error in form.descripcion.errors %}
+                                    <small>{{ error }}</small>
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+                    </div>
+
+                    <!-- Se Planifica -->
+                    <div class="form-check">
+                        <div class="d-flex align-items-start">
+                            {{ form.se_planifica }}
+                            <div class="ms-2">
+                                <label class="form-check-label" for="{{ form.se_planifica.id_for_label }}">
+                                    <i class="bi bi-briefcase"></i> {{ form.se_planifica.label }}
+                                </label>
+                                {% if form.se_planifica.help_text %}
+                                    <div class="help-text">{{ form.se_planifica.help_text }}</div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Activo -->
+                    <div class="form-check">
+                        <div class="d-flex align-items-start">
+                            {{ form.activo }}
+                            <div class="ms-2">
+                                <label class="form-check-label" for="{{ form.activo.id_for_label }}">
+                                    <i class="bi bi-toggle-on"></i> {{ form.activo.label }}
+                                </label>
+                                {% if form.activo.help_text %}
+                                    <div class="help-text">{{ form.activo.help_text }}</div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Buttons -->
+                    <div class="d-flex gap-2 mt-4">
+                        <button type="submit" class="btn btn-success flex-fill">
+                            <i class="bi bi-{% if feriado %}save{% else %}plus-circle{% endif %}"></i>
+                            {{ button_text }}
+                        </button>
+                        <a href="{% url 'feriado_list' %}" class="btn btn-secondary flex-fill">
+                            <i class="bi bi-x-circle"></i> Cancelar
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Info Box -->
+        <div class="info-box">
+            <h6>
+                <i class="bi bi-info-circle"></i> Información
+            </h6>
+            <ul>
+                <li>Los feriados marcados como "Se Trabaja" se incluirán en la planificación de producción</li>
+                <li>Los feriados inactivos no se considerarán en ningún cálculo</li>
+                <li>Puede cambiar el estado de planificación rápidamente desde la lista de feriados</li>
+            </ul>
+        </div>
+
+        <!-- Back Button -->
+        <div class="text-center mt-4">
+            <a href="{% url 'feriado_list' %}" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left"></i> Volver a la Lista de Feriados
+            </a>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Form validation
+        document.getElementById('feriadoForm').addEventListener('submit', function(e) {
+            const fecha = document.querySelector('input[name="fecha"]').value;
+            const descripcion = document.querySelector('input[name="descripcion"]').value;
+
+            if (!fecha || !descripcion) {
+                e.preventDefault();
+                alert('Por favor complete todos los campos obligatorios (*)');
+            }
+        });
+    </script>
+</body>
+</html>

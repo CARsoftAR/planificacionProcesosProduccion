@@ -1,0 +1,34 @@
+Basado en lo que he visto del sistema (un planificador de producción visual tipo Gantt con gestión de feriados y máquinas), aquí tienes algunas ideas de funcionalidades de alto valor que podrías agregar para llevarlo al siguiente nivel:
+
+1. Gestión de Dependencias entre Tareas
+Actualmente las tareas se ordenan por prioridad, pero no parecen estar vinculadas.
+
+Idea: Permitir definir que la "Tarea B" no puede empezar hasta que la "Tarea A" termine (incluso si son en máquinas diferentes).
+Beneficio: Si mueves la Tarea A en el tiempo, la Tarea B se empujaría automáticamente, manteniendo la integridad del plan.
+2. Gestión de Mantenimiento / Paradas de Máquina
+Además de los horarios (turno mañana/tarde) y feriados, las máquinas necesitan mantenimiento.
+
+Idea: Crear un tipo de evento "Mantenimiento" que bloquee una máquina específica en un rango de horas.
+Beneficio: El algoritmo 
+calculate_timeline
+ podría rodear estos bloques automáticamente, evitando planificar producción cuando la máquina está en reparación.
+3. Dashboard / Tablero de Control
+Tienes la vista operativa (el Gantt), pero falta la vista gerencial.
+
+Idea: Una pantalla de inicio con gráficos:
+Ocitocidad: % de tiempo que cada máquina está ocupada vs ociosa.
+Cuello de Botella: Qué máquina tiene la cola de trabajo más larga.
+Entregas a Tiempo: Estimación de cuántos proyectos se terminarán antes de su fecha límite (si existe).
+4. Simulación de Escenarios (What-if)
+Idea: Poder guardar "Versiones" de la planificación.
+Escenario A: Plan actual.
+Escenario B: ¿Qué pasa si entra un pedido urgente y lo pongo primero?
+Beneficio: Permite tomar decisiones sin romper la planificación oficial hasta que estés seguro.
+5. Interfaz para Operarios (Modo Kiosco)
+Idea: Una vista simplificada y de solo lectura para tablets en la planta.
+Beneficio: Los operarios solo ven "Qué tengo que hacer ahora" y "Qué sigue", quizás con un botón grande para marcar "Inicio" y "Fin" real, lo que alimentaría el sistema con datos reales de progreso.
+6. Alertas y Notificaciones Intelligentes
+Idea: El sistema podría avisar si:
+Una tarea se reprograma para después de su fecha de entrega comprometida.
+Una máquina queda vacía por más de X horas (hueco en la agenda).
+7. Historial de Cambios (Audit Log)

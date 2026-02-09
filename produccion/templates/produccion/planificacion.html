@@ -1,0 +1,633 @@
+{% load static %}
+{% load produccion_extras %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Planificación de Procesos</title>
+    <!-- Use CDN for Bootstrap 5 for easy tabs and styling -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+</head>
+<body>
+    <div class="container-fluid mt-4">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1 class="text-primary m-0">Planificación de Procesos Productivos</h1>
+            <div class="d-flex gap-2">
+                <a href="{% url 'home' %}" class="btn btn-outline-secondary">
+                    <i class="fas fa-home me-1"></i> Menú
+                </a>
+                <a href="javascript:void(0)" onclick="openGantt(this)" class="btn btn-success">
+                    <i class="fas fa-chart-gantt me-1"></i> Ver Gantt
+                </a>
+                <a href="{% url 'maquina_config_list' %}" class="btn btn-primary">
+                    <i class="fas fa-cogs me-1"></i> Configurar Máquinas
+                </a>
+            </div>
+        </div>
+
+        <!-- Filtros -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <form method="GET" class="row g-3 align-items-end">
+                    <div class="col-md-9">
+                        <label for="proyectos" class="form-label">Proyectos (separados por coma):</label>
+                        <div class="input-group">
+                            <input type="text" name="proyectos" id="proyectos" class="form-control" value="{{ request.GET.proyectos }}" placeholder="Ej: 25-001, 23-145">
+                            <button type="submit" class="btn btn-primary">Filtrar</button>
+                            {% if search_active %}
+                            <button type="button" id="btnCleanTable" class="btn btn-warning" title="Limpiar todos los movimientos manuales y volver al original">
+                                <i class="fas fa-undo"></i> Restablecer Plan
+                            </button>
+                            {% endif %}
+                            <a href="{% url 'home' %}" class="btn btn-outline-secondary" title="Volver al Menú Principal"><i class="fas fa-home"></i></a>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Tabs Navigation -->
+        <ul class="nav nav-tabs" id="myTab" role="tablist">
+            {% for machine in machines %}
+            <li class="nav-item" role="presentation">
+                <button class="nav-link {% if forloop.first %}active{% endif %}" 
+                        id="tab-{{ forloop.counter }}" 
+                        data-bs-toggle="tab" 
+                        data-bs-target="#content-{{ forloop.counter }}" 
+                        type="button" 
+                        role="tab" 
+                        aria-selected="{% if forloop.first %}true{% else %}false{% endif %}">
+                    {{ machine }}
+                </button>
+            </li>
+            {% endfor %}
+        </ul>
+
+        <!-- Tabs Content -->
+        <div class="tab-content" id="myTabContent">
+            {% for machine in machines %}
+            <div class="tab-pane fade {% if forloop.first %}show active{% endif %}" 
+                 id="content-{{ forloop.counter }}" 
+                 role="tabpanel" 
+                 aria-labelledby="tab-{{ forloop.counter }}">
+                
+                <div class="machine-header bg-primary text-white p-2 mb-0 mt-3">
+                    <h5 class="m-0 text-center">{{ machine }}</h5>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-bordered table-hover table-sm align-middle">
+                        <thead class="table-info text-center sticky-top">
+                            <tr>
+                                <th>Acciones</th>
+                                <th>Proyecto</th>
+                                <th>Denominación</th>
+                                <th>N° de OP</th>
+                                <th>Descripción</th>
+                                <th>Prioridad</th>
+                                <th>Nivel Planificación</th>
+                                <th>Máquina</th>
+                                <th class="bg-warning-subtle">Tiempo</th>
+                                <th class="bg-warning-subtle">Tiempo Logrado</th>
+                                <th>Cantidad</th>
+                                <th>Cantidad Producida</th>
+                                <th class="bg-warning-subtle">Cantidades Pendientes</th>
+                                <th>Tiempo Proceso</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Retrieve list for this machine from the dictionary -->
+                             {% for item in grouped_data|get_item:machine %}
+                            <tr data-id="{{ item.Idorden }}" data-maquina="{{ item.MAQUINAD }}" data-priority="{{ item.OrdenVisual }}" style="cursor: grab;">
+                                <td class="text-center" style="white-space: nowrap;">
+                                    <button class="btn btn-sm btn-outline-primary btn-up d-inline-flex align-items-center justify-content-center" style="width: 28px; height: 28px; padding: 0; margin-right: 4px;" title="Subir">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-chevron-up" viewBox="0 0 16 16">
+                                          <path fill-rule="evenodd" d="M7.646 4.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1-.708.708L8 5.707l-5.646 5.647a.5.5 0 0 1-.708-.708l6-6z"/>
+                                        </svg>
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-secondary btn-down d-inline-flex align-items-center justify-content-center" style="width: 28px; height: 28px; padding: 0;" title="Bajar">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-chevron-down" viewBox="0 0 16 16">
+                                          <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z"/>
+                                        </svg>
+                                    </button>
+                                    <button class="btn btn-sm btn-outline-danger btn-delete d-inline-flex align-items-center justify-content-center" style="width: 28px; height: 28px; padding: 0; margin-left: 4px;" title="Borrar (Ocultar)">
+                                        <i class="fas fa-trash-alt"></i>
+                                    </button>
+                                </td>
+                                <td>{{ item.ProyectoCode|default:"-" }}</td>
+                                <td class="text-truncate" style="max-width: 200px;" title="{{ item.Denominacion }}">{{ item.Denominacion }}</td>
+                                <td>{{ item.Idorden }}</td>
+                                <td class="text-truncate" style="max-width: 250px;" title="{{ item.Descri }}">{{ item.Descri }}</td>
+                                <td class="text-center">{{ item.Idprioridad|default:"-" }}</td>
+                                <td class="text-end fw-bold editable-nivel" 
+                                    contenteditable="true"
+                                    title="Click para editar Nivel Planificación"
+                                    style="cursor: text; text-align: center; {% if item.NivelManualFlag %}background-color: #ffeeba;{% endif %}"
+                                >{{ item.Nivel_Planificacion|default:"0" }}</td>
+                                <td>{{ item.MAQUINAD }}</td>
+                                <td class="text-end bg-warning-lighter">{{ item.Tiempo|floatformat:2 }}</td>
+                                <td class="text-end bg-warning-lighter">{{ item.Tiempo_Logrado|floatformat:2 }}</td>
+                                <td class="text-end">{{ item.Cantidad|floatformat:2 }}</td>
+                                <td class="text-end">{{ item.Cantidadpp|floatformat:2 }}</td>
+                                <td class="text-end bg-warning-lighter fw-bold">
+                                    {{ item.CantidadesPendientes|floatformat:2 }}
+                                </td>
+                                <!-- Verify if 'Tiempo' is the Tiempo Proceso or if we need another field -->
+                                <td class="text-end fw-bold editable-time" 
+                                    contenteditable="true" 
+                                    title="Click para editar tiempo manual"
+                                    style="cursor: text; {% if item.CalculadoManual %}background-color: #ffeeba;{% endif %}"
+                                >{{ item.Tiempo_Proceso|floatformat:2 }}</td> 
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="14" class="text-center">No hay datos para esta máquina.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        
+        {% if error %}
+        <div class="alert alert-danger mt-4">
+            <strong>Error:</strong> {{ error }}
+        </div>
+        {% endif %}
+        
+        {% if not search_active %}
+        <div class="text-center py-5">
+            <div class="mb-4">
+                <i class="fas fa-search fa-4x text-muted opacity-50"></i>
+            </div>
+            <h3 class="text-secondary">Bienvenido al Planificador</h3>
+            <p class="lead text-muted">Ingrese un proyecto o filtro arriba para cargar los datos.</p>
+        </div>
+        {% elif not machines and not error %}
+        <div class="alert alert-info mt-4">
+            No se encontraron registros de planificación para los filtros seleccionados.
+        </div>
+        {% endif %}
+
+
+
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- SortableJS for Drag and Drop -->
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+    
+    <script>
+        function openGantt(btn) {
+            // UI Feedback
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Procesando...';
+            btn.style.pointerEvents = 'none';
+
+            // Get current Input Value
+            const inputProyectos = document.getElementById('proyectos');
+            const val = inputProyectos ? inputProyectos.value : '';
+
+            // Construct URL
+            const params = new URLSearchParams(window.location.search);
+            if (val.trim()) {
+                params.set('proyectos', val.trim());
+            } else {
+                params.delete('proyectos');
+            }
+
+            // Redirect
+            window.location.href = "{% url 'planificacion_visual' %}?" + params.toString();
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            // --- CLEAN / RESET TABLE BUTTON ---
+            const btnClean = document.getElementById('btnCleanTable');
+            if (btnClean) {
+                btnClean.addEventListener('click', async function() {
+                    if (!confirm('¿Está seguro de RESTABLECER la planificación?\n\n- Se borrarán todos los movimientos manuales.\n- Se restaurarán las prioridades originales.\n- Reaparecerán tareas ocultas.\n\nEsto devolverá la vista al estado original del ERP.')) {
+                        return;
+                    }
+                    
+                    // Collect all IDs on the screen (from all tabs)
+                    // We can query all rows with data-id attribute
+                    const allRows = document.querySelectorAll('tr[data-id]');
+                    const ids = Array.from(allRows).map(r => r.dataset.id);
+                    
+                    if (ids.length === 0) {
+                        alert("No hay tareas para restablecer.");
+                        return;
+                    }
+
+                    try {
+                        const response = await fetch('/api/reset_planning/', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRFToken': '{{ csrf_token }}'
+                            },
+                            body: JSON.stringify({ ids: ids })
+                        });
+                        
+                        if (response.ok) {
+                            alert("Planificación restablecida exitosamente.");
+                            window.location.reload();
+                        } else {
+                            const data = await response.json();
+                            alert("Error al restablecer: " + (data.error || "Desconocido"));
+                        }
+                    } catch (e) {
+                        console.error(e);
+                        alert("Error de conexión al restablecer.");
+                    }
+                });
+            }
+            // --- Tab Persistence Logic ---
+            const activeTabId = localStorage.getItem('activePlanificacionTab');
+            if (activeTabId) {
+                const tabTrigger = document.getElementById(activeTabId);
+                if (tabTrigger) {
+                    const tab = new bootstrap.Tab(tabTrigger);
+                    tab.show();
+                }
+            }
+
+            // Save tab state on change
+            const tabElsd = document.querySelectorAll('button[data-bs-toggle="tab"]');
+            tabElsd.forEach(tabEl => {
+                tabEl.addEventListener('shown.bs.tab', event => {
+                    localStorage.setItem('activePlanificacionTab', event.target.id);
+                });
+            });
+
+            // --- Manual Time Edit Logic ---
+            // Listener for editable cells
+            const editableCells = document.querySelectorAll('.editable-time');
+            editableCells.forEach(cell => {
+                // Save on Enter key
+                cell.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        this.blur(); // Trigger blur to save
+                    }
+                });
+
+                // Save on leaving the cell
+                cell.addEventListener('blur', async function() {
+                    const row = this.closest('tr');
+                    const idOrden = row.dataset.id;
+                    const newValue = this.innerText.trim();
+                    const maquina = row.dataset.maquina; // Need machine to create record
+                    
+                    // Validate basic number
+                    const numVal = parseFloat(newValue.replace(',', '.')); // Handle commas
+                    if (isNaN(numVal) || numVal < 0) {
+                        alert("Por favor ingrese un número válido.");
+                        this.innerText = "0.00"; // Reset or handle error
+                        return;
+                    }
+
+                    // Visual Feedback
+                    this.style.backgroundColor = '#e2e6ea'; // Grey out while saving
+
+                    try {
+                        const response = await fetch('/api/update_manual_time/', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRFToken': '{{ csrf_token }}'
+                            },
+                            body: JSON.stringify({
+                                id_orden: idOrden,
+                                tiempo_manual: numVal,
+                                maquina: maquina // Required to update strict record if depends on it
+                            })
+                        });
+
+                        if (response.ok) {
+                            // Success Feedback
+                            this.style.backgroundColor = '#ffeeba'; // Yellow flag
+                            this.innerText = numVal.toFixed(2);
+                        } else {
+                            const data = await response.json();
+                            alert("Error al guardar tiempo: " + (data.error || "Desconocido"));
+                            // Revert? Hard to revert without knowing original
+                            this.style.backgroundColor = '#f8d7da'; // Red error
+                        }
+                    } catch (e) {
+                        console.error(e);
+                        alert("Error de conexión al guardar.");
+                        this.style.backgroundColor = '#f8d7da';
+                    }
+                });
+            });
+
+            // --- Manual Nivel Edit Logic ---
+            const editableNivelCells = document.querySelectorAll('.editable-nivel');
+            editableNivelCells.forEach(cell => {
+                cell.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        this.blur();
+                    }
+                });
+
+                cell.addEventListener('blur', async function() {
+                    const row = this.closest('tr');
+                    const idOrden = row.dataset.id;
+                    const newValue = this.innerText.trim();
+                    const maquina = row.dataset.maquina; 
+                    
+                    // Validate basic integer
+                    const numVal = parseInt(newValue);
+                    if (isNaN(numVal) || numVal < 0) {
+                        alert("Por favor ingrese un número entero válido (nivel).");
+                        this.innerText = "0"; 
+                        return;
+                    }
+
+                    this.style.backgroundColor = '#e2e6ea'; 
+
+                    try {
+                        const response = await fetch('/api/update_manual_nivel/', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRFToken': '{{ csrf_token }}'
+                            },
+                            body: JSON.stringify({
+                                id_orden: idOrden,
+                                nivel_manual: numVal,
+                                maquina: maquina
+                            })
+                        });
+
+                        if (response.ok) {
+                            this.style.backgroundColor = '#ffeeba'; 
+                            this.innerText = numVal;
+                        } else {
+                            const data = await response.json();
+                            alert("Error al guardar nivel: " + (data.error || "Desconocido"));
+                            this.style.backgroundColor = '#f8d7da'; 
+                        }
+                    } catch (e) {
+                        console.error(e);
+                        alert("Error de conexión al guardar.");
+                        this.style.backgroundColor = '#f8d7da';
+                    }
+                });
+            });
+
+
+
+            // --- Reordering Logic (Buttons) ---
+            async function moveRow(btn, direction) {
+                const row = btn.closest('tr');
+                const idOrden = row.dataset.id;
+                const maquina = row.dataset.maquina;
+                const priority = row.dataset.priority;
+                
+                let neighbor = null;
+                if (direction === 'up') {
+                    neighbor = row.previousElementSibling;
+                } else {
+                    neighbor = row.nextElementSibling;
+                }
+
+                if (!neighbor || !neighbor.dataset.id) {
+                    console.log("No neighbor to swap with");
+                    return; // Can't move
+                }
+
+                const neighborId = neighbor.dataset.id;
+                const neighborPriority = neighbor.dataset.priority;
+
+                // Call API
+                try {
+                    const response = await fetch(`/api/move_priority/${idOrden}/${direction}/`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': '{{ csrf_token }}'
+                        },
+                        body: JSON.stringify({
+                            maquina: maquina,
+                            priority: priority,
+                            neighbor_id: neighborId,
+                            neighbor_priority: neighborPriority
+                        })
+                    });
+
+                    if (response.ok) {
+                        // Optimistic Update (No Reload)
+                        // 1. Swap Priorities in Dataset
+                        row.dataset.priority = neighborPriority;
+                        neighbor.dataset.priority = priority;
+
+                        // 2. Swap DOM Elements
+                        if (direction === 'up') {
+                            row.parentNode.insertBefore(row, neighbor);
+                        } else {
+                            // Moving down: Insert neighbor before row (effectively swapping)
+                            row.parentNode.insertBefore(neighbor, row);
+                        }
+                    } else {
+                        const data = await response.json();
+                        alert("Error al mover la fila: " + (data.error || response.statusText));
+                    }
+                } catch (error) {
+                    console.error(error);
+                    alert("Error de conexión: " + error.message);
+                }
+            }
+
+            document.querySelectorAll('.btn-up').forEach(btn => {
+                btn.addEventListener('click', () => moveRow(btn, 'up'));
+            });
+
+            document.querySelectorAll('.btn-down').forEach(btn => {
+                btn.addEventListener('click', () => moveRow(btn, 'down'));
+            });
+
+            // --- Delete / Hide Logic ---
+            document.querySelectorAll('.btn-delete').forEach(btn => {
+                btn.addEventListener('click', async function() {
+                    if (!confirm('¿Está seguro de ocultar esta tarea de la lista?')) return;
+                    
+                    const row = this.closest('tr');
+                    const idOrden = row.dataset.id;
+                    
+                    try {
+                        const response = await fetch('/api/hide_task/', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({ id_orden: idOrden })
+                        });
+                        
+                        if (response.ok) {
+                            row.remove();
+                        } else {
+                            alert('Error al ocultar tarea');
+                        }
+                    } catch (e) {
+                        alert('Error de conexión');
+                    }
+                });
+            });
+            
+            // --- Drag and Drop Logic (SortableJS for EVERYTHING) ---
+            // We use SortableJS to handle the drag. On drop (onEnd), we check if the mouse 
+            // is over a Tab Header using elementFromPoint. If so, we treat it as a Move.
+            // Otherwise, we treat it as a Reorder.
+            
+            const tobodies = document.querySelectorAll('tbody');
+            tobodies.forEach(tbody => {
+                new Sortable(tbody, {
+                    animation: 150,
+                    handle: 'tr', // Drag by whole row
+                    ghostClass: 'table-active', // Class for the placeholder
+                    forceFallback: true, // Crucial: Ensures we can get consistent coordinates
+                    onEnd: async function (evt) {
+                        const itemEl = evt.item; 
+                        const idOrden = itemEl.dataset.id;
+                        const maquinaOrigin = itemEl.dataset.maquina; // The machine it came from
+                        
+                        // 1. CHECK FOR DROP ON TAB (Move to Machine)
+                        // We need mouse coordinates. Sortable provides a touch/mouse event in originalEvent.
+                        const touch = evt.originalEvent.changedTouches ? evt.originalEvent.changedTouches[0] : evt.originalEvent;
+                        const x = touch.clientX;
+                        const y = touch.clientY;
+                        
+                        // Hide the helper momentarily so we can see what's under it
+                        itemEl.style.display = 'none'; 
+                        const elemBelow = document.elementFromPoint(x, y);
+                        itemEl.style.display = ''; // Restore
+                        
+                        const targetTab = elemBelow ? elemBelow.closest('.nav-link') : null;
+                        
+                        if (targetTab && targetTab.getAttribute('role') === 'tab') {
+                            const targetMachine = targetTab.textContent.trim();
+                            
+                            // Prevent moving to self (tab names match)
+                            // The tab text is the machine name.
+                            if (targetMachine === maquinaOrigin) {
+                                return; // Dropped on self, treat as reorder if index changed, but safer to ignore cross-logic
+                            }
+
+                            if (!confirm(`¿Mover tarea OP ${idOrden} a máquina ${targetMachine}?`)) {
+                                window.location.reload(); // Revert visual drag
+                                return;
+                            }
+                            
+                            // Calculate Priority: End of Target Queue
+                            // Find target tab content
+                            const contentSelector = targetTab.getAttribute('data-bs-target');
+                            const contentDiv = document.querySelector(contentSelector);
+                            let newPriority = 1000;
+                            
+                            if (contentDiv) {
+                                const rows = contentDiv.querySelectorAll('tbody tr[data-priority]');
+                                if (rows.length > 0) {
+                                    const lastRow = rows[rows.length - 1];
+                                    const lastPrio = parseFloat(lastRow.dataset.priority) || 0;
+                                    newPriority = lastPrio + 1000;
+                                }
+                            }
+                            
+                            console.log(`Moving Task ${idOrden} to ${targetMachine} (Prio: ${newPriority})`);
+
+                             try {
+                                const response = await fetch('/api/move_task/', {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                        'X-CSRFToken': '{{ csrf_token }}'
+                                    },
+                                    body: JSON.stringify({
+                                        id_orden: idOrden,
+                                        target_machine_id: targetMachine,
+                                        new_priority: newPriority
+                                    })
+                                });
+                                
+                                if (response.ok) {
+                                    window.location.reload();
+                                } else {
+                                    const data = await response.json();
+                                    alert('Error: ' + data.error);
+                                    window.location.reload();
+                                }
+                            } catch (err) {
+                                alert('Error de red');
+                                window.location.reload();
+                            }
+                            return; // STOP HERE, DO NOT DO REORDER LOGIC
+                        }
+
+                        // 2. NORMAL REORDER LOGIC (Same Machine)
+                        // Check if order actually changed
+                        if (evt.oldIndex === evt.newIndex) return;
+
+                        // Find neighbors
+                        const prev = itemEl.previousElementSibling;
+                        const next = itemEl.nextElementSibling;
+                        
+                        let newPriority = 0;
+                        
+                        if (prev && next) {
+                            const p1 = parseFloat(prev.dataset.priority) || 0;
+                            const p2 = parseFloat(next.dataset.priority) || 0;
+                            newPriority = (p1 + p2) / 2; 
+                        } else if (prev) {
+                            const p = parseFloat(prev.dataset.priority) || 0;
+                            newPriority = p + 1000;
+                        } else if (next) {
+                            const p = parseFloat(next.dataset.priority) || 0;
+                            newPriority = p / 2; 
+                            if (newPriority <= 0) newPriority = 100;
+                        } else {
+                            return;
+                        }
+
+                        console.log(`Reordering ${idOrden} to Priority ${newPriority}`);
+
+                        // Call API to set new priority
+                        try {
+                            const response = await fetch(`/api/set_priority/${idOrden}/`, {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'X-CSRFToken': '{{ csrf_token }}'
+                                },
+                                body: JSON.stringify({
+                                    maquina: maquinaOrigin,
+                                    new_priority: newPriority
+                                })
+                            });
+
+                            if (response.ok) {
+                                // Optimistic Update
+                                itemEl.dataset.priority = newPriority;
+                            } else {
+                                const data = await response.json();
+                                alert("Error al guardar la nueva posición: " + (data.error || response.statusText));
+                                window.location.reload(); 
+                            }
+                        } catch (e) {
+                            console.error(e);
+                            alert("Error de conexión al guardar posición: " + e.message);
+                            window.location.reload();
+                        }
+                    }
+                });
+            });
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,1483 @@
+{% load static %}
+{% load l10n %}
+{% load produccion_extras %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Planificación Visual (Gantt)</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body { background-color: #f8f9fa; }
+        .gantt-container {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden; /* Main container fixed */
+            height: 90vh;
+        }
+        .gantt-header {
+            display: flex;
+            background: #fff;
+            border-bottom: 2px solid #ddd;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        .gantt-body {
+            flex: 1;
+            overflow: auto; /* Scroll both ways */
+            position: relative;
+        }
+        
+        /* Left Column: Machine Names */
+        .machine-column {
+            width: 200px;
+            flex-shrink: 0;
+            background: #fff;
+            position: sticky;
+            left: 0;
+            z-index: 20;
+            border-right: 2px solid #ddd;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+        }
+        .machine-header-cell {
+            height: 50px;
+            border-bottom: 1px solid #eee;
+            display: flex; /* Centering */
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            background: #f1f3f5;
+        }
+        .machine-row-cell {
+            height: 80px; /* Fixed height for rows */
+            border-bottom: 1px solid #eee;
+            display: flex;
+            align-items: center;
+            padding: 0 15px;
+            font-weight: 500;
+            background: #fff;
+        }
+
+        /* Timeline Grid */
+        .timeline-area {
+            position: relative;
+            /* width set by JS or calculation? Pure CSS flex is hard for absolute items. */
+            /* We will use a very wide container */
+            min-width: max-content; 
+        }
+        
+        /* Time Header */
+        .time-header-row {
+            height: 50px;
+            display: flex;
+            background: #f8f9fa;
+        }
+        .time-hour {
+            width: 40px; /* 1 Hour = 40px */
+            flex-shrink: 0;
+            border-right: 1px solid #e9ecef;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.75rem;
+            color: #666;
+        }
+        .time-hour.day-start {
+            border-left: 2px solid #bbb;
+            background: #e9ecef;
+        }
+        
+        /* Extend day separator line down through all rows */
+        .time-hour.day-start::after {
+            content: '';
+            position: absolute;
+            left: -1px;
+            top: 100%;
+            width: 1px;
+            height: 2000px; /* Large enough to cover all rows */
+            background-color: #333;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        /* Task Bars */
+        .task-row {
+            height: 80px;
+            border-bottom: 1px solid #eee;
+            position: relative;
+            /* Hourly grid (very light and thin) */
+            background-image: 
+                repeating-linear-gradient(to right, transparent, transparent 39px, #f5f5f5 39px, #f5f5f5 40px);
+            background-size: 40px 80px; /* Matches hour width */
+        }
+        
+        /* Add vertical day separator lines */
+        .task-row[data-day-positions]::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background-image: var(--day-separators);
+            pointer-events: none;
+            z-index: 0;
+        }
+        
+        .task-block {
+            position: absolute;
+            top: 10px;
+            height: 60px;
+            z-index: 1;
+            background: #0d6efd;
+            color: white;
+            border-radius: 6px;
+            padding: 8px 10px;
+            font-size: 0.8rem;
+            overflow: hidden;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            
+            /* Card-style design */
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06);
+            border: 1px solid rgba(0,0,0,0.08);
+            
+            /* Better text contrast */
+            text-shadow: 0 1px 3px rgba(0,0,0,0.4);
+            box-sizing: border-box; /* Crucial: Include padding/border in width */
+            min-width: 0 !important; /* Force no minimum width */
+        }
+        
+        .task-block:hover {
+            transform: scale(1.02);
+            z-index: 100; /* Higher z-index on hover */
+            min-width: 200px; /* Expand to read on hover */
+            white-space: normal;
+            overflow: visible; /* Show tooltip */
+        }
+        
+        .task-tooltip {
+            display: none;
+            position: absolute;
+            top: 100%; /* Below the block */
+            left: 0;
+            background: #333;
+            color: #fff;
+            padding: 8px;
+            border-radius: 4px;
+            min-width: 220px;
+            z-index: 101;
+            font-size: 0.75rem;
+            white-space: normal;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            pointer-events: none;
+            border: 1px solid #555;
+            line-height: 1.4;
+        }
+        
+        .task-block:hover .task-tooltip {
+            display: block;
+        }
+
+        .weekend-bg {
+            background-color: #fff3cd; /* Light yellow for weekends/closed? optional */
+        }
+
+        /* Drag and Drop Feedback */
+        .drop-target {
+            background-color: #e8f0fe !important; /* Light Blue highlight */
+            box-shadow: inset 0 0 10px rgba(0,0,255,0.1);
+        }
+        
+        .can-drop {
+            opacity: 0.8;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2) !important; 
+            cursor: grabbing;
+        }
+
+        /* --- CRITICAL FIXES FOR DRAG & DROP AND TOOLTIPS --- */
+        
+        /* 1. Tooltip Visibility Fix: Lift the entire row when hovering so tooltips overlap the next row */
+        .task-row:hover {
+            z-index: 100 !important;
+        }
+
+        /* 2. Drag Detection Fix: Make the dragged element "ghostly" to mouse events 
+           so the mouse hits the DROPZONE (row) underneath it immediately. */
+        .task-block.is-dragging {
+            pointer-events: none !important;
+            opacity: 0.7;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.3);
+            transform: scale(1.05); /* Slight pop */
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid p-0">
+        <div class="d-flex justify-content-between align-items-center p-3 bg-white border-bottom">
+            <h4 class="m-0 text-primary"><i class="fas fa-chart-gantt me-2"></i>Planificación Visual</h4>
+            <div class="d-flex align-items-center">
+                 <!-- Plan Mode Toggle -->
+                 <div class="btn-group me-3" role="group" aria-label="Modo de Planificación">
+                     <a href="?{{ request.GET.urlencode }}&plan_mode=original&run=1" 
+                        class="btn btn-sm {% if request.GET.plan_mode == 'original' %}btn-dark active{% else %}btn-outline-dark{% endif %}"
+                        title="Ver datos originales de SQL Server (Sin modificaciones)">
+                         <i class="fas fa-database"></i> Automático (Original)
+                     </a>
+                     <a href="?{{ request.GET.urlencode }}&plan_mode=manual&run=1" 
+                        class="btn btn-sm {% if request.GET.plan_mode != 'original' %}btn-dark active{% else %}btn-outline-dark{% endif %}"
+                        title="Ver planificación con mis ajustes manuales">
+                         <i class="fas fa-user-edit"></i> Manual (Guardado)
+                     </a>
+                 </div>
+
+                 <!-- Action Buttons -->
+                 <a href="?{{ request.GET.urlencode }}&run=1" id="btnExecute" class="btn btn-primary btn-sm me-2 fw-bold">
+                    <i class="fas fa-sync"></i> RE-CALCULAR
+                 </a>
+                 
+                 <a href="#" id="btnExport" class="btn btn-success btn-sm me-2"><i class="fas fa-file-excel"></i> Excel</a>
+                 <a href="{% url 'planificacion_view' %}?{{ request.GET.urlencode }}" class="btn btn-outline-secondary btn-sm"><i class="fas fa-arrow-left"></i> Volver</a>
+            </div>
+        </div>
+        
+        <script>
+            // Script for interactive elements
+            // Note: btnClean is now a simple link, so no JS needed for it.
+            
+            /* Old Logic Preserved for Reference if needed
+            document.getElementById('btnClean').addEventListener('click', ...);
+            */
+
+        </script>
+        
+        <style>
+            /* Link Mode Styles */
+            body.link-mode-active .task-block {
+                cursor: crosshair !important; /* Visual cue */
+            }
+            .link-selected-pred {
+                box-shadow: 0 0 10px #198754;
+                transform: scale(1.02);
+                transition: all 0.2s;
+            }
+        </style>
+        </div>
+
+    <script>
+        document.getElementById('btnExport').addEventListener('click', function(e) {
+            e.preventDefault();
+            const urlParams = new URLSearchParams(window.location.search);
+            const exportUrl = "/api/export_excel/?" + urlParams.toString();
+            window.location.href = exportUrl;
+        });
+    </script>
+
+    <!-- Modal de Configuración de Solapamiento -->
+    <div class="modal fade" id="overlapModal" tabindex="-1" aria-labelledby="overlapModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title" id="overlapModalLabel">
+                        <i class="fas fa-sliders-h me-2"></i>Configurar Solapamiento
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Tarea:</label>
+                        <div id="overlap-task-info" class="p-2 bg-light rounded">
+                            <div><strong>ID:</strong> <span id="overlap-task-id">-</span></div>
+                            <div><strong>Proyecto:</strong> <span id="overlap-task-proyecto">-</span></div>
+                            <div><strong>Máquina:</strong> <span id="overlap-task-maquina">-</span></div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="overlap-percentage" class="form-label fw-bold">
+                            Porcentaje de Solapamiento
+                            <i class="fas fa-info-circle text-info ms-1" 
+                               data-bs-toggle="tooltip" 
+                               title="% del lote del proceso anterior que debe estar completo antes de iniciar este proceso"></i>
+                        </label>
+                        <div class="input-group">
+                            <input type="range" class="form-range" id="overlap-percentage-range" 
+                                   min="0" max="100" step="5" value="0">
+                            <input type="number" class="form-control" id="overlap-percentage" 
+                                   min="0" max="100" step="5" value="0" style="max-width: 100px;">
+                            <span class="input-group-text">%</span>
+                        </div>
+                        <div id="overlap-percentage-display" class="mt-2 text-center">
+                            <span class="badge bg-secondary fs-6">0%</span>
+                        </div>
+                    </div>
+                    
+                    <div class="alert alert-info small">
+                        <strong><i class="fas fa-lightbulb me-1"></i>Guía:</strong>
+                        <ul class="mb-0 mt-2">
+                            <li><strong>0%:</strong> Espera al 100% (comportamiento tradicional)</li>
+                            <li><strong>25%:</strong> Procesos cortos o automáticos</li>
+                            <li><strong>50%:</strong> Procesos manuales medianos</li>
+                            <li><strong>75%:</strong> Procesos largos o críticos</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="fas fa-times me-1"></i>Cancelar
+                    </button>
+                    <button type="button" class="btn btn-primary" id="btn-save-overlap">
+                        <i class="fas fa-save me-1"></i>Guardar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+        <div class="gantt-container">
+            <!-- Header Row -->
+            <div class="d-flex">
+                <div class="machine-column">
+                    <div class="machine-header-cell">MÁQUINA</div>
+                </div>
+                <div class="gantt-body" id="gantt-header-scroll" style="overflow-x: hidden;"> <!-- Hide scroll here to sync -->
+                    <div class="time-header-row">
+                        {% for hour in time_columns %}
+                        
+                        <div class="time-hour {% ifchanged hour.date %}day-start{% endifchanged %}" style="position: relative;">
+                            {% ifchanged hour.date %}
+                            <strong style="position: absolute; top: 0; left: 2px; font-size: 0.65rem; white-space: nowrap; color: #333;">{{ hour|date:"d/M D" }}</strong>
+                            {% endifchanged %}
+                            <span style="margin-top: 12px;">{{ hour|date:"H" }}</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Body Rows -->
+            <div class="d-flex flex-1" id="gantt-body-scroll" style="flex: 1; overflow: auto;">
+                <div class="machine-column">
+                    {% for row in timeline_data %}
+                    <div class="machine-row-cell">
+                        {{ row.machine.nombre }}<br>
+                        <small class="text-muted ms-1">({{ row.machine.id_maquina }})</small>
+                    </div>
+                    {% endfor %}
+                </div>
+                
+                <div class="timeline-area" style="position: relative;">
+                    <!-- SVG Layer for Dependencies -->
+                    <svg id="dependency-layer" style="position: absolute; top:0; left:0; width: 100%; height: 100%; pointer-events: none; z-index: 2;"></svg>
+                    <!-- Task Rows -->
+                    {% for row in timeline_data %}
+                    <div class="task-row" 
+                         style="width: {{ time_columns|length|multiply:40 }}px; position: relative; z-index: 1;"
+                         data-machine-id="{{ row.machine.id_maquina }}">
+                        <!-- Task blocks -->
+                        {% for task in row.tasks %}
+                            <div class="task-block"
+                                 data-task-id="{{ task.Idorden }}"
+                                 data-color="{% if task.ProyectoCode %}{{ task.ProyectoCode|string_to_color }}{% else %}#0d6efd{% endif %}"
+                                 data-priority="{{ task.OrdenVisual|default:0 }}"
+                                 style="left: {{ task.visual_left|unlocalize }}px; 
+                                        width: {{ task.visual_width|unlocalize }}px; 
+                                        {% if task.is_new_day %}margin-left: 0px;{% endif %}
+                                         background-color: #fff;
+                                         border-left: 5px solid {% if task.ProyectoCode %}{{ task.ProyectoCode|string_to_color }}{% else %}#0d6efd{% endif %};
+                                         border-right: 5px solid {% if task.ProyectoCode %}{{ task.ProyectoCode|string_to_color }}{% else %}#0d6efd{% endif %};
+                                         color: #333;
+                                         {% if task.segment_index > 0 %} opacity: 0.8; border-left-style: dashed; border-right-style: dashed; {% endif %}">
+                                
+                                {% if task.segment_index == 0 %}
+                                    <small style="font-size: 0.7em; opacity: 0.8; font-weight: 600;">{{ task.ProyectoCode|default:"N/A" }}</small><br>
+                                    <strong style="font-size: 0.9em;">{{ task.Idorden }}</strong>
+                                {% else %}
+                                    <div style="height: 100%; display: flex; align-items: center; justify-content: center; opacity: 0.5;">
+                                        <i class="fas fa-ellipsis-h" style="font-size: 0.8em;"></i>
+                                    </div>
+                                {% endif %}
+                                
+                                <div class="task-tooltip">
+                                    <strong>{{ task.ProyectoCode|default:"N/A" }}</strong><br>
+                                    OP: {{ task.Idorden }} (Parte {{ task.segment_index|add:"1" }})<br>
+                                    {{ task.Denominacion }}<br>
+                                    Start: {{ task.start_date|date:"d/m H:i" }}<br>
+                                    Dur: {{ task.duration_real|floatformat:1 }}h (Total P.)<br>
+                                    <span style="color: yellow; font-size: 0.9em;">{{ task.debug_info }}</span>
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/interactjs/dist/interact.min.js"></script>
+    <script>
+    // --- DEBUG INIT ---
+    console.log("!!! SCRIPT CARGADO !!!");
+    // alert("DEBUG MODE: Script iniciado. Si ves esto, el código es NUEVO.");
+
+    // Global Configuration
+    const START_SIMULATION_ISO = "{{ today|date:'c' }}"; // ISO format for JS
+
+    // Add vertical separator lines using JavaScript
+    document.addEventListener('DOMContentLoaded', function() {
+        const timelineArea = document.querySelector('.timeline-area');
+        if (!timelineArea) return;
+        
+        const timelineRect = timelineArea.getBoundingClientRect();
+        const timelineHeight = timelineArea.scrollHeight;
+        
+        // Add DAY separator lines (thick, dark)
+        const dayStartCells = document.querySelectorAll('.time-hour.day-start');
+        dayStartCells.forEach(cell => {
+            const cellRect = cell.getBoundingClientRect();
+            const leftPosition = cellRect.left - timelineRect.left + timelineArea.scrollLeft;
+            
+            const line = document.createElement('div');
+            line.style.position = 'absolute';
+            line.style.left = leftPosition + 'px';
+            line.style.top = '0';
+            line.style.width = '1px';
+            line.style.height = timelineHeight + 'px';
+            line.style.backgroundColor = '#333';
+            line.style.pointerEvents = 'none';
+            line.style.zIndex = '0';
+            
+            timelineArea.appendChild(line);
+        });
+        
+        // Add HOUR separator lines (thin, light)
+        const allHourCells = document.querySelectorAll('.time-hour');
+        allHourCells.forEach(cell => {
+            const cellRect = cell.getBoundingClientRect();
+            const leftPosition = cellRect.left - timelineRect.left + timelineArea.scrollLeft;
+            
+            const line = document.createElement('div');
+            line.style.position = 'absolute';
+            line.style.left = leftPosition + 'px';
+            line.style.top = '0';
+            line.style.width = '1px';
+            line.style.height = timelineHeight + 'px';
+            line.style.backgroundColor = '#e0e0e0';
+            line.style.pointerEvents = 'none';
+            line.style.zIndex = '0';
+            
+            timelineArea.appendChild(line);
+        });
+        
+        console.log('Separator lines added - Days:', dayStartCells.length, 'Hours:', allHourCells.length);
+
+        // --- Drag and Drop Logic ---
+        const position = { x: 0, y: 0 };
+        let magneticMode = true; // Default to true or add a toggle UI
+        
+        // Toggle Logic
+        const magneticToggle = document.getElementById('magnetic-toggle');
+        if (magneticToggle) {
+             magneticToggle.addEventListener('change', (e) => {
+                magneticMode = e.target.checked;
+            });
+        }
+        
+        interact('.task-block').draggable({
+            listeners: {
+                start (event) {
+                    console.log('DragStart');
+                    const taskEl = event.target;
+                    taskEl.classList.add('is-dragging'); 
+                    taskEl.style.zIndex = '9999';
+                },
+                move (event) {
+                    const target = event.target;
+                    // keep the dragged position in the data-x/data-y attributes
+                    const x = (parseFloat(target.getAttribute('data-x')) || 0) + event.dx;
+                    const y = (parseFloat(target.getAttribute('data-y')) || 0) + event.dy;
+        
+                    target.style.transform = `translate(${x}px, ${y}px)`;
+        
+                    target.setAttribute('data-x', x);
+                    target.setAttribute('data-y', y);
+                    
+                    // DISABLED drawDependencies for performance/stability during drag
+                    // if (typeof drawDependencies === 'function') drawDependencies();
+                },
+                end (event) {
+                    const taskEl = event.target;
+                    taskEl.classList.remove('is-dragging');
+                    taskEl.style.zIndex = ''; 
+                    
+                    const mouseX = event.client.x;
+                    const mouseY = event.client.y;
+                    
+                    // Reset Visuals
+                    taskEl.style.transform = 'none'; 
+                    taskEl.setAttribute('data-x', 0);
+                    taskEl.setAttribute('data-y', 0);
+
+                    // --- GEOMETRIC DROP DETECTION (MATH > DOM) ---
+                    // Reliable approach: Calculate which row index we are hovering based on Y position
+                    
+                    const bodyScroll = document.getElementById('gantt-body-scroll');
+                    const bodyRect = bodyScroll.getBoundingClientRect();
+                    
+                    // Check if drop is within the Gantt Body Area vertically and horizontally
+                    if (mouseY < bodyRect.top || mouseY > bodyRect.bottom || mouseX < bodyRect.left || mouseX > bodyRect.right) {
+                         console.warn("Drop outside Gantt Body");
+                         return;
+                    }
+
+                    // Calculate relative Y inside the scrollable area
+                    // Need to account for scroll position!
+                    // The rows are direct children of .machine-column (for names) and .timeline-area (for tasks)
+                    // We need the visual rows in .timeline-area
+                    
+                    const timelineArea = document.querySelector('.timeline-area');
+                    const timelineRect = timelineArea.getBoundingClientRect();
+                    
+                    // Check horizontal bounds of timeline (must be to the right of machine headers)
+                    const machineCol = document.querySelector('.machine-column');
+                    const machineColWidth = machineCol ? machineCol.offsetWidth : 0;
+                    
+                    // Visual check: Are we right of the headers?
+                    if (mouseX < bodyRect.left + machineColWidth) {
+                         console.warn("Drop on headers, not timeline");
+                         return;
+                    }
+                    
+                    // Calculate Row Index
+                    // Relative Y from the top of the visible timeline view (bodyRect.top)
+                    // Plus the scrollTop to get absolute Y in the list
+                    const relativeY = mouseY - bodyRect.top + bodyScroll.scrollTop;
+                    const ROW_HEIGHT = 80; // Fixed CSS height
+                    
+                    const rowIndex = Math.floor(relativeY / ROW_HEIGHT);
+                    
+                    console.log(`📏 Math Drop: Y=${mouseY} RelY=${relativeY} Index=${rowIndex}`);
+                    
+                    // Find the corresponding DOM row to get Machine ID
+                    // The rows are in .timeline-area > .task-row
+                    const rows = document.querySelectorAll('.timeline-area .task-row');
+                    
+                    if (rowIndex >= 0 && rowIndex < rows.length) {
+                        const targetRow = rows[rowIndex];
+                        const targetMachineId = targetRow.dataset.machineId;
+                        const taskId = taskEl.dataset.taskId;
+                        
+                        console.log(`🎯 TARGET HIT: Row ${rowIndex} -> Machine ${targetMachineId}`);
+                        
+                        // Calculate Time (Horizontal)
+                        const dropX = mouseX - timelineRect.left + timelineArea.scrollLeft;
+                        let hoursOffset = dropX / 40.0;
+                        if (hoursOffset < 0) hoursOffset = 0;
+                        
+                        const baseDate = new Date(START_SIMULATION_ISO);
+                        baseDate.setMinutes(baseDate.getMinutes() + (hoursOffset * 60));
+                        
+                        const yyyy = baseDate.getFullYear();
+                        const mm = String(baseDate.getMonth() + 1).padStart(2, '0');
+                        const dd = String(baseDate.getDate()).padStart(2, '0');
+                        const hh = String(baseDate.getHours()).padStart(2, '0');
+                        const mn = String(baseDate.getMinutes()).padStart(2, '0');
+                        const ss = String(baseDate.getSeconds()).padStart(2, '0');
+                        
+                        const manualStartStr = `${yyyy}-${mm}-${dd} ${hh}:${mn}:${ss}`;
+                        const newPriority = 5000 + (hoursOffset * 10);
+                        
+                        // Visual Feedback
+                        taskEl.style.opacity = '0.5';
+                        taskEl.style.cursor = 'wait';
+                        
+                        fetch(`/api/set_priority/${taskId}/`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                maquina: targetMachineId,
+                                new_priority: newPriority,
+                                manual_start: manualStartStr
+                            })
+                        })
+                        .then(r => r.json())
+                        .then(data => {
+                            if (data.status === 'ok') {
+                                taskEl.style.border = "3px solid #00ff00";
+                                taskEl.style.boxShadow = "0 0 15px #00ff00";
+                                console.log("✅ SAVE SUCCESS:", data);
+                                
+                                // Force reload in MANUAL mode to see changes
+                                // Construct URL with plan_mode=manual
+                                const url = new URL(window.location.href);
+                                url.searchParams.set('plan_mode', 'manual');
+                                url.searchParams.set('run', '1'); // Ensure it runs
+                                
+                                setTimeout(() => window.location.href = url.toString(), 10);
+                            } else {
+                                alert("Error Backend: " + (data.error || 'Unknown'));
+                                taskEl.style.opacity = '1';
+                                taskEl.style.border = "3px solid red";
+                            }
+                        })
+                        .catch(e => {
+                            alert("Error Red: " + e);
+                            taskEl.style.opacity = '1';
+                        });
+
+                    } else {
+                        console.warn("Row Index out of bounds");
+                    }
+                }
+            },
+            modifiers: [
+                interact.modifiers.restrictRect({
+                    restriction: '.gantt-container',
+                    endOnly: false
+                })
+            ],
+            inertia: true
+        });
+
+            // Make Rows Dropzones
+            interact('.task-row').dropzone({
+                accept: '.task-block',
+                overlap: 'pointer', // Use POINTER position, not element overlap
+                
+                ondropactivate: function (event) {
+                    event.target.classList.add('drop-active');
+                    console.log("DROPZONE ACTIVATE");
+                },
+                ondragenter: function (event) {
+                    var draggableElement = event.relatedTarget;
+                    var dropzoneElement = event.target;
+                    dropzoneElement.classList.add('drop-target');
+                    draggableElement.classList.add('can-drop');
+                    console.log(">>> ENTER DROPZONE: " + dropzoneElement.dataset.machineId);
+                },
+                ondragleave: function (event) {
+                    event.target.classList.remove('drop-target');
+                    event.relatedTarget.classList.remove('can-drop');
+                    console.log("<<< LEAVE DROPZONE");
+                },
+            ondrop: function (event) {
+                // IMMEDIATE FEEDBACK
+                console.log("EVENTO ONDROP DISPARADO");
+                
+                try {
+                    const taskEl = event.relatedTarget;
+                    let rowEl = event.target;
+                    
+                    // INTENTAR RECUPERAR FILA SI EL DROP CAYO EN UN HIJO O CONTENEDOR
+                    if (!rowEl.classList.contains('task-row')) {
+                        rowEl = rowEl.closest('.task-row');
+                    }
+                    
+                    if (!taskEl) {
+                        console.error("No dragged element found"); 
+                        return;
+                    }
+
+                    if (!rowEl) {
+                        alert("ERROR: No se detectó la máquina destino (Dropzone falló). Intenta soltar justo en el centro de la fila.");
+                        return;
+                    }
+
+                    const targetMachineId = rowEl.dataset.machineId;
+                    const taskId = taskEl.dataset.taskId;
+                    
+                    if (!targetMachineId) {
+                         alert("CITICAL ERROR: Fila sin ID de máquina.");
+                         return;
+                    }
+
+                    // --- Calculate Date ---
+                    const timelineContainer = document.querySelector('.timeline-area');
+                    const containerRect = timelineContainer.getBoundingClientRect();
+                    const taskRect = taskEl.getBoundingClientRect();
+                    
+                    // Simple pixel offset from container left
+                    const pixelsFromStart = (taskRect.left - containerRect.left) + timelineContainer.scrollLeft;
+                    let hoursOffset = pixelsFromStart / 40.0;
+                    if (hoursOffset < 0) hoursOffset = 0;
+                    
+                    const baseDate = new Date(START_SIMULATION_ISO);
+                    baseDate.setMinutes(baseDate.getMinutes() + (hoursOffset * 60));
+                    
+                    const offsetMs = baseDate.getTimezoneOffset() * 60000;
+                    const localDate = new Date(baseDate.getTime() - offsetMs);
+                    const manualStartStr = localDate.toISOString().replace('T', ' ').substring(0, 19);
+                    
+                    // --- Priority Logic ---
+                    const newPriority = 5000 + (hoursOffset * 10); 
+
+                    // Show Activity Indicator
+                    taskEl.style.opacity = '0.5';
+                    taskEl.style.cursor = 'wait';
+                    
+                    const payload = {
+                        maquina: targetMachineId,
+                        new_priority: newPriority,
+                        manual_start: manualStartStr
+                    };
+                    console.log("PAYLOAD:", payload);
+                    
+                    fetch(`/api/set_priority/${taskId}/`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    })
+                    .then(response => {
+                        if (!response.ok) throw new Error("Server Error: " + response.statusText);
+                        return response.json();
+                    })
+                    .then(data => {
+                        taskEl.style.opacity = '1';
+                        taskEl.style.cursor = 'pointer';
+                        
+                        if (data.status === 'ok') {
+                            // Visual Success Feedback
+                            taskEl.style.border = "3px solid #00ff00";
+                            taskEl.style.boxShadow = "0 0 15px #00ff00";
+                            
+                            // FORCE RELOAD
+                            setTimeout(() => {
+                                console.log("RELOADING...");
+                                window.location.reload(); 
+                            }, 200);
+                        } else {
+                            alert('⚠️ SERVER ERROR: ' + (data.error || 'Unknown'));
+                        }
+                    })
+                    .catch(err => {
+                        taskEl.style.opacity = '1';
+                        alert('❌ ERROR RED/GUARDADO: ' + err.message);
+                    });
+                    
+                } catch (e) {
+                    alert("CLIENT ERROR EXCEPTION: " + e.message);
+                    console.error(e);
+                }
+                
+                // Cleanup classes
+                try {
+                    event.target.classList.remove('drop-active');
+                    event.target.classList.remove('drop-target');
+                    if (event.relatedTarget) event.relatedTarget.classList.remove('can-drop');
+                } catch(e) {}
+            },
+
+            ondropdeactivate: function (event) {
+                event.target.classList.remove('drop-active');
+                event.target.classList.remove('drop-target');
+            }
+        });
+        
+        // --- DEPENDENCY VISUALIZATION & LINKING ---
+        // Dependency Data injected from View
+        const dependencies = JSON.parse('{{ dependencies_json|safe }}'); 
+        
+        let linkMode = false;
+        let selectedPredecessor = null;
+
+        // Use existing timelineArea from above
+        const svgLayer = document.getElementById('dependency-layer');
+        
+        // 1. Sync SVG Size
+        function resizeSVG() {
+                if (!svgLayer || !timelineArea) return;
+                svgLayer.style.width = timelineArea.scrollWidth + 'px';
+                svgLayer.style.height = timelineArea.scrollHeight + 'px';
+                drawDependencies();
+        }
+        // Resize initially and on window resize usually, but content is static for now
+        setTimeout(resizeSVG, 1000); 
+
+        // 2. Draw Dependencies
+        function drawDependencies() {
+            if (!svgLayer) return;
+            // Clear existing
+            while (svgLayer.firstChild) {
+                svgLayer.removeChild(svgLayer.firstChild);
+            }
+            
+            // We define markers PER ARROW to support dynamic colors (SVG <marker> fill must be set)
+            dependencies.forEach(dep => {
+                const predEl = document.querySelector(`.task-block[data-task-id="${dep.pred}"]`);
+                const succEl = document.querySelector(`.task-block[data-task-id="${dep.succ}"]`);
+                
+                if (predEl && succEl) {
+                    drawArrow(predEl, succEl, dep.pred, dep.succ);
+                }
+            });
+        }
+        
+        function drawArrow(el1, el2, predId, succId) {
+            const rect1 = el1.getBoundingClientRect();
+            const rect2 = el2.getBoundingClientRect();
+            const containerRect = timelineArea.getBoundingClientRect();
+            
+            const scrollLeft = timelineArea.scrollLeft;
+            const scrollTop = timelineArea.scrollTop;
+            
+            const x1 = rect1.right - containerRect.left + scrollLeft;
+            const y1 = rect1.top + (rect1.height / 2) - containerRect.top + scrollTop;
+            
+            const x2 = rect2.left - containerRect.left + scrollLeft;
+            const y2 = rect2.top + (rect2.height / 2) - containerRect.top + scrollTop;
+            
+            // Get Dynamic Color
+            const color = el1.dataset.color || '#999';
+            
+            // Create Unique Marker for this line
+            const markerId = `arrowhead-${predId}-${succId}`;
+            
+            const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+            const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+            marker.setAttribute('id', markerId);
+            marker.setAttribute('markerWidth', '10');
+            marker.setAttribute('markerHeight', '7');
+            marker.setAttribute('refX', '10');
+            marker.setAttribute('refY', '3.5');
+            marker.setAttribute('orient', 'auto');
+            
+            const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+            polygon.setAttribute('points', '0 0, 10 3.5, 0 7');
+            polygon.setAttribute('fill', color); // Set Dynamic Fill
+            
+            marker.appendChild(polygon);
+            defs.appendChild(marker);
+            svgLayer.appendChild(defs);
+
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            
+            const midX = (x1 + x2) / 2;
+            const controlOffset = 30;
+            const d = `M ${x1} ${y1} C ${x1 + controlOffset} ${y1}, ${x2 - controlOffset} ${y2}, ${x2} ${y2}`;
+            
+            path.setAttribute('d', d);
+            path.setAttribute('stroke', color); // Set Dynamic Stroke
+            path.setAttribute('stroke-width', '2');
+            path.setAttribute('fill', 'none');
+            path.setAttribute('marker-end', `url(#${markerId})`);
+            path.style.cursor = 'pointer';
+            path.style.pointerEvents = 'stroke'; // Clickable
+            
+            path.addEventListener('click', (e) => {
+                    if (confirm('Eliminar dependencia?')) {
+                        unlinkTasks(el1.dataset.taskId, el2.dataset.taskId);
+                    }
+            });
+            
+            svgLayer.appendChild(path);
+        }
+        
+        // 3. Linking Logic
+        const linkToggle = document.getElementById('link-mode-toggle');
+        if (linkToggle) {
+            linkToggle.addEventListener('change', (e) => {
+                linkMode = e.target.checked;
+                
+                // Toggle Grabbing Cursor and Draggable state
+                if (linkMode) {
+                    document.body.classList.add('link-mode-active');
+                    interact('.task-block').draggable(false); // Disable Drag
+                } else {
+                    document.body.classList.remove('link-mode-active');
+                    clearSelection();
+                    interact('.task-block').draggable(true); // Enable Drag
+                }
+            });
+        }
+        
+        function clearSelection() {
+            selectedPredecessor = null;
+            document.querySelectorAll('.task-block').forEach(el => {
+                 // Reset visual style
+                 el.style.outline = '';
+                 el.classList.remove('link-selected-pred');
+            });
+        }
+        
+        // Use GLOBAL DELEGATION for robustness
+        document.body.addEventListener('click', function(e) {
+            // Only trigger if Link Mode is active
+            if (!linkMode) return;
+            
+            // Find if clicked element is a task-block
+            const taskEl = e.target.closest('.task-block');
+            if (!taskEl) return;
+            
+            // Prevent other handlers
+            e.stopPropagation();
+            e.preventDefault();
+            
+            const taskId = taskEl.dataset.taskId;
+            console.log('Global Click on task:', taskId);
+            
+            if (selectedPredecessor === null) {
+                // Select Predecessor
+                selectedPredecessor = taskId;
+                taskEl.classList.add('link-selected-pred');
+                taskEl.style.outline = '4px solid #198754';
+                taskEl.style.zIndex = '1000';
+                
+                // Visual feedback
+                alert('Tarea Predecesora Seleccionada: ' + taskId + '\n\nAhora haga clic en la tarea SUCESORA.');
+                
+            } else {
+                if (selectedPredecessor === taskId) {
+                    // Deselect self
+                    selectedPredecessor = null;
+                    clearSelection();
+                } else {
+                    // Link to Successor
+                    if (confirm(`¿CONFIRMAR VINCULACIÓN?\n\nPredecesora: ${selectedPredecessor}\nSucesora: ${taskId}`)) {
+                            linkTasks(selectedPredecessor, taskId);
+                    }
+                    clearSelection();
+                } 
+            }
+        }, true); // Use CAPTURE phase to ensure we get it first
+        
+        function linkTasks(pred, succ) {
+                fetch('/api/link_tasks/', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ predecessor_id: pred, successor_id: succ })
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'ok') window.location.reload();
+                    else alert('Error: ' + data.error);
+                });
+        }
+
+        function unlinkTasks(pred, succ) {
+                fetch('/api/unlink_tasks/', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ predecessor_id: pred, successor_id: succ })
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'ok') window.location.reload();
+                    else alert('Error: ' + data.error);
+                });
+        }
+        
+        // ========================================================================
+        // OVERLAP CONFIGURATION MODAL
+        // ========================================================================
+        
+        let currentOverlapTaskId = null;
+        let currentOverlapMaquina = null;
+        
+        // Initialize Bootstrap modal
+        const overlapModal = new bootstrap.Modal(document.getElementById('overlapModal'));
+        
+        // Sync range slider with number input
+        const rangeInput = document.getElementById('overlap-percentage-range');
+        const numberInput = document.getElementById('overlap-percentage');
+        const displayBadge = document.querySelector('#overlap-percentage-display .badge');
+        
+        function updatePercentageDisplay(value) {
+            rangeInput.value = value;
+            numberInput.value = value;
+            displayBadge.textContent = value + '%';
+            
+            // Update badge color based on value
+            displayBadge.className = 'badge fs-6 ';
+            if (value == 0) displayBadge.className += 'bg-secondary';
+            else if (value <= 25) displayBadge.className += 'bg-info';
+            else if (value <= 50) displayBadge.className += 'bg-primary';
+            else if (value <= 75) displayBadge.className += 'bg-warning';
+            else displayBadge.className += 'bg-danger';
+        }
+        
+        rangeInput.addEventListener('input', (e) => updatePercentageDisplay(e.target.value));
+        numberInput.addEventListener('input', (e) => updatePercentageDisplay(e.target.value));
+        
+        // Right-click context menu on tasks
+        document.addEventListener('contextmenu', function(e) {
+            const taskEl = e.target.closest('.task-block');
+            if (!taskEl) return;
+            
+            e.preventDefault(); // Prevent default context menu
+            
+            // Get task data
+            const taskId = taskEl.dataset.taskId;
+            const taskRow = taskEl.closest('.task-row');
+            const machineId = taskRow ? taskRow.dataset.machineId : 'Unknown';
+            
+            // Find task info from the tooltip
+            const tooltip = taskEl.querySelector('.task-tooltip');
+            const tooltipText = tooltip ? tooltip.textContent : '';
+            const proyectoMatch = tooltipText.match(/([A-Z0-9-]+)/);
+            const proyecto = proyectoMatch ? proyectoMatch[1] : 'N/A';
+            
+            // Update modal content
+            document.getElementById('overlap-task-id').textContent = taskId;
+            document.getElementById('overlap-task-proyecto').textContent = proyecto;
+            document.getElementById('overlap-task-maquina').textContent = machineId;
+            
+            // Store current task info
+            currentOverlapTaskId = taskId;
+            currentOverlapMaquina = machineId;
+            
+            // Load current overlap percentage (if exists)
+            // For now, default to 0 - you could fetch from server here
+            updatePercentageDisplay(0);
+            
+            // Show modal
+            overlapModal.show();
+        });
+        
+        // Save overlap configuration
+        document.getElementById('btn-save-overlap').addEventListener('click', function() {
+            const percentage = parseFloat(numberInput.value);
+            
+            if (isNaN(percentage) || percentage < 0 || percentage > 100) {
+                alert('Por favor ingrese un porcentaje válido entre 0 y 100');
+                return;
+            }
+            
+            // Call API
+            fetch('/api/update_overlap_percentage/', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    id_orden: currentOverlapTaskId,
+                    porcentaje_solapamiento: percentage,
+                    maquina: currentOverlapMaquina
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === 'ok') {
+                    overlapModal.hide();
+                    
+                    // Show success message
+                    const toast = document.createElement('div');
+                    toast.className = 'position-fixed top-0 end-0 p-3';
+                    toast.style.zIndex = '9999';
+                    toast.innerHTML = `
+                        <div class="toast show" role="alert">
+                            <div class="toast-header bg-success text-white">
+                                <i class="fas fa-check-circle me-2"></i>
+                                <strong class="me-auto">Configuración Guardada</strong>
+                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast"></button>
+                            </div>
+                            <div class="toast-body">
+                                Solapamiento de ${percentage}% configurado para tarea ${currentOverlapTaskId}.
+                                <br><small class="text-muted">Ejecute el Gantt nuevamente para ver los cambios.</small>
+                            </div>
+                        </div>
+                    `;
+                    document.body.appendChild(toast);
+                    
+                    setTimeout(() => toast.remove(), 5000);
+                } else {
+                    alert('Error al guardar: ' + (data.error || 'Unknown error'));
+                }
+            })
+            .catch(err => {
+                console.error(err);
+                alert('Error de red al guardar la configuración');
+            });
+        });
+        
+        // Initialize tooltips
+        const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+        tooltipTriggerList.map(function (tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl);
+        });
+    });
+    
+    </script>
+    
+    <!-- Overlap Configuration Modal Script (Separate to ensure proper event handling) -->
+    <script>
+    // Initialize global variables FIRST
+    window.currentOverlapTaskId = null;
+    window.currentOverlapMaquina = null;
+    
+    document.addEventListener('DOMContentLoaded', function() {
+        // ========================================================================
+        // OVERLAP CONFIGURATION MODAL
+        // ========================================================================
+        
+        let currentOverlapTaskId = null;
+        let currentOverlapMaquina = null;
+        
+        // Initialize Bootstrap modal
+        const overlapModalEl = document.getElementById('overlapModal');
+        if (!overlapModalEl) {
+            console.error('Overlap modal not found');
+            return;
+        }
+        
+        const overlapModal = new bootstrap.Modal(overlapModalEl);
+        
+        // Sync range slider with number input
+        const rangeInput = document.getElementById('overlap-percentage-range');
+        const numberInput = document.getElementById('overlap-percentage');
+        const displayBadge = document.querySelector('#overlap-percentage-display .badge');
+        
+        if (!rangeInput || !numberInput || !displayBadge) {
+            console.error('Overlap modal elements not found');
+            return;
+        }
+        
+        function updatePercentageDisplay(value) {
+            rangeInput.value = value;
+            numberInput.value = value;
+            displayBadge.textContent = value + '%';
+            
+            // Update badge color based on value
+            displayBadge.className = 'badge fs-6 ';
+            if (value == 0) displayBadge.className += 'bg-secondary';
+            else if (value <= 25) displayBadge.className += 'bg-info';
+            else if (value <= 50) displayBadge.className += 'bg-primary';
+            else if (value <= 75) displayBadge.className += 'bg-warning';
+            else displayBadge.className += 'bg-danger';
+        }
+        
+        rangeInput.addEventListener('input', (e) => updatePercentageDisplay(e.target.value));
+        numberInput.addEventListener('input', (e) => updatePercentageDisplay(e.target.value));
+        
+        // Save overlap configuration (remove any existing listeners first)
+        const saveButton = document.getElementById('btn-save-overlap');
+        
+        // Clone button to remove all event listeners
+        const newSaveButton = saveButton.cloneNode(true);
+        saveButton.parentNode.replaceChild(newSaveButton, saveButton);
+        
+        newSaveButton.addEventListener('click', function(e) {
+            e.preventDefault(); // Prevent any default behavior
+            e.stopPropagation(); // Stop event bubbling
+            
+            // Prevent double submission
+            if (this.disabled) return;
+            
+            const percentage = parseFloat(numberInput.value);
+            
+            if (isNaN(percentage) || percentage < 0 || percentage > 100) {
+                alert('Por favor ingrese un porcentaje válido entre 0 y 100');
+                return;
+            }
+            
+            // Use window global variables
+            const taskId = window.currentOverlapTaskId;
+            const maquina = window.currentOverlapMaquina;
+            
+            if (!taskId) {
+                alert('Error: No se ha seleccionado ninguna tarea');
+                return;
+            }
+            
+            console.log('Saving overlap:', {taskId, maquina, percentage});
+            
+            // Disable button while processing
+            this.disabled = true;
+            this.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Guardando...';
+            
+            // Call API
+            fetch('/api/update_overlap_percentage/', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    id_orden: taskId,
+                    porcentaje_solapamiento: percentage,
+                    maquina: maquina
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                // Re-enable button
+                newSaveButton.disabled = false;
+                newSaveButton.innerHTML = '<i class="fas fa-save me-1"></i>Guardar';
+                
+                if (data.status === 'ok') {
+                    overlapModal.hide();
+                    
+                    // Show success message
+                    const toast = document.createElement('div');
+                    toast.className = 'position-fixed top-0 end-0 p-3';
+                    toast.style.zIndex = '9999';
+                    toast.innerHTML = `
+                        <div class="toast show" role="alert">
+                            <div class="toast-header bg-success text-white">
+                                <i class="fas fa-check-circle me-2"></i>
+                                <strong class="me-auto">Configuración Guardada</strong>
+                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast"></button>
+                            </div>
+                            <div class="toast-body">
+                                Solapamiento de ${percentage}% configurado para tarea ${taskId}.
+                                <br><small class="text-muted">Ejecute el Gantt nuevamente para ver los cambios.</small>
+                            </div>
+                        </div>
+                    `;
+                    document.body.appendChild(toast);
+                    
+                    setTimeout(() => toast.remove(), 5000);
+                } else {
+                    alert('Error al guardar: ' + (data.error || 'Unknown error'));
+                }
+            })
+            .catch(err => {
+                // Re-enable button on error
+                newSaveButton.disabled = false;
+                newSaveButton.innerHTML = '<i class="fas fa-save me-1"></i>Guardar';
+                
+                console.error(err);
+                alert('Error de red al guardar la configuración');
+            });
+        });
+        
+        // Initialize tooltips
+        const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+        tooltipTriggerList.map(function (tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl);
+        });
+        
+        console.log('✅ Overlap modal initialized');
+    });
+    
+    // RIGHT-CLICK EVENT (Outside DOMContentLoaded to ensure it fires)
+    document.addEventListener('contextmenu', function(e) {
+        const taskEl = e.target.closest('.task-block');
+        if (!taskEl) return; // Not a task, allow default menu
+        
+        e.preventDefault(); // Prevent default context menu
+        e.stopPropagation();
+        
+        console.log('Right-click detected on task:', taskEl.dataset.taskId);
+        
+        // Get task data
+        const taskId = taskEl.dataset.taskId;
+        const taskRow = taskEl.closest('.task-row');
+        const machineId = taskRow ? taskRow.dataset.machineId : 'Unknown';
+        
+        // Find task info from the tooltip
+        const tooltip = taskEl.querySelector('.task-tooltip');
+        const tooltipText = tooltip ? tooltip.textContent : '';
+        const proyectoMatch = tooltipText.match(/([A-Z0-9-]+)/);
+        const proyecto = proyectoMatch ? proyectoMatch[1] : 'N/A';
+        
+        // Update modal content
+        document.getElementById('overlap-task-id').textContent = taskId;
+        document.getElementById('overlap-task-proyecto').textContent = proyecto;
+        document.getElementById('overlap-task-maquina').textContent = machineId;
+        
+        // Store current task info (use window to make it accessible)
+        window.currentOverlapTaskId = taskId;
+        window.currentOverlapMaquina = machineId;
+        
+        console.log('✅ Variables asignadas:');
+        console.log('  window.currentOverlapTaskId =', window.currentOverlapTaskId);
+        console.log('  window.currentOverlapMaquina =', window.currentOverlapMaquina);
+        
+        // Verify assignment
+        if (!window.currentOverlapTaskId) {
+            console.error('❌ ERROR: taskId is null or undefined!');
+            console.error('  taskEl.dataset.taskId =', taskEl.dataset.taskId);
+            alert('Error: No se pudo obtener el ID de la tarea. Por favor, intente nuevamente.');
+            return;
+        }
+        
+        // Load current overlap percentage (default to 0)
+        const rangeInput = document.getElementById('overlap-percentage-range');
+        const numberInput = document.getElementById('overlap-percentage');
+        const displayBadge = document.querySelector('#overlap-percentage-display .badge');
+        
+        if (rangeInput && numberInput && displayBadge) {
+            const value = 0; // Default value
+            rangeInput.value = value;
+            numberInput.value = value;
+            displayBadge.textContent = value + '%';
+            displayBadge.className = 'badge fs-6 bg-secondary';
+        }
+        
+        // Show modal
+        const overlapModalEl = document.getElementById('overlapModal');
+        if (overlapModalEl) {
+            const modal = bootstrap.Modal.getInstance(overlapModalEl) || new bootstrap.Modal(overlapModalEl);
+            modal.show();
+            console.log('Modal shown for task:', taskId);
+        }
+    }, true); // Use capture phase
+    </script>
+    
+    <!-- We need custom template tags for maths 'multiply' and 'time_diff_hours' -->
+    <script>
+        // Draw dependencies on load
+        if (typeof drawDependencies === 'function') {
+            console.log("Drawing dependencies...");
+            // Small delay to ensure layout is final
+            setTimeout(drawDependencies, 500);
+        } else {
+             console.warn("drawDependencies function not found!");
+        }
+        
+        // Re-draw on window resize
+        window.addEventListener('resize', () => {
+             if (typeof drawDependencies === 'function') drawDependencies();
+        });
+    </script>
+    
+    <!-- Debug Table -->
+    <div class="mt-5 p-3 bg-white border">
+        <h5>Debug Data (Check Task 1 & 2 here)</h5>
+        <table class="table table-striped table-sm" style="font-size: 0.8rem;">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Project</th>
+                    <th>Start</th>
+                    <th>Dur (h)</th>
+                    <th>Width (px)</th>
+                    <th>Debug Info</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in timeline_data %}
+                    {% for task in row.tasks %}
+                    <tr>
+                        <td>{{ task.Idorden }}</td>
+                        <td>{{ task.ProyectoCode }}</td>
+                        <td>{{ task.start_date|date:"Y-m-d H:i" }}</td>
+                        <td>{{ task.duration_real }}</td>
+                        <td>{{ task.visual_width }}</td>
+                        <td>{{ task.debug_info }}</td>
+                    </tr>
+                    {% endfor %}
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <script>
+        // Synchronize Scroll functionality
+        document.addEventListener('DOMContentLoaded', function() {
+            const bodyScroll = document.getElementById('gantt-body-scroll');
+            const headerScroll = document.getElementById('gantt-header-scroll');
+            
+            if (bodyScroll && headerScroll) {
+                bodyScroll.addEventListener('scroll', function() {
+                    headerScroll.scrollLeft = bodyScroll.scrollLeft;
+                });
+            }
+        });
+        
+        // === DEPENDENCY ARROWS - GLOBAL SCOPE ===
+        const dependencies = JSON.parse('{{ dependency_map_json|escapejs }}');
+        
+        window.drawArrow = function(el1, el2, predId, succId) {
+            const svgLayer = document.getElementById('dependency-layer');
+            const timelineArea = document.querySelector('.timeline-area');
+            
+            if (!svgLayer || !timelineArea) return;
+            
+            const rect1 = el1.getBoundingClientRect();
+            const rect2 = el2.getBoundingClientRect();
+            const containerRect = timelineArea.getBoundingClientRect();
+            
+            const scrollLeft = timelineArea.scrollLeft;
+            const scrollTop = timelineArea.scrollTop;
+            
+            const x1 = rect1.right - containerRect.left + scrollLeft;
+            const y1 = rect1.top + (rect1.height / 2) - containerRect.top + scrollTop;
+            
+            const x2 = rect2.left - containerRect.left + scrollLeft;
+            const y2 = rect2.top + (rect2.height / 2) - containerRect.top + scrollTop;
+            
+            const color = el1.dataset.color || '#00bfff';
+            const markerId = `arrowhead-${predId}-${succId}`;
+            
+            // Create marker
+            const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+            const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+            marker.setAttribute('id', markerId);
+            marker.setAttribute('markerWidth', '10');
+            marker.setAttribute('markerHeight', '7');
+            marker.setAttribute('refX', '9');
+            marker.setAttribute('refY', '3.5');
+            marker.setAttribute('orient', 'auto');
+            
+            const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+            polygon.setAttribute('points', '0 0, 10 3.5, 0 7');
+            polygon.setAttribute('fill', color);
+            marker.appendChild(polygon);
+            defs.appendChild(marker);
+            svgLayer.appendChild(defs);
+            
+            // Create path
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            const midX = x1 + (x2 - x1) / 2;
+            const d = `M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2} ${y2}`;
+            
+            path.setAttribute('d', d);
+            path.setAttribute('stroke', color);
+            path.setAttribute('stroke-width', '2');
+            path.setAttribute('fill', 'none');
+            path.setAttribute('marker-end', `url(#${markerId})`);
+            path.setAttribute('opacity', '0.6');
+            
+            svgLayer.appendChild(path);
+        };
+        
+        window.drawDependencies = function() {
+            const svgLayer = document.getElementById('dependency-layer');
+            if (!svgLayer) {
+                console.warn('dependency-layer not found!');
+                return;
+            }
+            
+            // Clear existing arrows
+            while (svgLayer.firstChild) {
+                svgLayer.removeChild(svgLayer.firstChild);
+            }
+            
+            let count = 0;
+            dependencies.forEach(dep => {
+                const predEl = document.querySelector(`.task-block[data-task-id="${dep.pred}"]`);
+                const succEl = document.querySelector(`.task-block[data-task-id="${dep.succ}"]`);
+                
+                if (predEl && succEl) {
+                    window.drawArrow(predEl, succEl, dep.pred, dep.succ);
+                    count++;
+                } else {
+                    console.log(`Dependency ${dep.pred} -> ${dep.succ}: pred=${!!predEl}, succ=${!!succEl}`);
+                }
+            });
+            
+            console.log(`Drew ${count} dependency arrows`);
+        };
+        
+        // Draw on load and resize
+        document.addEventListener('DOMContentLoaded', function() {
+            setTimeout(() => {
+                if (typeof window.drawDependencies === 'function') {
+                    window.drawDependencies();
+                } else {
+                    console.warn('drawDependencies function not found!');
+                }
+            }, 500);
+        });
+        
+        window.addEventListener('resize', function() {
+            if (typeof window.drawDependencies === 'function') {
+                window.drawDependencies();
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,221 @@
+from django.db import connections
+
+def dictfetchall(cursor):
+    """
+    Return all rows from a cursor as a dict
+    """
+    columns = [col[0] for col in cursor.description]
+    return [
+        dict(zip(columns, row))
+        for row in cursor.fetchall()
+    ]
+
+EXCLUDED_MACHINES = [
+    'BANCO MANTENIMIENTO', 'BANCO DE MANTENIMIENTO', 
+    'BANCO SOLDADURA 2', 
+    'CONTROL', 
+    'HORNO',
+    'ISAJE DE EMBALAJE', 
+    'ISDG 1/2', 'ISDG 1/2"',
+    'ISDG 5 1/2', 'ISDG 5 1/2"',
+    'PC DISEÑO 1', 'PC DISEÑO 2', 'PC DISEÑO 3',
+    'TURRI 190'
+]
+
+def get_all_machines():
+    """
+    Returns a list of all available machines from the database,
+    excluding the defined exclusion list.
+    """
+    placeholders = ', '.join(['%s'] * len(EXCLUDED_MACHINES))
+    sql = f"SELECT DISTINCT MAQUINAD FROM Tman010 WHERE MAQUINAD NOT IN ({placeholders}) ORDER BY MAQUINAD"
+    
+    with connections['production'].cursor() as cursor:
+        cursor.execute(sql, EXCLUDED_MACHINES)
+        # return list of strings
+        return [row[0] for row in cursor.fetchall() if row[0]]
+
+def get_planificacion_data(filtros=None):
+    """
+    Ejecuta la consulta principal de planificación con filtros dinámicos.
+    
+    Args:
+        filtros (dict, optional): Diccionario de condiciones. Ejemplo:
+            {
+                'fecha_desde': '2025-01-01',
+                'id_sector': 'SEC01',
+                'articulos_p': ['P...', 'P...']
+            }
+    """
+    # Determine if we should limit results
+    # If specific filters are applied (like project or ID), we want ALL matching records.
+    # If no specific filters, we return TOP 5000 to avoid overloading but ensure all machines are seen.
+    has_filters = any(v for k,v in filtros.items() if v)
+    top_clause = "" if has_filters else "TOP 5000"
+
+    # Base de la consulta proporcionada por el usuario
+    base_sql = f"""
+    SELECT DISTINCT {top_clause}
+        T.Formula,
+        T2.Formula AS ProyectoCode,
+        T.Mstnmbr,
+        T2.Descri AS Denominacion,
+        T.Idorden,
+        T.Articulo,
+        T.Descri,
+        T.Vto,
+        T.Idprioridad,
+        Oe.Descripcion AS Estadod,
+        T.Lote,
+        T3.Nivel,
+        T3.Nivel_Planificacion,
+        T3.IDConcepto AS [SECTOR PERSONA],
+        Isnull(T3.QConcepto, 1) AS [NIVEL PERSONA],
+        Isnull(T.Idmaquina, '') AS Idmaquina,
+        0 AS NumeroOperacion,
+        MAC.MAQUINAD,
+        SEC.SECTORD,
+        Isnull(T3.QMaquina, 1) AS [NIVEL MAQUINA],
+        Cast(
+            CASE WHEN T3.Cantidad <> 0 AND T.idorganismo NOT IN ( '1', '2', '3' ) THEN
+                Isnull((
+                    CASE WHEN T3.DENSIDAD <> 0 THEN
+                        T3.TIEMPO / T3.cantidad 
+                    ELSE 
+                        T3.TIEMPO 
+                    END
+                ) , 0)
+            ELSE
+                0
+            END 
+        AS FLOAT) AS Tiempo,
+        Cast(
+            CASE WHEN T.Cantidadpp <> 0 THEN
+                Isnull((
+                    SELECT
+                        Sum(T4.Tiempo_minutos) / 60 / T.Cantidadpp
+                    FROM
+                        v_tman T4
+                    WHERE
+                        T.Sucursal = T4.Sucursal AND
+                        T.IdOrden = T4.IdOrden
+                ) , 0)
+            ELSE 
+                0
+            END 
+        AS FLOAT) AS Tiempo_Logrado,
+        T.Cantidad,
+        t.Cantidadpp,
+        Cast(
+            CASE WHEN (T.Cantidad - t.Cantidadpp) > 0 THEN
+                (CASE WHEN T3.Cantidad <> 0 AND T.idorganismo NOT IN ( '1', '2', '3' ) THEN
+                    Isnull((
+                        CASE WHEN T3.DENSIDAD <> 0 THEN
+                            T3.TIEMPO / T3.cantidad 
+                        ELSE 
+                            T3.TIEMPO 
+                        END
+                    ) , 0)
+                ELSE
+                    0
+                END) * (T.Cantidad - t.Cantidadpp)
+            ELSE
+                0
+            END
+        AS FLOAT) AS Tiempo_Proceso
+
+    FROM Tman050 T
+    INNER JOIN tman050 T2 ON 
+        T.MSTNMBR = T2.IdOrden
+
+    LEFT JOIN TMAN002 T3 ON 
+        T.Articulo = T3.ArticuloH AND 
+        T.Formula = T3.Formula AND 
+        T2.Articulo = T3.ArticuloP
+
+    LEFT JOIN Tman006 SEC ON 
+        T.Idsector = SEC.Idsector
+
+    LEFT JOIN Tman007 Oe ON 
+        T.Idestado = Oe.Idestado
+
+    LEFT JOIN Tman010 MAC ON 
+        T.Idmaquina = MAC.Idmaquina
+
+    WHERE 1=1
+    """
+
+    # Construcción Dinámica del WHERE
+    params = []
+    where_clauses = []
+
+    # Ejemplo    # Si 'id_orden' está en los filtros
+    if 'id_orden' in filtros and filtros['id_orden']:
+        where_clauses.append(" AND T.IdOrden = %s")
+        params.append(filtros['id_orden'])
+        
+    # NEW: Support for list of IDs (Virtual Moves)
+    if 'id_orden_in' in filtros and filtros['id_orden_in']:
+        ids = filtros['id_orden_in']
+        placeholders = ', '.join(['%s'] * len(ids))
+        where_clauses.append(f" AND T.IdOrden IN ({placeholders})")
+        params.extend(ids)
+    
+    # Filtro básico mencionado en el ejemplo original para filtrar 'P'
+    # SUBSTRING(T.Articulo,1,1) = 'P' (Ya estaba en el where original, lo incluimos si es fijo o lo parametrizamos)
+    # Lo dejaremos fijo o configurable. Asumamos que siempre va:
+    # where_clauses.append(" AND SUBSTRING(T.Articulo,1,1) = 'P'") 
+
+    # Si hay una lista de proyectos/ordenes especificas
+    # Si hay una lista de proyectos/ordenes especificas
+    if 'proyectos' in filtros and filtros['proyectos']:
+        # Logic: If query looks like a number, try IdOrden. 
+        # But '25-006' is not a number for SQL unless stripped. 
+        # Also try matching Articulo or Denominacion.
+        
+        clauses = []
+        for val in filtros['proyectos']:
+            val = val.strip()
+            
+            # User specifically requested searching by Formula for project codes like '25.006'
+            # We generate variations to handle '25-006' vs '25.006' mismatch
+            vals_to_check = {val}
+            vals_to_check.add(val.replace('.', '-'))
+            vals_to_check.add(val.replace('-', '.'))
+
+            for v in vals_to_check:
+                 clauses.append("T2.Formula LIKE %s")
+                 params.append(f"%{v}%")
+                 
+                 clauses.append("T.Formula LIKE %s")
+                 params.append(f"%{v}%")
+        
+        if clauses:
+            where_clauses.append(" AND (" + " OR ".join(clauses) + ")")
+
+    # Filter specific machine IDs if provided (Local Config optimization)
+    if 'machine_ids' in filtros and filtros['machine_ids']:
+        # machine_ids matches T.IdMaquina (or MAC.IdMaquina)
+        m_ids = filtros['machine_ids']
+        placeholders_m = ', '.join(['%s'] * len(m_ids))
+        where_clauses.append(f" AND T.IdMaquina IN ({placeholders_m})")
+        params.extend(m_ids)
+    else:
+        # Filter out excluded machines
+        placeholders = ', '.join(['%s'] * len(EXCLUDED_MACHINES))
+        
+        if EXCLUDED_MACHINES:
+             where_clauses.append(f" AND MAC.MAQUINAD NOT IN ({placeholders})")
+             params.extend(EXCLUDED_MACHINES)
+
+    # Filtros de fecha, etc...
+    
+    # Unir todo
+    final_sql = base_sql + "".join(where_clauses)
+    
+    # Ordenamiento
+    final_sql += " ORDER BY T3.Nivel_Planificacion desc, T3.Nivel desc, T.IdOrden desc"
+
+    with connections['production'].cursor() as cursor:
+        cursor.execute(final_sql, params)
+        return dictfetchall(cursor)
