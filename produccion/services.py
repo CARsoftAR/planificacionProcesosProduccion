@@ -35,7 +35,7 @@ def get_all_machines():
         # return list of strings
         return [row[0] for row in cursor.fetchall() if row[0]]
 
-def get_planificacion_data(filtros=None):
+def get_planificacion_data(filtros=None, exclude_completed=True):
     """
     Ejecuta la consulta principal de planificación con filtros dinámicos.
     
@@ -64,6 +64,7 @@ def get_planificacion_data(filtros=None):
         T.Articulo,
         T.Descri,
         T.Vto,
+        T2.Vto AS Vto_Proyecto,
         T.Idprioridad,
         Oe.Descripcion AS Estadod,
         T.Lote,
@@ -104,10 +105,14 @@ def get_planificacion_data(filtros=None):
                 0
             END 
         AS FLOAT) AS Tiempo_Logrado,
-        T.Cantidad,
-        t.Cantidadpp,
+        Isnull(Q.Cantidad_Final, 0) AS cantidad_final,
+        (Isnull(Q.Cantidad_Final, 0) - Isnull(T.Cantidadpp, 0)) AS cantidad_pendiente,
+        T.Lote,
+        T3.Cantidad AS Cantidad_BOM,
+        T2.Cantidad AS Cantidad_Proyecto,
+        Isnull(T.Cantidadpp, 0) AS cantidad_producida,
         Cast(
-            CASE WHEN (T.Cantidad - t.Cantidadpp) > 0 THEN
+            CASE WHEN (Isnull(Q.Cantidad_Final, 0) - Isnull(T.Cantidadpp, 0)) > 0 THEN
                 (CASE WHEN T3.Cantidad <> 0 AND T.idorganismo NOT IN ( '1', '2', '3' ) THEN
                     Isnull((
                         CASE WHEN T3.DENSIDAD <> 0 THEN
@@ -118,7 +123,7 @@ def get_planificacion_data(filtros=None):
                     ) , 0)
                 ELSE
                     0
-                END) * (T.Cantidad - t.Cantidadpp)
+                END) * (Isnull(Q.Cantidad_Final, 0) - Isnull(T.Cantidadpp, 0))
             ELSE
                 0
             END
@@ -132,6 +137,11 @@ def get_planificacion_data(filtros=None):
         T.Articulo = T3.ArticuloH AND 
         T.Formula = T3.Formula AND 
         T2.Articulo = T3.ArticuloP
+
+    CROSS APPLY (
+        SELECT MAX(v) AS Cantidad_Final
+        FROM (VALUES (Isnull(T.Cantidad, 0)), (Isnull(T3.Cantidad, 0)), (Isnull(T.Lote, 0))) AS Value(v)
+    ) Q
 
     LEFT JOIN Tman006 SEC ON 
         T.Idsector = SEC.Idsector
@@ -209,6 +219,10 @@ def get_planificacion_data(filtros=None):
              params.extend(EXCLUDED_MACHINES)
 
     # Filtros de fecha, etc...
+    if exclude_completed:
+        # '3'=COMPLETA, '4'=ANULADO, '5'=CERRADA
+        where_clauses.append(" AND T.Idestado NOT IN ('3', '4', '5')")
+        where_clauses.append(" AND T2.Idestado NOT IN ('3', '4', '5')")
     
     # Unir todo
     final_sql = base_sql + "".join(where_clauses)

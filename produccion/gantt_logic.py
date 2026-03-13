@@ -5,15 +5,30 @@ from operator import itemgetter
 from django.db.models import Q
 from .models import MaquinaConfig, PrioridadManual, HiddenTask
 from .services import get_planificacion_data
-from .planning_service import calculate_timeline
+from .planning_service import calculate_timeline, get_machine_capacity
 
 def get_gantt_data(request, force_run=False):
     """
     Shared logic for Visual Scheduler and Excel Export.
     Returns a dictionary with calculated timeline data and grid configuration.
     """
+    from .models import Scenario, TaskDependency # Import here to avoid circular
+    
+    # --- PERSISTENCE LOGIC (Remember last selection) ---
+    if 'proyectos' in request.GET:
+        raw_proyectos = request.GET.get('proyectos')
+        request.session['last_proyectos'] = raw_proyectos
+    else:
+        raw_proyectos = request.session.get('last_proyectos')
+
+    if 'scenario_id' in request.GET:
+        scenario_id = request.GET.get('scenario_id')
+        request.session['last_scenario_id'] = scenario_id
+    else:
+        scenario_id = request.session.get('last_scenario_id')
+
     # 1. Get Local Machines
-    maquinas = MaquinaConfig.objects.using('default').prefetch_related('horarios').all().order_by('id_maquina')
+    maquinas = list(MaquinaConfig.objects.using('default').prefetch_related('horarios').all().order_by('id_maquina'))
     
     # 2. Prepare Start Date
     fecha_desde = request.GET.get('fecha_desde')
@@ -31,21 +46,34 @@ def get_gantt_data(request, force_run=False):
     timeline_data = []
     
     # 3. Virtual Overrides (PrioridadManual)
-    # Check MODE: 'manual' (default) vs 'original'
-    # Use request param 'plan_mode' -> 'manual' or 'original'. Default to 'manual' if not specified? 
-    # User asked: "If I filter... load original data". "Button to save".
-    # Strategy: Defaults to 'original' (ignore DB). 'manual' loads DB.
+    plan_mode = request.GET.get('plan_mode', 'manual') 
     
-    plan_mode = request.GET.get('plan_mode', 'manual') # Default to Manual (User Edits)
+    # SCENARIO HANDLING
+    active_scenario = None
     
+    if scenario_id:
+        try:
+            active_scenario = Scenario.objects.using('default').get(pk=scenario_id)
+        except Scenario.DoesNotExist:
+            pass
+            
+    if not active_scenario:
+        # Default to principal
+        active_scenario = Scenario.objects.using('default').filter(es_principal=True).first()
+        # Update session to reflect fallback
+        if active_scenario and not request.session.get('last_scenario_id'):
+            request.session['last_scenario_id'] = str(active_scenario.id)
+        
     virtual_overrides = {}
-    virtual_overrides = {}
     
-    # ALWAYS load manual entries to respect Machine Assignments and Priorities
-    # even in "Original" (Auto-Schedule) mode.
-    # The difference is that in 'original', we ignore 'manual_start' (Pinning).
-    
-    manual_entries = PrioridadManual.objects.using('default').all()
+    if active_scenario:
+        print(f"[INFO] Loading Scenario: {active_scenario.nombre} ({active_scenario.id})")
+        manual_entries = PrioridadManual.objects.using('default').filter(scenario=active_scenario)
+    else:
+        # Fallback empty logic or all? Better empty to avoid mixing.
+        print("[WARN] No Active Scenario found. Loading EMPTY overrides.")
+        manual_entries = []
+
     for entry in manual_entries:
         ov_data = {
             'maquina': entry.maquina,
@@ -64,7 +92,7 @@ def get_gantt_data(request, force_run=False):
         virtual_overrides[entry.id_orden] = ov_data
 
     if plan_mode != 'manual':
-        print("ℹ️ GANTT INFO: Auto Mode - Loaded Assignments but Ignored Pins")
+        print("[INFO] GANTT INFO: Auto Mode - Loaded Assignments but Ignored Pins")
         
     tasks_moved_in_map = {}
     for oid, override_data in virtual_overrides.items():
@@ -95,7 +123,13 @@ def get_gantt_data(request, force_run=False):
             'dependency_map': {},
             'global_min_h': 7,
             'global_max_h': 22,
-            'ran_calculation': False
+            'ran_calculation': False,
+            'active_scenario': active_scenario,
+            'analysis': {
+                'machines': [],
+                'project_alerts': []
+            },
+            'system_alerts': []
         }
 
     # --- AUTOMATIC DEPENDENCIES (Option B: Nivel) ---
@@ -104,14 +138,42 @@ def get_gantt_data(request, force_run=False):
     print("=" * 70)
 
     deps_filter = {}
-    if request.GET.get('proyectos'):
-         raw_proyectos = request.GET.get('proyectos')
+    if raw_proyectos:
          deps_filter['proyectos'] = [p.strip() for p in raw_proyectos.split(',') if p.strip()]
     if request.GET.get('id_orden'):
         deps_filter['id_orden'] = request.GET.get('id_orden')
     
     all_tasks_for_deps = get_planificacion_data(deps_filter) 
     
+    # Pre-group tasks by machine for internal loop efficiency
+    all_tasks_by_machine = defaultdict(list)
+    for t in all_tasks_for_deps:
+        mid_code = str(t.get('Idmaquina', '')).strip()
+        all_tasks_by_machine[mid_code].append(t)
+        
+    # Fetch Holidays once
+    from .models import Feriado
+    all_feriados = Feriado.objects.using('default').filter(activo=True)
+    non_working_days = set(f.fecha for f in all_feriados if f.tipo_jornada == 'NO')
+    half_day_holidays = set(f.fecha for f in all_feriados if f.tipo_jornada == 'MEDIO')
+    # --- DETECT COMPLETED PROJECTS ---
+    system_alerts = []
+    if raw_proyectos:
+        requested_list = [p.strip() for p in raw_proyectos.split(',') if p.strip()]
+        found_active_projects = set(t.get('ProyectoCode') for t in all_tasks_for_deps)
+        
+        for req in requested_list:
+            if req not in found_active_projects:
+                # Check status
+                raw_check = get_planificacion_data({'proyectos': [req]}, exclude_completed=False)
+                if raw_check:
+                    # It exists but was filtered
+                    status = raw_check[0].get('Estadod', 'DESCONOCIDO')
+                    system_alerts.append({
+                        'type': 'warning',
+                        'message': f"El proyecto <strong>{req}</strong> ya se terminó y está <strong>{status}</strong>. No se incluirá en la planificación."
+                    })
+
     # Apply Manual Nivel Overrides
     for task in all_tasks_for_deps:
         p_id = task.get('Idorden')
@@ -156,8 +218,16 @@ def get_gantt_data(request, force_run=False):
                 nivel_groups[nivel] = []
             nivel_groups[nivel].append(task)
         
+        # Group by Dependency Key within project to avoid M*N cross-lines
+        def get_dep_key(t):
+            desc = str(t.get('Descri', '')).strip()
+            if " - " in desc:
+                parts = desc.split(" - ")
+                if len(parts) > 1:
+                    return " - ".join(parts[:-1]).strip()
+            return desc
+
         sorted_niveles = sorted(nivel_groups.keys(), reverse=True)
-        
         for i in range(len(sorted_niveles) - 1):
             higher_nivel = sorted_niveles[i]
             lower_nivel = sorted_niveles[i + 1]
@@ -165,22 +235,37 @@ def get_gantt_data(request, force_run=False):
             for successor in nivel_groups[lower_nivel]:
                 succ_id = successor.get('Idorden')
                 if not succ_id: continue
+                succ_key = get_dep_key(successor)
                 
+                # Link ONLY if component prefix matches (Sequential operations on same part)
                 for predecessor in nivel_groups[higher_nivel]:
                     pred_id = predecessor.get('Idorden')
                     if not pred_id or pred_id == succ_id: continue
                     
-                    # Normalize to string for consistency
-                    s_succ_id = str(succ_id)
-                    s_pred_id = str(pred_id)
-                    
-                    if s_succ_id not in dependency_map:
-                        dependency_map[s_succ_id] = []
-                    
-                    if s_pred_id not in dependency_map[s_succ_id]:
-                        dependency_map[s_succ_id].append(s_pred_id)
+                    if get_dep_key(predecessor) == succ_key:
+                        s_succ_id = str(succ_id)
+                        s_pred_id = str(pred_id)
+                        
+                        if s_succ_id not in dependency_map:
+                            dependency_map[s_succ_id] = []
+                        if s_pred_id not in dependency_map[s_succ_id]:
+                            dependency_map[s_succ_id].append(s_pred_id)
 
-    print(f"\n  [OK] Created {len(dependency_map)} automatic dependencies based on Nivel (Desc)")
+    print(f"\n  [OK] Created {len(dependency_map)} refined automatic dependencies")
+
+    # Load Explicit Database Dependencies
+    db_deps = TaskDependency.objects.all()
+    print(f"  [INFO] Loading {db_deps.count()} explicit dependencies from DB")
+    for dep in db_deps:
+        s_succ = str(dep.successor_id)
+        s_pred = str(dep.predecessor_id)
+        
+        if s_succ not in dependency_map:
+            dependency_map[s_succ] = []
+        if s_pred not in dependency_map[s_succ]:
+            dependency_map[s_succ].append(s_pred)
+
+    print(f"\n  [OK] Final Dependency Map: {len(dependency_map)} tasks have dependencies")
 
     # --- SIMULATION ---
     global_task_end_dates = {}
@@ -204,22 +289,35 @@ def get_gantt_data(request, force_run=False):
     print("=" * 60)
     print("DEPENDENCY RESOLUTION: FIRST PASS")
     print("=" * 60)
+    
+    # Check for unassigned tasks (tasks with empty machine ID or "SIN ASIGNAR" name)
+    unassigned_tasks_exist = any(str(t.get('Idmaquina', '')).strip() == '' or str(t.get('MAQUINAD', '')).strip() == 'SIN ASIGNAR' for t in all_tasks_for_deps)
+    if unassigned_tasks_exist:
+        # Create a virtual machine for unassigned tasks
+        from types import SimpleNamespace
+        mock_maquina = SimpleNamespace(
+            id_maquina='MAC00',
+            nombre='SIN ASIGNAR',
+            horarios=MaquinaConfig.objects.none()
+        )
+        maquinas.append(mock_maquina)
 
     for maquina in maquinas:
         machine_id = maquina.id_maquina
+        current_machine_code = str(machine_id).strip()
+        current_machine_name = str(maquina.nombre).strip()
         
-        filtros = request.GET.copy() # Use request params for filtering
-        machine_filter = {'machine_ids': [machine_id]}
-        if request.GET.get('proyectos'):
-             raw_proyectos = request.GET.get('proyectos')
-             machine_filter['proyectos'] = [p.strip() for p in raw_proyectos.split(',') if p.strip()]
-
-        native_tasks = get_planificacion_data(machine_filter)
+        # USE PRE-FETCHED DATA
+        if current_machine_code == 'MAC00' or current_machine_name == 'SIN ASIGNAR':
+            # Collect all tasks that are truly unassigned
+            native_tasks = [t for t in all_tasks_for_deps if str(t.get('Idmaquina', '')).strip() == '' or str(t.get('MAQUINAD', '')).strip() == 'SIN ASIGNAR']
+        else:
+            native_tasks = all_tasks_by_machine.get(current_machine_code, [])
+            if not native_tasks and current_machine_name in all_tasks_by_machine:
+                 native_tasks = all_tasks_by_machine[current_machine_name]
         
         # Filter Move Out/In
         active_tasks = []
-        current_machine_code = str(machine_id).strip()
-        current_machine_name = str(maquina.nombre).strip()
 
         for t in native_tasks:
             try: oid = int(t.get('Idorden', 0))
@@ -241,16 +339,14 @@ def get_gantt_data(request, force_run=False):
              moved_in_ids.extend([i for i in new_ids if i not in moved_in_ids])
         
         if moved_in_ids:
-            inbound_filter = {}
-            if request.GET.get('proyectos'):
-                 inbound_filter['proyectos'] = machine_filter['proyectos']
-            inbound_filter['id_orden_in'] = moved_in_ids
-            extra_tasks = get_planificacion_data(inbound_filter)
-            
-            existing_ids = set(t['Idorden'] for t in active_tasks)
-            for t in extra_tasks:
-                if t['Idorden'] not in existing_ids and t['Idorden'] not in hidden_ids:
-                    active_tasks.append(t)
+            # USE PRE-FETCHED DATA for moved-in tasks too
+            # We already have all tasks in all_tasks_for_deps if filter was global
+            # If not, we found them in all_tasks_by_machine anyway
+            for t_id in moved_in_ids:
+                # Find the task in all_tasks_for_deps
+                task_found = next((tx for tx in all_tasks_for_deps if str(tx['Idorden']) == str(t_id)), None)
+                if task_found and task_found['Idorden'] not in hidden_ids:
+                     active_tasks.append(task_found)
         
         # Deduplicate
         unique_tasks_map = {}
@@ -281,9 +377,10 @@ def get_gantt_data(request, force_run=False):
                  if ov_data.get('nivel_manual') is not None:
                       item['Nivel_Planificacion'] = ov_data['nivel_manual']
                  
-                 # Collect Force Start for First Pass
                  if ov_data.get('manual_start'):
                      force_start_times_pass1[p_id] = ov_data['manual_start']
+                     item['is_pinned'] = True
+
              else:
                  item['OrdenVisual'] = default_prio
                  
@@ -291,7 +388,9 @@ def get_gantt_data(request, force_run=False):
         
         machine_tasks_map[machine_id] = {'maquina': maquina, 'tasks': tasks}
         
-        calculated_tasks = calculate_timeline(maquina, tasks, start_date=start_simulation, task_min_start_times=None, task_force_start_times=force_start_times_pass1)
+        calculated_tasks = calculate_timeline(maquina, tasks, start_date=start_simulation, 
+                                            task_min_start_times=None, task_force_start_times=force_start_times_pass1,
+                                            non_working_days=non_working_days, half_day_holidays=half_day_holidays)
         
         for ct in calculated_tasks:
              ct_id = ct.get('Idorden')
@@ -307,7 +406,9 @@ def get_gantt_data(request, force_run=False):
         maquina = machine_data['maquina']
         tasks = machine_data['tasks']
         # Run basic timeline calculation with manual overrides
-        calculated_tasks = calculate_timeline(maquina, tasks, start_date=start_simulation, task_min_start_times=None, task_force_start_times=force_start_times_pass1)
+        calculated_tasks = calculate_timeline(maquina, tasks, start_date=start_simulation, 
+                                            task_min_start_times=None, task_force_start_times=force_start_times_pass1,
+                                            non_working_days=non_working_days, half_day_holidays=half_day_holidays)
         timeline_map[machine_id] = {'machine': maquina, 'tasks': calculated_tasks}
 
     # SECOND PASS (Multi-Pass with Overlap Calculation)
@@ -435,7 +536,9 @@ def get_gantt_data(request, force_run=False):
                 
                 tasks.sort(key=get_sort_key)
                 
-                recalculated_tasks = calculate_timeline(maquina, tasks, start_date=start_simulation, task_min_start_times=min_start_times, task_force_start_times=force_start_times)
+                recalculated_tasks = calculate_timeline(maquina, tasks, start_date=start_simulation, 
+                                                      task_min_start_times=min_start_times, task_force_start_times=force_start_times,
+                                                      non_working_days=non_working_days, half_day_holidays=half_day_holidays)
                 
                 final_timeline_map[machine_id] = {'machine': maquina, 'tasks': recalculated_tasks}
     
@@ -473,15 +576,24 @@ def get_gantt_data(request, force_run=False):
     global_min_h = 24
     global_max_h = 0
     has_schedules = False
-    
-    for m in maquinas:
-        for h in m.horarios.all():
-            has_schedules = True
-            if h.hora_inicio.hour < global_min_h: global_min_h = h.hora_inicio.hour
-            if h.hora_fin.hour > global_max_h: global_max_h = h.hora_fin.hour
+
+    # Expand global range based on ALL processed machines (including virtual ones)
+    for row in timeline_data:
+        m = row['machine']
+        # If it's a model instance, use horarios. If it's our Mock, it's already handled.
+        if hasattr(m, 'horarios'):
+            for h in m.horarios.all():
+                has_schedules = True
+                if h.hora_inicio.hour < global_min_h: global_min_h = h.hora_inicio.hour
+                if h.hora_fin.hour > global_max_h: global_max_h = h.hora_fin.hour
 
     # Expandir rango basado en Tareas (para incluir pinning fuera de hora)
     for row in timeline_data:
+        # Avoid letting 'SIN ASIGNAR' (MAC00) machine expand the timeline infinitely
+        # if it has hundreds of pending tasks.
+        if row['machine'].id_maquina == 'MAC00':
+            continue
+
         for t in row['tasks']:
             s = t.get('start_date')
             e = t.get('end_date')
@@ -489,8 +601,6 @@ def get_gantt_data(request, force_run=False):
                 if s.hour < global_min_h: global_min_h = s.hour
                 if s.hour > global_max_h: global_max_h = s.hour + 1
             if e:
-                # Si termina y tiene minutos (ej 18:30), necesitamos ver la hora 18
-                # Si termina en punto (18:00), necesitamos ver hasta la 17.
                 h_end = e.hour
                 if e.minute > 0:
                     if h_end >= global_max_h: global_max_h = h_end + 1
@@ -506,19 +616,33 @@ def get_gantt_data(request, force_run=False):
         global_min_h = 0
         
     min_date = start_simulation.replace(hour=global_min_h)
+    
+    # CALCULATE MAX DATE (With safety cap)
     calc_max_date = min_date + timedelta(hours=48)
     for row in timeline_data:
+        # Only allow real machines or explicit moves to expand the calendar
+        if row['machine'].id_maquina == 'MAC00': continue
+
         for t in row['tasks']:
             if t['end_date'] and t['end_date'] > calc_max_date:
                 calc_max_date = t['end_date']
-                
+    
+    # SAFETY CAP: Max 30 days of Gantt to avoid browser crash
+    absolute_max_date = min_date + timedelta(days=30)
+    if calc_max_date > absolute_max_date:
+        calc_max_date = absolute_max_date
+        print(f"[WARN] GANTT: Timeline capped at 30 days to protect performance.")
+
     # Valid Dates (Mon-Fri + Sat if needed)
     show_saturdays = False
-    for m in maquinas:
-        for h in m.horarios.all():
-            if h.dia == 'SA':
-                show_saturdays = True
-                break
+    # Check all machines in current timeline_data
+    for row in timeline_data:
+        m = row['machine']
+        if hasattr(m, 'horarios'):
+            for h in m.horarios.all():
+                if h.dia == 'SA':
+                    show_saturdays = True
+                    break
         if show_saturdays: break
         
     # Collect Task Days to force show them (user pinning)
@@ -531,7 +655,9 @@ def get_gantt_data(request, force_run=False):
     valid_dates = []
     day_pointer = min_date.date()
     end_date_limit = calc_max_date.date()
-    day_count = (end_date_limit - day_pointer).days + 5
+    
+    # Cap day count to 30 as a final safety measure
+    day_count = min((end_date_limit - day_pointer).days + 5, 45) 
     
     for d in range(day_count):
         current_day = day_pointer + timedelta(days=d)
@@ -553,6 +679,98 @@ def get_gantt_data(request, force_run=False):
              dt = datetime.combine(d, datetime.min.time()) + timedelta(hours=h)
              time_columns.append(dt)
              
+    # --- ANALYSIS & ALERTS ---
+    machine_analysis = []
+    project_alerts = []
+    
+    # 1. Machine Load (Next 7 days)
+    lookahead_days = 7
+    analysis_end = start_simulation + timedelta(days=lookahead_days)
+    
+    for row in timeline_data:
+        maquina = row['machine']
+        tasks = row['tasks']
+        
+        # Calculate Capacity
+        avail_hours = get_machine_capacity(maquina, start_simulation, analysis_end, 
+                                         non_working_days=non_working_days, half_day_holidays=half_day_holidays)
+        
+        # Sum Task Durations in this period (Only the part within the period)
+        task_hours = 0.0
+        for t in tasks:
+            t_start = t.get('start_date')
+            t_end = t.get('end_date')
+            if t_start and t_start < analysis_end:
+                # If task ends after end of analysis, only count up to analysis_end
+                actual_end = min(t_end, analysis_end)
+                # This is a bit rough because calculate_timeline already handles work hours
+                # Let's just sum the duration_real of tasks that start in the window
+                task_hours += t.get('duration_real', 0)
+        
+        load_pct = (task_hours / avail_hours * 100) if avail_hours > 0 else 0
+        
+        machine_analysis.append({
+            'id': maquina.id_maquina,
+            'nombre': maquina.nombre,
+            'load_pct': round(load_pct, 1),
+            'hours': round(task_hours, 1),
+            'capacity': round(avail_hours, 1),
+            'tasks': [
+                {
+                    'id_orden': t.get('Idorden'),
+                    'proyecto': t.get('ProyectoCode', 'S/P'),
+                    'proceso': t.get('Denominacion', '-'),
+                    'elemento': t.get('Descri', '-'),
+                    'tiempo': round(t.get('duration_real', 0), 2),
+                    'start': t.get('start_date'),
+                    'end': t.get('end_date')
+                }
+                for t in tasks if t.get('start_date') and t.get('start_date') < analysis_end
+            ]
+        })
+        
+    # 2. Project Delays
+    # Pre-calculate project deadlines from the GLOBAL task list (all_tasks_for_deps)
+    # to avoid misleading dates based only on visible tasks.
+    global_p_vtos = {}
+    for t in all_tasks_for_deps:
+        p_code = t.get('ProyectoCode', 'S/P')
+        vto = t.get('Vto_Proyecto') or t.get('Vto')
+        if vto:
+            if p_code not in global_p_vtos or vto > global_p_vtos[p_code]:
+                global_p_vtos[p_code] = vto
+
+    project_tasks = defaultdict(list)
+    for row in timeline_data:
+        for t in row['tasks']:
+            p_code = t.get('ProyectoCode', 'S/P')
+            project_tasks[p_code].append(t)
+            
+    for p_code, p_tasks in project_tasks.items():
+        # Max End Date (Simulation)
+        max_end = max((t['end_date'] for t in p_tasks if t.get('end_date')), default=None)
+        # Use Global Project Due Date
+        max_vto = global_p_vtos.get(p_code)
+        
+        if max_end and max_vto:
+            # Ensure same type for comparison (date vs date)
+            if max_end.date() > max_vto.date():
+                # Identify culprit tasks (those ending after vto)
+                culprits = [
+                    {'orden': t.get('Idorden'), 'desc': t.get('Descri'), 'end': t['end_date'].strftime('%d/%m')}
+                    for t in p_tasks if t.get('end_date') and t.get('end_date').date() > max_vto.date()
+                ]
+                
+                delay_days = (max_end.date() - max_vto.date()).days
+                
+                project_alerts.append({
+                    'proyecto': p_code,
+                    'max_end': max_end,
+                    'vto': max_vto,
+                    'delay_days': delay_days,
+                    'culprits': culprits[:3] # Show top 3 bottlenecks
+                })
+
     return {
         'timeline_data': timeline_data,
         'maquinas': maquinas,
@@ -562,5 +780,11 @@ def get_gantt_data(request, force_run=False):
         'dependency_map': dependency_map,
         'global_min_h': global_min_h,
         'global_max_h': global_max_h,
-        'ran_calculation': True
+        'ran_calculation': True,
+        'active_scenario': active_scenario,
+        'analysis': {
+            'machines': machine_analysis,
+            'project_alerts': project_alerts
+        },
+        'system_alerts': system_alerts
     }

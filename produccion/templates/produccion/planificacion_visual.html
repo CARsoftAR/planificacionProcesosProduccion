@@ -9,25 +9,61 @@
     <title>Planificación Visual (Gantt)</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
-        body { background-color: #f8f9fa; }
+        :root {
+            --bg-deep: #f8f9fa;
+            --bg-card: #ffffff;
+            --bg-row: #ffffff;
+            --bg-header: #e9ecef;
+            --text-main: #212529;
+            --text-muted: #6c757d;
+            --accent: #0d6efd;
+            --border: #dee2e6;
+            --glass-border: rgba(0, 0, 0, 0.1);
+            --neon-blue: #0dcaf0;
+            --neon-purple: #6f42c1;
+            --neon-green: #198754;
+        }
+
+        body { 
+            background-color: var(--bg-deep); 
+            color: var(--text-main);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        /* Glassmorphism utility */
+        .glass {
+            background: var(--bg-card);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid var(--glass-border);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+
         .gantt-container {
             display: flex;
             flex-direction: column;
-            overflow: hidden; /* Main container fixed */
+            overflow: hidden;
             height: 90vh;
+            margin: 10px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+            background: var(--bg-deep);
         }
+
         .gantt-header {
             display: flex;
-            background: #fff;
-            border-bottom: 2px solid #ddd;
+            background: var(--bg-header);
+            border-bottom: 2px solid var(--border);
             position: sticky;
             top: 0;
             z-index: 10;
         }
+
         .gantt-body {
             flex: 1;
-            overflow: auto; /* Scroll both ways */
+            overflow: auto;
             position: relative;
         }
         
@@ -35,222 +71,770 @@
         .machine-column {
             width: 200px;
             flex-shrink: 0;
-            background: #fff;
+            background: var(--bg-header);
             position: sticky;
             left: 0;
             z-index: 20;
-            border-right: 2px solid #ddd;
-            box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+            border-right: 2px solid var(--border);
         }
+
         .machine-header-cell {
             height: 50px;
-            border-bottom: 1px solid #eee;
-            display: flex; /* Centering */
+            border-bottom: 1px solid var(--border);
+            display: flex;
             align-items: center;
             justify-content: center;
             font-weight: bold;
-            background: #f1f3f5;
+            background: var(--bg-header);
+            color: var(--text-main);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-size: 0.8rem;
         }
+
         .machine-row-cell {
-            height: 80px; /* Fixed height for rows */
-            border-bottom: 1px solid #eee;
+            height: 80px;
+            border-bottom: 1px solid var(--border);
             display: flex;
-            align-items: center;
+            flex-direction: column;
+            justify-content: center;
             padding: 0 15px;
             font-weight: 500;
-            background: #fff;
+            background: var(--bg-header);
+            font-size: 0.85rem;
+            color: var(--text-main);
         }
 
         /* Timeline Grid */
         .timeline-area {
             position: relative;
-            /* width set by JS or calculation? Pure CSS flex is hard for absolute items. */
-            /* We will use a very wide container */
             min-width: max-content; 
+            background-color: var(--bg-deep);
         }
         
         /* Time Header */
         .time-header-row {
             height: 50px;
             display: flex;
-            background: #f8f9fa;
+            background: var(--bg-header);
+            border-bottom: 1px solid var(--border);
         }
+
         .time-hour {
-            width: 40px; /* 1 Hour = 40px */
+            width: 40px;
             flex-shrink: 0;
-            border-right: 1px solid #e9ecef;
+            border-right: 1px solid var(--border);
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            font-size: 0.75rem;
-            color: #666;
+            font-size: 0.7rem;
+            color: var(--text-muted);
         }
+
         .time-hour.day-start {
-            border-left: 2px solid #bbb;
-            background: #e9ecef;
-        }
-        
-        /* Extend day separator line down through all rows */
-        .time-hour.day-start::after {
-            content: '';
-            position: absolute;
-            left: -1px;
-            top: 100%;
-            width: 1px;
-            height: 2000px; /* Large enough to cover all rows */
-            background-color: #333;
-            pointer-events: none;
-            z-index: 1;
+            border-left: 2px solid var(--accent);
+            background: rgba(59, 130, 246, 0.1);
         }
 
         /* Task Bars */
         .task-row {
             height: 80px;
-            border-bottom: 1px solid #eee;
+            border-bottom: 1px solid var(--border);
             position: relative;
-            /* Hourly grid (very light and thin) */
+            background-color: var(--bg-row);
             background-image: 
-                repeating-linear-gradient(to right, transparent, transparent 39px, #f5f5f5 39px, #f5f5f5 40px);
-            background-size: 40px 80px; /* Matches hour width */
-        }
-        
-        /* Add vertical day separator lines */
-        .task-row[data-day-positions]::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            background-image: var(--day-separators);
-            pointer-events: none;
-            z-index: 0;
+                linear-gradient(to right, var(--border) 1px, transparent 1px);
+            background-size: 40px 80px;
         }
         
         .task-block {
             position: absolute;
-            top: 10px;
-            height: 60px;
-            z-index: 1;
-            background: #0d6efd;
-            color: white;
-            border-radius: 6px;
-            padding: 8px 10px;
-            font-size: 0.8rem;
-            overflow: hidden;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            
-            /* Card-style design */
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1), 0 1px 2px rgba(0,0,0,0.06);
-            border: 1px solid rgba(0,0,0,0.08);
-            
-            /* Better text contrast */
-            text-shadow: 0 1px 3px rgba(0,0,0,0.4);
-            box-sizing: border-box; /* Crucial: Include padding/border in width */
-            min-width: 0 !important; /* Force no minimum width */
+            top: 15px;
+            height: 50px;
+            z-index: 3;
+            background: var(--bg-card);
+            backdrop-filter: blur(8px);
+            color: var(--text-main);
+            border-radius: 8px;
+            padding: 6px 10px;
+            font-size: 0.75rem;
+            overflow: visible;
+            cursor: grab;
+            transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s ease;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2), 0 2px 4px -1px rgba(0, 0, 0, 0.1);
+            border: 1px solid var(--glass-border);
+            box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
         }
         
         .task-block:hover {
-            transform: scale(1.02);
-            z-index: 100; /* Higher z-index on hover */
-            min-width: 200px; /* Expand to read on hover */
-            white-space: normal;
-            overflow: visible; /* Show tooltip */
+            transform: translateY(-2px) scale(1.02);
+            z-index: 100;
+            box-shadow: 0 0 20px rgba(0, 242, 255, 0.2);
+            border-color: var(--neon-blue);
+            cursor: pointer;
+        }
+
+        .task-continuation {
+            border-left-style: dashed !important;
+        }
+        
+        .task-continuation > *:not(.task-tooltip) {
+            opacity: 0.6;
+        }
+
+        .task-progress-bg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            background: rgba(25, 135, 84, 0.15); /* Subtle Green */
+            z-index: -1;
+            transition: width 0.5s ease;
+        }
+
+        .task-progress-text {
+            position: absolute;
+            bottom: 4px;
+            right: 8px;
+            font-size: 0.6rem;
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+
+        /* Dashboard Styles */
+        .analysis-dashboard {
+            background: #f8fafc;
+        }
+
+        .animate-pulse {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: .7; }
+        }
+
+        @keyframes neonPulse {
+            0% { 
+                color: #ff3131;
+                filter: drop-shadow(0 0 2px #ff3131);
+                opacity: 0.8;
+            }
+            50% { 
+                color: #ff0000;
+                filter: drop-shadow(0 0 15px #ff3131) drop-shadow(0 0 30px #ff3131);
+                opacity: 1;
+            }
+            100% { 
+                color: #ff3131;
+                filter: drop-shadow(0 0 2px #ff3131);
+                opacity: 0.8;
+            }
+        }
+        .bell-neon-alert {
+            animation: neonPulse 1.5s infinite ease-in-out;
+            color: #ff3131 !important;
+        }
+        .bell-green-ok {
+            color: #22c55e !important;
+            filter: drop-shadow(0 0 2px rgba(34, 197, 94, 0.2));
+        }
+
+        .smaller {
+            font-size: 0.75rem;
+        }
+
+        .detail-row {
+            background-color: #f8fafc;
+            border-left: 4px solid #3b82f6;
+            display: none;
+        }
+
+        .detail-item {
+            padding: 4px 12px;
+            font-size: 0.7rem;
+            color: #475569;
+            border-bottom: 1px solid #f1f5f9;
+        }
+
+        .detail-item:last-child {
+            border-bottom: none;
+        }
+
+        .btn-detail-toggle {
+            padding: 2px 8px;
+            font-size: 0.65rem;
+            border-radius: 4px;
+            border: 1px solid #cbd5e1;
+            background: white;
+            color: #64748b;
+            transition: all 0.2s;
+        }
+
+        .btn-detail-toggle:hover {
+            background: #f1f5f9;
+            color: #1e293b;
+        }
+
+        .card-analysis {
+            transition: all 0.3s ease;
+        }
+
+        .card-analysis:hover {
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1) !important;
+        }
+
+        .task-block.is-dragging {
+            cursor: grabbing !important;
+            opacity: 0.6;
+            transform: scale(1.05);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+            z-index: 1000 !important;
         }
         
         .task-tooltip {
             display: none;
             position: absolute;
-            top: 100%; /* Below the block */
-            left: 0;
-            background: #333;
+            top: 50%;
+            left: 100%;
+            margin-left: 15px;
+            transform: translateY(-50%);
+            background: rgba(15, 23, 42, 0.98);
+            backdrop-filter: blur(16px);
             color: #fff;
-            padding: 8px;
-            border-radius: 4px;
-            min-width: 220px;
-            z-index: 101;
-            font-size: 0.75rem;
+            padding: 20px;
+            border-radius: 16px;
+            min-width: 330px;
+            z-index: 2000;
+            font-size: 0.8rem;
             white-space: normal;
-            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
-            pointer-events: none;
-            border: 1px solid #555;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 10px 10px -5px rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(59, 130, 246, 0.5);
             line-height: 1.4;
+            pointer-events: none;
+            transition: opacity 0.2s ease;
         }
-        
+
         .task-block:hover .task-tooltip {
             display: block;
+            animation: fadeInScale 0.2s ease-out;
         }
 
-        .weekend-bg {
-            background-color: #fff3cd; /* Light yellow for weekends/closed? optional */
+        /* Clase para voltear el tooltip cuando no hay espacio a la derecha */
+        .task-block.tooltip-flip .task-tooltip {
+            left: auto;
+            right: 100%;
+            margin-left: 0;
+            margin-right: 15px;
         }
 
-        /* Drag and Drop Feedback */
-        .drop-target {
-            background-color: #e8f0fe !important; /* Light Blue highlight */
-            box-shadow: inset 0 0 10px rgba(0,0,255,0.1);
+        @keyframes fadeInScale {
+            from { opacity: 0; transform: translateY(-50%) scale(0.95); }
+            to { opacity: 1; transform: translateY(-50%) scale(1); }
+        }
+
+        .tooltip-section {
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        .tooltip-section:last-child { border-bottom: none; }
+        
+        .tooltip-label {
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #94a3b8;
+            margin-bottom: 2px;
         }
         
-        .can-drop {
-            opacity: 0.8;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.2) !important; 
-            cursor: grabbing;
+        .tooltip-value {
+            font-weight: 600;
+            color: #f8fafc;
         }
 
-        /* --- CRITICAL FIXES FOR DRAG & DROP AND TOOLTIPS --- */
-        
-        /* 1. Tooltip Visibility Fix: Lift the entire row when hovering so tooltips overlap the next row */
-        .task-row:hover {
-            z-index: 100 !important;
-        }
-
-        /* 2. Drag Detection Fix: Make the dragged element "ghostly" to mouse events 
-           so the mouse hits the DROPZONE (row) underneath it immediately. */
-        .task-block.is-dragging {
-            pointer-events: none !important;
-            opacity: 0.7;
-            box-shadow: 0 10px 20px rgba(0,0,0,0.3);
-            transform: scale(1.05); /* Slight pop */
-        }
-
-        /* Ocultar flechas de eventos sin borrar la lógica */
+        /* Dependency Arrows */
         #dependency-layer {
-            display: none !important;
+            display: none;
+            filter: drop-shadow(0 0 2px rgba(0, 242, 255, 0.3));
+        }
+
+        #dependency-layer.visible {
+            display: block !important;
+        }
+
+        .dependency-path {
+            stroke-dasharray: none;
+            /* Animation removed as requested */
+        }
+
+        /* Scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+        }
+        ::-webkit-scrollbar-track {
+            background: var(--bg-deep);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: var(--bg-header);
+            border-radius: 5px;
+            border: 2px solid var(--bg-deep);
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--accent);
+        }
+
+        /* UI Elements */
+        .top-bar {
+            background: var(--bg-header);
+            border-bottom: 1px solid var(--border);
+            padding: 1rem 1.5rem;
+        }
+
+        .glass {
+            background: rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .glass:hover {
+            background: rgba(255, 255, 255, 0.4);
+            transform: translateY(-1px);
+        }
+        
+        .active-glass {
+            background: rgba(255, 255, 255, 0.5) !important;
+            border-color: #3b82f6 !important;
+            box-shadow: 0 0 10px rgba(59, 130, 246, 0.2);
+        }
+
+        /* Load Levels Colors */
+        .bg-load-low { background: #3b82f6 !important; }
+        .bg-load-optimal { background: #10b981 !important; }
+        .bg-load-warning { background: #f59e0b !important; }
+        .bg-load-overload { background: #ef4444 !important; }
+
+        .text-load-low { color: #3b82f6 !important; }
+        .text-load-optimal { color: #10b981 !important; }
+        .text-load-warning { color: #f59e0b !important; }
+        .text-load-overload { color: #ef4444 !important; }
+
+        .btn-modern {
+            border-radius: 10px;
+            padding: 0.6rem 1.2rem;
+            font-weight: 600;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            display: inline-flex;
+            align-items: center;
+            gap: 0.6rem;
+            text-decoration: none !important;
+            border: 1px solid transparent;
+            font-size: 0.85rem;
+        }
+
+        .btn-primary-modern {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            border: none;
+            color: white !important;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+        }
+
+        .btn-primary-modern:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(37, 99, 235, 0.4);
+            filter: brightness(1.1);
+        }
+
+        .btn-toggle-inactive {
+            color: var(--text-muted) !important;
+            background: rgba(0, 0, 0, 0.05);
+            border: 1px solid transparent;
+        }
+
+        .btn-toggle-inactive:hover {
+            background: rgba(0, 0, 0, 0.08);
+            color: var(--text-main) !important;
+        }
+
+        .glass-toggle {
+            background: rgba(255, 255, 255, 0.5);
+            backdrop-filter: blur(4px);
+            border: 1px solid rgba(0, 0, 0, 0.05);
+            padding: 3px;
+            border-radius: 12px;
+        }
+
+        .badge-overlap {
+            padding: 0.35em 0.65em;
+            border-radius: 6px;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.7rem;
+        }
+
+        /* Modern SweetAlert2 Custom Styles */
+        .swal2-popup.premium-swal {
+            border-radius: 20px;
+            padding: 2.5rem;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+        }
+        .swal2-title {
+            font-weight: 800;
+            color: #1e293b;
+            font-size: 1.6rem;
+            margin-bottom: 1rem;
+        }
+        .swal2-html-container {
+            color: #64748b;
+            font-size: 1.05rem;
+            line-height: 1.6;
+        }
+        .swal2-confirm.premium-confirm {
+            border-radius: 50px !important;
+            padding: 12px 35px !important;
+            font-weight: 600 !important;
+            font-size: 0.95rem !important;
+            box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3) !important;
+        }
+        .swal2-cancel.premium-cancel {
+            border-radius: 50px !important;
+            padding: 12px 35px !important;
+            font-weight: 600 !important;
+            font-size: 0.95rem !important;
+            background: #f1f5f9 !important;
+            color: #475569 !important;
+        }
+        .swal2-icon {
+            border: none !important;
+            width: 100px !important;
+            height: 100px !important;
+            margin: 0 auto 1.5rem !important;
+            border-radius: 50% !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            background: #f8fafc !important;
+        }
+        .swal2-icon.swal2-warning {
+            background: rgba(245, 158, 11, 0.1) !important;
+            color: #f59e0b !important;
+        }
+        .swal2-icon.swal2-error {
+            background: rgba(239, 68, 68, 0.1) !important;
+            color: #ef4444 !important;
+        }
+        .swal2-icon.swal2-success {
+            background: rgba(16, 185, 129, 0.1) !important;
+            color: #10b981 !important;
+        }
+        .swal2-icon.swal2-question {
+            background: rgba(59, 130, 246, 0.1) !important;
+            color: #3b82f6 !important;
+        }
+        .swal2-icon.swal2-info {
+            background: rgba(59, 130, 246, 0.1) !important;
+            color: #3b82f6 !important;
         }
     </style>
 </head>
 <body>
     <div class="container-fluid p-0">
-        <div class="d-flex justify-content-between align-items-center p-3 bg-white border-bottom">
-            <h4 class="m-0 text-primary"><i class="fas fa-chart-gantt me-2"></i>Planificación Visual</h4>
+        <div class="top-bar d-flex justify-content-between align-items-center">
             <div class="d-flex align-items-center">
+                <div class="bg-primary p-2 rounded-3 me-3" style="box-shadow: 0 0 15px rgba(59, 130, 246, 0.5);">
+                    <i class="fas fa-chart-gantt text-white fs-4"></i>
+                </div>
+                <div>
+                    <h4 class="m-0 fw-bold" style="letter-spacing: -0.5px;">Planificación <span class="text-primary">Visual</span></h4>
+                    <small class="text-muted">Control de línea y procesos ABBAMAT</small>
+                </div>
+            </div>
+            
+            <div class="d-flex align-items-center gap-2">
                  <!-- Plan Mode Toggle -->
-                 <div class="btn-group me-3" role="group" aria-label="Modo de Planificación">
+                 <div class="glass-toggle d-flex me-3">
                      <a href="?{{ request.GET.urlencode }}&plan_mode=original&run=1" 
-                        class="btn btn-sm {% if request.GET.plan_mode == 'original' %}btn-dark active{% else %}btn-outline-dark{% endif %}"
+                        class="btn-modern {% if request.GET.plan_mode == 'original' %}btn-primary-modern{% else %}btn-toggle-inactive{% endif %}"
                         title="Ver datos originales de SQL Server (Sin modificaciones)">
-                         <i class="fas fa-database"></i> Automático (Original)
+                         <i class="fas fa-magic"></i> Automático
                      </a>
                      <a href="?{{ request.GET.urlencode }}&plan_mode=manual&run=1" 
-                        class="btn btn-sm {% if request.GET.plan_mode != 'original' %}btn-dark active{% else %}btn-outline-dark{% endif %}"
+                        class="btn-modern {% if request.GET.plan_mode != 'original' %}btn-primary-modern{% else %}btn-toggle-inactive{% endif %}"
                         title="Ver planificación con mis ajustes manuales">
-                         <i class="fas fa-user-edit"></i> Manual (Guardado)
+                         <i class="fas fa-hand-pointer"></i> Manual
                      </a>
                  </div>
 
                  <!-- Action Buttons -->
-                 <a href="?{{ request.GET.urlencode }}&run=1" id="btnExecute" class="btn btn-primary btn-sm me-2 fw-bold">
-                    <i class="fas fa-sync"></i> RE-CALCULAR
+                 <a href="?{{ request.GET.urlencode }}&run=1" id="btnExecute" class="btn-modern btn-primary-modern">
+                    <i class="fas fa-play"></i> RE-CALCULAR
+                 </a>
+                  <div class="vr mx-2 bg-secondary opacity-25" style="height: 30px;"></div>
+                  
+                  <!-- Notification Bell -->
+                  <div class="position-relative me-2">
+                    <button class="btn-modern glass" type="button" data-bs-toggle="offcanvas" data-bs-target="#notificationCenter">
+                        <i class="fas fa-bell {% if system_alerts or analysis.project_alerts %}bell-neon-alert{% else %}bell-green-ok{% endif %}"></i>
+                        {% with total_alerts=system_alerts|length|add:analysis.project_alerts|length %}
+                        {% if total_alerts > 0 %}
+                        <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size: 0.65rem; padding: 0.35em 0.6em; border: 2px solid white;">
+                            {{ total_alerts }}
+                        </span>
+                        {% endif %}
+                        {% endwith %}
+                    </button>
+                  </div>
+
+                  <button id="btn-toggle-arrows" class="btn-modern glass" title="Mostrar/Ocultar Flechas">
+                      <i class="fas fa-project-diagram text-primary"></i> Flechas
+                  </button>
+                 
+                 
+                 <div class="vr mx-2 bg-secondary opacity-25 d-none" style="height: 30px;"></div>
+
+                 <a href="#" id="btnPlanillasDiarias" onclick="openPlanillasDiarias()" class="btn-modern bg-white text-dark shadow-sm border" style="border-color: #ffc107 !important;">
+                    <i class="fas fa-file-alt text-warning"></i> Planillas Diarias
+                 </a>
+
+                 <!-- Scenario Selector -->
+                 <div class="d-flex align-items-center gap-2 d-none">
+                     <label class="small text-muted mb-0" style="white-space: nowrap;">
+                         <i class="fas fa-layer-group me-1"></i>Escenario:
+                     </label>
+                     <select id="scenario-selector" class="form-select form-select-sm bg-light text-dark border-secondary" style="width: 200px;">
+                         {% for scenario in all_scenarios %}
+                         <option value="{{ scenario.id }}" 
+                                 {% if active_scenario and scenario.id == active_scenario.id %}selected{% endif %}
+                                 data-is-principal="{{ scenario.es_principal|yesno:'true,false' }}">
+                             {% if scenario.es_principal %}⭐ {% endif %}{{ scenario.nombre }}
+                         </option>
+                         {% endfor %}
+                     </select>
+                     
+                     <button id="btn-create-draft" class="btn-modern glass text-dark" title="Crear Borrador">
+                         <i class="fas fa-copy"></i> Borrador
+                     </button>
+                     
+                     <button id="btn-publish-scenario" class="btn-modern btn-success-modern" title="Publicar como Plan Oficial"
+                             {% if active_scenario.es_principal %}disabled{% endif %}>
+                         <i class="fas fa-check-circle"></i> Publicar
+                     </button>
+                     
+                     <button id="btn-delete-scenario" class="btn-modern btn-danger-modern" title="Eliminar Escenario"
+                             {% if active_scenario.es_principal %}disabled{% endif %}>
+                         <i class="fas fa-trash"></i>
+                     </button>
+                 </div>
+                 
+                 <div class="vr mx-2 bg-secondary opacity-25 d-none" style="height: 30px;"></div>
+
+                 <a href="#" id="btnExport" class="btn-modern bg-white text-dark shadow-sm border" style="border-color: #198754 !important;">
+                    <i class="fas fa-file-excel text-success"></i> Exportar
                  </a>
                  
-                 <a href="#" id="btnExport" class="btn btn-success btn-sm me-2"><i class="fas fa-file-excel"></i> Excel</a>
-                 <a href="{% url 'planificacion_view' %}?{{ request.GET.urlencode }}" class="btn btn-outline-secondary btn-sm"><i class="fas fa-arrow-left"></i> Volver</a>
+                <a href="{% url 'planificacion_view' %}?{{ request.GET.urlencode }}" class="btn-modern bg-white text-dark shadow-sm border">
+                    <i class="fas fa-chevron-left"></i> Volver
+                 </a>
+            </div>
+        </div>
+
+        <!-- System Alerts purely hidden, they are in the notification center now -->
+
+        <!-- Analysis Dashboard -->
+        <div id="analysis-row" class="row g-3 px-4 py-3 bg-light border-bottom analysis-dashboard d-none">
+            <!-- Bottlenecks Card -->
+            <div id="col-bottlenecks" class="col-md-6 d-none">
+                <div class="card card-analysis h-100 border-0 shadow-sm rounded-4 overflow-hidden">
+                    <div class="card-header bg-white border-0 py-3 d-flex justify-content-between align-items-center">
+                        <h6 class="m-0 fw-bold text-dark"><i class="fas fa-bolt-lightning text-warning me-2"></i>Cuellos de Botella (Próximos 7 días)</h6>
+                        <span class="badge bg-light text-dark fw-bold">{{ analysis.machines|length }} Máquinas</span>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive" style="max-height: 200px;">
+                            <table class="table table-hover align-middle mb-0">
+                                <thead class="table-light small text-muted">
+                                    <tr>
+                                        <th class="ps-4">Máquina</th>
+                                        <th>Carga (%)</th>
+                                        <th class="pe-4">Hs (Uso / Cap)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for m in analysis.machines %}
+                                    {% if m.load_pct > 0 %}
+                                    <tr>
+                                        <td class="ps-4 fw-bold small">{{ m.nombre }}</td>
+                                        <td>
+                                            <div class="d-flex align-items-center gap-2" style="min-width: 140px;">
+                                                <div class="progress flex-grow-1 border" style="height: 10px; background: #f1f5f9; border-radius: 20px; overflow: hidden;">
+                                                    <div class="progress-bar shadow-sm {% if m.load_pct > 100 %}bg-load-overload animate-pulse{% elif m.load_pct > 85 %}bg-load-warning{% elif m.load_pct > 30 %}bg-load-optimal{% else %}bg-load-low{% endif %}" 
+                                                         style="width: {% if m.load_pct > 100 %}100{% else %}{{ m.load_pct|unlocalize }}{% endif %}% ; border-radius: 20px;"></div>
+                                                </div>
+                                                <span class="smaller fw-bold {% if m.load_pct > 100 %}text-load-overload{% elif m.load_pct > 85 %}text-load-warning{% elif m.load_pct > 30 %}text-load-optimal{% else %}text-load-low{% endif %}" style="min-width: 45px; text-align: right;">
+                                                    {{ m.load_pct }}%
+                                                </span>
+                                            </div>
+                                        </td>
+                                        <td class="pe-4 smaller text-muted text-end fw-medium">
+                                            <div class="mb-1">{{ m.hours }} / {{ m.capacity }}h</div>
+                                            <button class="btn-detail-toggle" onclick="toggleDetail('machine-{{ m.id }}')">
+                                                <i class="fas fa-list me-1"></i>Detalle
+                                            </button>
+                                        </td>
+                                    </tr>
+                                    <tr id="detail-machine-{{ m.id }}" class="detail-row">
+                                        <td colspan="3" class="p-0">
+                                            <div class="p-2">
+                                                <div class="fw-bold smaller text-muted mb-1 ps-2"><i class="fas fa-tasks me-1"></i>Órdenes próximas 7 días:</div>
+                                                {% for t in m.tasks %}
+                                                <div class="detail-item d-flex justify-content-between">
+                                                    <span><strong>#{{ t.orden }}</strong> - {{ t.desc }}</span>
+                                                    <span class="text-primary fw-bold">{{ t.end }}</span>
+                                                </div>
+                                                {% empty %}
+                                                <div class="detail-item text-center">No hay tareas programadas</div>
+                                                {% endfor %}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    {% endif %}
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Late Projects Card -->
+            <div id="col-alerts" class="col-md-6 d-none">
+                <div class="card card-analysis h-100 border-0 shadow-sm rounded-4 overflow-hidden">
+                    <div class="card-header bg-white border-0 py-3 d-flex justify-content-between align-items-center">
+                        <h6 class="m-0 fw-bold text-dark"><i class="fas fa-clock text-danger me-2"></i>Alertas de Retraso (vs Vto ERP)</h6>
+                        <span class="badge bg-danger bg-opacity-10 text-danger fw-bold">{{ analysis.project_alerts|length }} Alertas</span>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive" style="max-height: 200px;">
+                            <table class="table table-hover align-middle mb-0" id="table-alerts">
+                                <thead class="table-light small text-muted">
+                                    <tr>
+                                        <th class="ps-4">Proyecto</th>
+                                        <th>Fin Estimado</th>
+                                        <th class="pe-4">Días Atrás</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for alert in analysis.project_alerts %}
+                                    <tr class="project-alert-row" style="cursor: pointer;" onclick="scrollToProject('{{ alert.proyecto }}')">
+                                        <td class="ps-4 fw-bold text-primary small">{{ alert.proyecto }}</td>
+                                        <td class="smaller">
+                                            <div class="text-dark fw-bold">{{ alert.max_end|date:"d/m/Y" }}</div>
+                                            <div class="text-muted">Pactado: {{ alert.vto|date:"d/m/Y" }}</div>
+                                        </td>
+                                        <td class="pe-4 text-end">
+                                            <div class="mb-1"><span class="badge bg-danger rounded-pill">+{{ alert.delay_days }} días</span></div>
+                                            <button class="btn-detail-toggle" onclick="toggleDetail('alert-{{ alert.proyecto|slugify }}')">
+                                                <i class="fas fa-exclamation-triangle me-1"></i>Vincular
+                                            </button>
+                                        </td>
+                                    </tr>
+                                    <tr id="detail-alert-{{ alert.proyecto|slugify }}" class="detail-row">
+                                        <td colspan="3" class="p-0">
+                                            <div class="p-2">
+                                                <div class="fw-bold smaller text-danger mb-1 ps-2"><i class="fas fa-bolt me-1"></i>Tareas que causan el retraso:</div>
+                                                {% for c in alert.culprits %}
+                                                <div class="detail-item d-flex justify-content-between">
+                                                    <span><strong>#{{ c.orden }}</strong> - {{ c.desc }}</span>
+                                                    <span class="text-danger fw-bold">{{ c.end }}</span>
+                                                </div>
+                                                {% endfor %}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    {% empty %}
+                                    <tr>
+                                        <td colspan="3" class="text-center py-4 text-muted small">
+                                            <i class="fas fa-circle-check text-success d-block mb-2 fs-4"></i>
+                                            No hay proyectos con retraso según el Plan Oficial.
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
         
         <script>
+            // Toggle detail rows in analysis cards
+            window.toggleDetail = function(id) {
+                const element = document.getElementById('detail-' + id);
+                if (element.style.display === 'table-row') {
+                    element.style.display = 'none';
+                } else {
+                    element.style.display = 'table-row';
+                }
+            };
+
+            // Scroll to project function
+            window.scrollToProject = function(projectCode) {
+                const blocks = document.querySelectorAll('.task-block');
+                let found = false;
+                for (let block of blocks) {
+                    // Look for the project code in the tooltip header or the small span
+                    const tooltipHeader = block.querySelector('.task-tooltip h6');
+                    if (tooltipHeader && tooltipHeader.textContent.trim() === projectCode) {
+                        block.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+                        
+                        // Highlight effect
+                        const originalShadow = block.style.boxShadow;
+                        const originalZ = block.style.zIndex;
+                        
+                        block.style.boxShadow = '0 0 50px rgba(59, 130, 246, 0.8)';
+                        block.style.zIndex = '1000';
+                        block.style.transform = 'scale(1.1)';
+                        setTimeout(() => {
+                            block.style.boxShadow = originalShadow;
+                            block.style.zIndex = originalZ;
+                            block.style.transform = 'none';
+                        }, 2000);
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) alert('Proyecto no visible en el Gantt actual');
+            };
+
+            window.openPlanillasDiarias = function() {
+                const params = new URLSearchParams(window.location.search);
+                params.set('run', '1');
+                window.location.href = "{% url 'planillas_diarias' %}?" + params.toString();
+            };
+        </script>
+                        
+                        setTimeout(() => {
+                            block.style.boxShadow = originalShadow;
+                            block.style.zIndex = originalZ;
+                            block.style.transform = '';
+                        }, 3000);
+                        
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    console.log('Project not found in current view:', projectCode);
+                }
+            };
+
             // Script for interactive elements
             // Note: btnClean is now a simple link, so no JS needed for it.
             
@@ -284,62 +868,222 @@
 
     <!-- Modal de Configuración de Solapamiento -->
     <div class="modal fade" id="overlapModal" tabindex="-1" aria-labelledby="overlapModalLabel" aria-hidden="true">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header bg-primary text-white">
-                    <h5 class="modal-title" id="overlapModalLabel">
-                        <i class="fas fa-sliders-h me-2"></i>Configurar Solapamiento
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content glass" style="border-color: var(--accent);">
+                <div class="modal-header border-bottom border-secondary border-opacity-25">
+                    <h5 class="modal-title fw-bold text-dark" id="overlapModalLabel">
+                        <i class="fas fa-sliders-h me-2 text-primary"></i>Configurar Solapamiento
                     </h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                <div class="modal-body">
-                    <div class="mb-3">
-                        <label class="form-label fw-bold">Tarea:</label>
-                        <div id="overlap-task-info" class="p-2 bg-light rounded">
-                            <div><strong>ID:</strong> <span id="overlap-task-id">-</span></div>
-                            <div><strong>Proyecto:</strong> <span id="overlap-task-proyecto">-</span></div>
-                            <div><strong>Máquina:</strong> <span id="overlap-task-maquina">-</span></div>
+                <div class="modal-body p-4">
+                    <div class="mb-4">
+                        <label class="form-label text-muted small text-uppercase fw-bold mb-3">Información de Tarea</label>
+                        <div id="overlap-task-info" class="p-3 rounded-3" style="background: rgba(0,0,0,0.05); border: 1px solid var(--border);">
+                            <div class="d-flex justify-content-between mb-2">
+                                <span class="text-muted">ID Orden:</span>
+                                <span id="overlap-task-id" class="text-dark fw-mono">-</span>
+                            </div>
+                            <div class="d-flex justify-content-between mb-2">
+                                <span class="text-muted">Proyecto:</span>
+                                <span id="overlap-task-proyecto" class="text-dark">-</span>
+                            </div>
+                            <div class="d-flex justify-content-between">
+                                <span class="text-muted">Máquina:</span>
+                                <span id="overlap-task-maquina" class="badge-overlap bg-primary bg-opacity-25 text-primary">-</span>
+                            </div>
                         </div>
                     </div>
                     
-                    <div class="mb-3">
-                        <label for="overlap-percentage" class="form-label fw-bold">
+                    <div class="mb-4">
+                        <label for="overlap-percentage" class="form-label text-muted small text-uppercase fw-bold mb-3">
                             Porcentaje de Solapamiento
                             <i class="fas fa-info-circle text-info ms-1" 
                                data-bs-toggle="tooltip" 
                                title="% del lote del proceso anterior que debe estar completo antes de iniciar este proceso"></i>
                         </label>
-                        <div class="input-group">
-                            <input type="range" class="form-range" id="overlap-percentage-range" 
-                                   min="0" max="100" step="5" value="0">
-                            <input type="number" class="form-control" id="overlap-percentage" 
-                                   min="0" max="100" step="5" value="0" style="max-width: 100px;">
-                            <span class="input-group-text">%</span>
+                        
+                        <div class="d-flex align-items-center gap-3 mb-3">
+                            <input type="range" class="form-range flex-grow-1" id="overlap-percentage-range" 
+                                   min="0" max="100" step="5" value="0" style="accent-color: var(--accent);">
+                            <div class="input-group" style="width: 100px;">
+                                <input type="number" class="form-control bg-light text-dark border-secondary" id="overlap-percentage" 
+                                       min="0" max="100" step="5" value="0">
+                                <span class="input-group-text bg-light text-muted border-secondary">%</span>
+                            </div>
                         </div>
-                        <div id="overlap-percentage-display" class="mt-2 text-center">
-                            <span class="badge bg-secondary fs-6">0%</span>
+                        
+                        <div id="overlap-percentage-display" class="text-center p-3 rounded-3" style="background: rgba(59, 130, 246, 0.05);">
+                            <span class="badge fs-2 fw-bold" style="background: transparent; color: var(--accent);">0%</span>
+                            <div class="small text-muted mt-1" id="overlap-strategy-hint">Sincronización Estándar</div>
                         </div>
                     </div>
                     
-                    <div class="alert alert-info small">
-                        <strong><i class="fas fa-lightbulb me-1"></i>Guía:</strong>
-                        <ul class="mb-0 mt-2">
-                            <li><strong>0%:</strong> Espera al 100% (comportamiento tradicional)</li>
-                            <li><strong>25%:</strong> Procesos cortos o automáticos</li>
-                            <li><strong>50%:</strong> Procesos manuales medianos</li>
-                            <li><strong>75%:</strong> Procesos largos o críticos</li>
-                        </ul>
+                    <div class="p-3 rounded-3" style="background: rgba(255, 193, 7, 0.05); border-left: 4px solid #ffc107;">
+                        <div class="small text-warning fw-bold mb-1"><i class="fas fa-lightbulb me-1"></i>Recomendación:</div>
+                        <p class="small text-muted mb-0" id="overlap-strategy-desc">
+                            Inicia cuando el proceso anterior termina al 100%. Ideal para lotes pequeños.
+                        </p>
                     </div>
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                        <i class="fas fa-times me-1"></i>Cancelar
+                <div class="modal-footer border-top border-secondary border-opacity-25">
+                    <button type="button" class="btn-modern glass text-dark" data-bs-dismiss="modal">
+                        Cancelar
                     </button>
-                    <button type="button" class="btn btn-primary" id="btn-save-overlap">
-                        <i class="fas fa-save me-1"></i>Guardar
+                    <button type="button" class="btn-modern btn-primary-modern px-4" id="btn-save-overlap">
+                        <i class="fas fa-save me-1"></i> Aplicar Cambios
                     </button>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- Notification Center Offcanvas -->
+    <div class="offcanvas offcanvas-end glass" tabindex="-1" id="notificationCenter" aria-labelledby="notificationCenterLabel" style="width: 400px; border-left: 1px solid rgba(255,255,255,0.2);">
+        <div class="offcanvas-header bg-primary text-white">
+            <h5 class="offcanvas-title fw-bold" id="notificationCenterLabel">
+                <i class="fas fa-bell me-2"></i>Centro de Notificaciones
+            </h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+        </div>
+        <div class="offcanvas-body p-0">
+            <!-- Summary Stats -->
+            <div class="p-3 bg-light border-bottom d-flex justify-content-around text-center">
+                <div>
+                    <div class="small text-muted">Avisos</div>
+                    <div class="fw-bold fs-5 text-warning">{{ system_alerts|length }}</div>
+                </div>
+                <div class="vr"></div>
+                <div>
+                    <div class="small text-muted">Retrasos</div>
+                    <div class="fw-bold fs-5 text-danger">{{ analysis.project_alerts|length }}</div>
+                </div>
+                <div class="vr"></div>
+                <div>
+                    <div class="small text-muted">Cargas</div>
+                    <div class="fw-bold fs-5 text-primary">{{ analysis.machines|length }}</div>
+                </div>
+            </div>
+
+            <!-- Tabbed Content inside Offcanvas -->
+            <ul class="nav nav-tabs nav-fill bg-white" id="notif-tabs" role="tablist">
+                <li class="nav-item">
+                    <button class="nav-link active smaller fw-bold py-3" id="notif-system-tab" data-bs-toggle="tab" data-bs-target="#notif-system" type="button" role="tab">
+                        SISTEMA
+                    </button>
+                </li>
+                <li class="nav-item">
+                    <button class="nav-link smaller fw-bold py-3" id="notif-delays-tab" data-bs-toggle="tab" data-bs-target="#notif-delays" type="button" role="tab">
+                        RETRASOS
+                    </button>
+                </li>
+                <li class="nav-item">
+                    <button class="nav-link smaller fw-bold py-3" id="notif-loads-tab" data-bs-toggle="tab" data-bs-target="#notif-loads" type="button" role="tab">
+                        CARGAS
+                    </button>
+                </li>
+            </ul>
+
+            <div class="tab-content" id="notif-tabs-content">
+                <!-- System Avisos -->
+                <div class="tab-pane fade show active p-3" id="notif-system" role="tabpanel">
+                    {% for alert in system_alerts %}
+                    <div class="p-3 mb-3 rounded-4 shadow-sm border-start border-4 border-warning bg-white">
+                        <div class="d-flex gap-3">
+                            <i class="fas fa-circle-exclamation text-warning mt-1"></i>
+                            <div class="smaller text-dark">{{ alert.message|safe }}</div>
+                        </div>
+                    </div>
+                    {% empty %}
+                    <div class="text-center py-5 text-muted">
+                        <i class="fas fa-check-circle fa-2x mb-3 text-success opacity-25"></i>
+                        <p>No hay avisos de sistema.</p>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <!-- Delay Alertas -->
+                <div class="tab-pane fade p-0" id="notif-delays" role="tabpanel">
+                    <div class="list-group list-group-flush">
+                        {% for alert in analysis.project_alerts %}
+                        <div class="list-group-item p-3 border-0 border-bottom border-light">
+                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                <h6 class="m-0 fw-bold text-primary">{{ alert.proyecto }}</h6>
+                                <span class="badge bg-danger rounded-pill">+{{ alert.delay_days }} días</span>
+                            </div>
+                            <div class="smaller text-muted mb-3">
+                                <i class="fas fa-calendar-alt me-1"></i> Fin: <strong>{{ alert.max_end|date:"d/m/Y" }}</strong><br>
+                                <i class="fas fa-history me-1"></i> Pactado: {{ alert.vto|date:"d/m/Y" }}
+                            </div>
+                            
+                            <div class="bg-light p-2 rounded-3">
+                                <div class="smaller fw-bold text-muted mb-1 ps-1"><i class="fas fa-bolt me-1 text-danger"></i>Cuellos de botella:</div>
+                                {% for c in alert.culprits %}
+                                <div class="px-2 py-1 smaller d-flex justify-content-between border-bottom border-white">
+                                    <span class="text-truncate" style="max-width: 150px;">{{ c.desc }}</span>
+                                    <span class="text-danger fw-bold">{{ c.end }}</span>
+                                </div>
+                                {% endfor %}
+                            </div>
+                            
+                            <div class="mt-3 text-end">
+                                <button class="btn btn-sm btn-outline-primary rounded-pill px-3" onclick="scrollToProject('{{ alert.proyecto }}')" data-bs-dismiss="offcanvas">
+                                    <i class="fas fa-search me-1"></i>Ir al Plan
+                                </button>
+                            </div>
+                        </div>
+                        {% empty %}
+                        <div class="text-center py-5 text-muted">
+                            <i class="fas fa-thumbs-up fa-2x mb-3 text-success opacity-25"></i>
+                            <p>Todos los proyectos están en fecha.</p>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <!-- Machine Loads -->
+                <div class="tab-pane fade p-0" id="notif-loads" role="tabpanel">
+                    <div class="list-group list-group-flush">
+                        {% for m in analysis.machines %}
+                        {% if m.load_pct > 0 %}
+                        <div class="list-group-item p-3 border-0 border-bottom border-light">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <div class="d-flex align-items-center">
+                                    <h6 class="m-0 fw-bold text-dark">{{ m.nombre }}</h6>
+                                    <span class="badge rounded-pill {% if m.load_pct > 100 %}bg-danger{% elif m.load_pct > 80 %}bg-warning{% elif m.load_pct > 30 %}bg-primary{% else %}bg-success{% endif %} smaller ms-2" style="font-size: 0.6rem;">
+                                        {% if m.load_pct > 100 %}Sobrecarga{% elif m.load_pct > 80 %}Carga Alta{% elif m.load_pct > 30 %}Óptima{% else %}Disponible{% endif %}
+                                    </span>
+                                </div>
+                                <span class="smaller fw-bold {% if m.load_pct > 100 %}text-danger{% elif m.load_pct > 80 %}text-warning{% else %}text-success{% endif %}">
+                                    {{ m.load_pct }}%
+                                </span>
+                            </div>
+                            <div class="progress mb-2" style="height: 6px; border-radius: 10px;">
+                                <div class="progress-bar {% if m.load_pct > 100 %}bg-danger{% elif m.load_pct > 80 %}bg-warning{% else %}bg-success{% endif %}" 
+                                     style="width: {% if m.load_pct > 100 %}100{% else %}{{ m.load_pct|unlocalize }}{% endif %}% ; border-radius: 10px;"></div>
+                            </div>
+                            <div class="smaller text-muted">
+                                Carga: {{ m.hours }}h / Capacidad: {{ m.capacity }}h
+                            </div>
+                            <!-- Detail List (Mini) -->
+                            <div class="mt-2 bg-light p-2 rounded-2">
+                                <div class="smaller fw-bold text-muted mb-1 ps-1 border-bottom border-secondary border-opacity-10 pb-1">Lista de Órdenes:</div>
+                                {% for t in m.tasks %}
+                                <div class="smaller d-flex justify-content-between text-muted border-bottom border-white py-1 hover-bg-light transition-all">
+                                    <span>#{{ t.orden }}</span>
+                                    <span>{{ t.end }}</span>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        {% endif %}
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="offcanvas-footer p-3 bg-light border-top text-center">
+            <small class="text-muted">Desarrollado por Antigravity AI</small>
         </div>
     </div>
 
@@ -347,17 +1091,18 @@
             <!-- Header Row -->
             <div class="d-flex">
                 <div class="machine-column">
-                    <div class="machine-header-cell">MÁQUINA</div>
+                    <div class="machine-header-cell border-end border-secondary border-opacity-25">MÁQUINA</div>
                 </div>
-                <div class="gantt-body" id="gantt-header-scroll" style="overflow-x: hidden;"> <!-- Hide scroll here to sync -->
+                <div class="gantt-body" id="header-container" style="overflow: hidden; border-bottom: 1px solid var(--border);"> 
                     <div class="time-header-row">
                         {% for hour in time_columns %}
-                        
                         <div class="time-hour {% ifchanged hour.date %}day-start{% endifchanged %}" style="position: relative;">
                             {% ifchanged hour.date %}
-                            <strong style="position: absolute; top: 0; left: 2px; font-size: 0.65rem; white-space: nowrap; color: #333;">{{ hour|date:"d/M D" }}</strong>
+                            <div style="position: absolute; top: 4px; left: 6px; font-size: 0.6rem; font-weight: 800; color: var(--accent); white-space: nowrap; text-transform: uppercase;">
+                                {{ hour|date:"d M" }} <span class="opacity-50">• {{ hour|date:"D" }}</span>
+                            </div>
                             {% endifchanged %}
-                            <span style="margin-top: 12px;">{{ hour|date:"H" }}</span>
+                            <span style="margin-top: 14px; font-weight: 500;">{{ hour|date:"H" }}</span>
                         </div>
                         {% endfor %}
                     </div>
@@ -365,12 +1110,15 @@
             </div>
 
             <!-- Body Rows -->
-            <div class="d-flex flex-1" id="gantt-body-scroll" style="flex: 1; overflow: auto;">
-                <div class="machine-column">
+            <div class="d-flex" id="gantt-body-scroll" style="flex: 1; overflow: auto;">
+                <div class="machine-column border-end border-secondary border-opacity-25">
                     {% for row in timeline_data %}
                     <div class="machine-row-cell">
-                        {{ row.machine.nombre }}<br>
-                        <small class="text-muted ms-1">({{ row.machine.id_maquina }})</small>
+                        <span class="fw-bold text-dark mb-1">{{ row.machine.nombre }}</span>
+                        <div class="d-flex align-items-center gap-1">
+                            <span class="badge bg-secondary bg-opacity-25 text-muted fw-mono" style="font-size: 0.65rem;">ID: {{ row.machine.id_maquina }}</span>
+                            <i class="fas fa-microchip text-primary opacity-50" style="font-size: 0.7rem;"></i>
+                        </div>
                     </div>
                     {% endfor %}
                 </div>
@@ -381,39 +1129,135 @@
                     <!-- Task Rows -->
                     {% for row in timeline_data %}
                     <div class="task-row" 
-                         style="width: {{ time_columns|length|multiply:40 }}px; position: relative; z-index: 1;"
+                         style="width: {{ time_columns|length|multiply:40 }}px;"
                          data-machine-id="{{ row.machine.id_maquina }}">
                         <!-- Task blocks -->
                         {% for task in row.tasks %}
-                            <div class="task-block"
+                            <div class="task-block {% if task.segment_index > 0 %}task-continuation{% endif %}"
                                  data-task-id="{{ task.Idorden }}"
-                                 data-color="{% if task.ProyectoCode %}{{ task.ProyectoCode|string_to_color }}{% else %}#0d6efd{% endif %}"
+                                 data-color="{% if task.ProyectoCode %}{{ task.ProyectoCode|string_to_color }}{% else %}#3b82f6{% endif %}"
                                  data-priority="{{ task.OrdenVisual|default:0 }}"
                                  style="left: {{ task.visual_left|unlocalize }}px; 
-                                        width: {{ task.visual_width|unlocalize }}px; 
-                                        {% if task.is_new_day %}margin-left: 0px;{% endif %}
-                                         background-color: #fff;
-                                         border-left: 5px solid {% if task.ProyectoCode %}{{ task.ProyectoCode|string_to_color }}{% else %}#0d6efd{% endif %};
-                                         border-right: 5px solid {% if task.ProyectoCode %}{{ task.ProyectoCode|string_to_color }}{% else %}#0d6efd{% endif %};
-                                         color: #333;
-                                         {% if task.segment_index > 0 %} opacity: 0.8; border-left-style: dashed; border-right-style: dashed; {% endif %}">
+                                        width: {{ task.visual_width|unlocalize }}px;
+                                        border-left: 4px solid {% if task.ProyectoCode %}{{ task.ProyectoCode|string_to_color }}{% else %}#3b82f6{% endif %};">
+                                
+                                <div class="task-progress-bg" style="width: {{ task.progress_percent|unlocalize }}%;"></div>
                                 
                                 {% if task.segment_index == 0 %}
-                                    <small style="font-size: 0.7em; opacity: 0.8; font-weight: 600;">{{ task.ProyectoCode|default:"N/A" }}</small><br>
-                                    <strong style="font-size: 0.9em;">{{ task.Idorden }}</strong>
+                                    <span class="small fw-bold mb-1" style="color: var(--text-muted); font-size: 0.65rem;">
+                                        {{ task.ProyectoCode|default:"N/A" }}
+                                    </span>
+                                    <div class="d-flex align-items-center justify-content-between">
+                                        <div class="d-flex align-items-center gap-1">
+                                            <span class="fw-bold">{{ task.Idorden }}</span>
+                                            {% if task.is_pinned %}
+                                                <i class="fas fa-thumbtack text-warning small" style="font-size: 0.6rem;" title="Inicio Fijo (Pinned)"></i>
+                                            {% endif %}
+                                        </div>
+                                        {% if task.porcentaje_solapamiento > 0 %}
+                                            <i class="fas fa-layer-group text-primary small" title="Solapamiento: {{ task.porcentaje_solapamiento }}%"></i>
+                                        {% endif %}
+                                    </div>
                                 {% else %}
-                                    <div style="height: 100%; display: flex; align-items: center; justify-content: center; opacity: 0.5;">
-                                        <i class="fas fa-ellipsis-h" style="font-size: 0.8em;"></i>
+                                    <div class="text-center w-100 opacity-50">
+                                        <i class="fas fa-ellipsis-h small"></i>
                                     </div>
                                 {% endif %}
                                 
                                 <div class="task-tooltip">
-                                    <strong>{{ task.ProyectoCode|default:"N/A" }}</strong><br>
-                                    OP: {{ task.Idorden }} (Parte {{ task.segment_index|add:"1" }})<br>
-                                    {{ task.Denominacion }}<br>
-                                    Start: {{ task.start_date|date:"d/m H:i" }}<br>
-                                    Dur: {{ task.duration_real|floatformat:1 }}h (Total P.)<br>
-                                    <span style="color: yellow; font-size: 0.9em;">{{ task.debug_info }}</span>
+                                    <!-- Header -->
+                                    <div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom border-primary border-opacity-50">
+                                        <div>
+                                            <div class="tooltip-label">Proyecto</div>
+                                            <h5 class="m-0 text-primary fw-bold">{{ task.ProyectoCode|default:"S/P" }}</h5>
+                                        </div>
+                                        <div class="text-end">
+                                            <span class="badge bg-primary bg-opacity-25 text-primary border border-primary border-opacity-25 px-2">OP: {{ task.Idorden }}</span>
+                                        </div>
+                                    </div>
+
+                                    <!-- Description -->
+                                    <div class="tooltip-section">
+                                        <div class="tooltip-label">Denominación / Artículo</div>
+                                        <div class="tooltip-value small">{{ task.Denominacion }}</div>
+                                        <div class="text-muted" style="font-size: 0.65rem;">Code: {{ task.Articulo }}</div>
+                                    </div>
+
+                                    <!-- Dates -->
+                                    <div class="tooltip-section">
+                                        <div class="row g-2">
+                                            <div class="col-6">
+                                                <div class="tooltip-label"><i class="fas fa-calendar-plus me-1 text-success"></i>Inicio</div>
+                                                <div class="tooltip-value">{{ task.start_date|date:"d/m H:i" }}</div>
+                                            </div>
+                                            <div class="col-6">
+                                                <div class="tooltip-label"><i class="fas fa-calendar-check me-1 text-danger"></i>Fin de Tarea</div>
+                                                <div class="tooltip-value">{{ task.end_date|date:"d/m H:i" }}</div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Hours -->
+                                    <div class="tooltip-section">
+                                        <div class="row g-2">
+                                            <div class="col-4">
+                                                <div class="tooltip-label">Horas Totales</div>
+                                                <div class="tooltip-value">{{ task.Tiempo|multiply:task.Cantidad|floatformat:1 }}h</div>
+                                            </div>
+                                            <div class="col-4 border-start border-white border-opacity-10 ps-2">
+                                                <div class="tooltip-label">Realizadas</div>
+                                                <div class="tooltip-value text-success">{{ task.Tiempo|multiply:task.Cantidadpp|floatformat:1 }}h</div>
+                                            </div>
+                                            <div class="col-4 border-start border-white border-opacity-10 ps-2">
+                                                <div class="tooltip-label">Por Hacer</div>
+                                                <div class="tooltip-value text-warning">{{ task.duration_real|floatformat:1 }}h</div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Quantities and Progress -->
+                                    <div class="tooltip-section">
+                                        <div class="row g-2 mb-2">
+                                            <div class="col-6">
+                                                <div class="tooltip-label">Cant. Tarea</div>
+                                                <div class="tooltip-value">{{ task.Cantidad|floatformat:0 }} unid.</div>
+                                            </div>
+                                            <div class="col-6">
+                                                <div class="tooltip-label">Total Proyecto</div>
+                                                <div class="tooltip-value" style="color: #00f2ff;">{{ task.Cantidad_Proyecto|floatformat:0 }} unid.</div>
+                                            </div>
+                                        </div>
+                                        <div class="d-flex justify-content-between align-items-end mb-2">
+                                            <div>
+                                                <div class="tooltip-label">Avance Global del Proyecto</div>
+                                                <div class="tooltip-value">{{ task.Cantidadpp|floatformat:0 }} / {{ task.Cantidad_Proyecto|floatformat:0 }} unid.</div>
+                                            </div>
+                                            <div class="text-end">
+                                                {% with total_avance=task.Cantidadpp|multiply:100 %}
+                                                <span class="fs-5 fw-bold text-success">{{ total_avance|multiply:1|divide:task.Cantidad_Proyecto|floatformat:1 }}%</span>
+                                                {% endwith %}
+                                            </div>
+                                        </div>
+                                        <div class="progress" style="height: 6px; background: rgba(255,255,255,0.1); border-radius: 10px;">
+                                            {% with pct=task.Cantidadpp|multiply:100 %}
+                                            <div class="progress-bar bg-success shadow-sm" style="width: {{ pct|multiply:1|divide:task.Cantidad_Proyecto }}%; border-radius: 10px;"></div>
+                                            {% endwith %}
+                                        </div>
+                                    </div>
+
+                                    {% if task.porcentaje_solapamiento > 0 %}
+                                    <div class="tooltip-section">
+                                        <div class="p-2 rounded bg-primary bg-opacity-10 border border-primary border-opacity-25">
+                                            <div class="text-primary smaller fw-bold"><i class="fas fa-random me-1"></i>Solapamiento configurado: {{ task.porcentaje_solapamiento }}%</div>
+                                        </div>
+                                    </div>
+                                    {% endif %}
+
+                                    <!-- Footer / Debug -->
+                                    <div class="mt-2 pt-2 border-top border-white border-opacity-10 d-flex justify-content-between align-items-center">
+                                        <small class="text-muted" style="font-size: 0.6rem;">Estado: <span class="text-info">{{ task.Estadod }}</span></small>
+                                        <small class="text-muted" style="font-size: 0.6rem;">Lote: {{ task.Lote|default:"-" }}</small>
+                                    </div>
                                 </div>
                             </div>
                         {% endfor %}
@@ -625,13 +1469,23 @@
                                 
                                 setTimeout(() => window.location.href = url.toString(), 10);
                             } else {
-                                alert("Error Backend: " + (data.error || 'Unknown'));
+                                Swal.fire({
+                                    title: 'Error Backend',
+                                    text: data.error || 'Ocurrió un error inesperado.',
+                                    icon: 'error',
+                                    customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                                });
                                 taskEl.style.opacity = '1';
                                 taskEl.style.border = "3px solid red";
                             }
                         })
                         .catch(e => {
-                            alert("Error Red: " + e);
+                            Swal.fire({
+                                title: 'Error de Red',
+                                text: e.message || e,
+                                icon: 'error',
+                                customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                            });
                             taskEl.style.opacity = '1';
                         });
 
@@ -689,7 +1543,12 @@
                     }
 
                     if (!rowEl) {
-                        alert("ERROR: No se detectó la máquina destino (Dropzone falló). Intenta soltar justo en el centro de la fila.");
+                        Swal.fire({
+                            title: 'Error de Destino',
+                            text: 'No se detectó la máquina destino. Intenta soltar justo en el centro de la fila.',
+                            icon: 'warning',
+                            customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                        });
                         return;
                     }
 
@@ -697,7 +1556,7 @@
                     const taskId = taskEl.dataset.taskId;
                     
                     if (!targetMachineId) {
-                         alert("CITICAL ERROR: Fila sin ID de máquina.");
+                         Swal.fire('Error Crítico', 'Fila sin ID de máquina.', 'error');
                          return;
                     }
 
@@ -873,10 +1732,24 @@
             path.style.cursor = 'pointer';
             path.style.pointerEvents = 'stroke'; // Clickable
             
-            path.addEventListener('click', (e) => {
-                    if (confirm('Eliminar dependencia?')) {
-                        unlinkTasks(el1.dataset.taskId, el2.dataset.taskId);
+            path.addEventListener('click', async (e) => {
+                const result = await Swal.fire({
+                    title: '¿Eliminar Dependencia?',
+                    text: '¿Está seguro de que desea eliminar este vínculo entre tareas?',
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonText: 'Sí, eliminar',
+                    cancelButtonText: 'Cancelar',
+                    confirmButtonColor: '#ef4444',
+                    customClass: {
+                        popup: 'premium-swal',
+                        confirmButton: 'premium-confirm',
+                        cancelButton: 'premium-cancel'
                     }
+                });
+                if (result.isConfirmed) {
+                    unlinkTasks(el1.dataset.taskId, el2.dataset.taskId);
+                }
             });
             
             svgLayer.appendChild(path);
@@ -933,7 +1806,16 @@
                 taskEl.style.zIndex = '1000';
                 
                 // Visual feedback
-                alert('Tarea Predecesora Seleccionada: ' + taskId + '\n\nAhora haga clic en la tarea SUCESORA.');
+                Swal.fire({
+                    title: 'Modo Vinculación Activo',
+                    html: `Has seleccionado <b>${taskId}</b> como Predecesora.<br><br>Selecciona ahora la tarea <b>Sucesora</b>.`,
+                    icon: 'info',
+                    timer: 3000,
+                    toast: true,
+                    position: 'top-end',
+                    showConfirmButton: false,
+                    customClass: { popup: 'premium-swal' }
+                });
                 
             } else {
                 if (selectedPredecessor === taskId) {
@@ -942,9 +1824,23 @@
                     clearSelection();
                 } else {
                     // Link to Successor
-                    if (confirm(`¿CONFIRMAR VINCULACIÓN?\n\nPredecesora: ${selectedPredecessor}\nSucesora: ${taskId}`)) {
+                    Swal.fire({
+                        title: '¿Confirmar Vinculación?',
+                        html: `<b>Predecesora:</b> ${selectedPredecessor}<br><b>Sucesora:</b> ${taskId}`,
+                        icon: 'question',
+                        showCancelButton: true,
+                        confirmButtonText: 'Vincular',
+                        cancelButtonText: 'Cancelar',
+                        customClass: {
+                            popup: 'premium-swal',
+                            confirmButton: 'premium-confirm',
+                            cancelButton: 'premium-cancel'
+                        }
+                    }).then((result) => {
+                        if (result.isConfirmed) {
                             linkTasks(selectedPredecessor, taskId);
-                    }
+                        }
+                    });
                     clearSelection();
                 } 
             }
@@ -964,15 +1860,32 @@
         }
 
         function unlinkTasks(pred, succ) {
-                fetch('/api/unlink_tasks/', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ predecessor_id: pred, successor_id: succ })
-                })
-                .then(res => res.json())
-                .then(data => {
-                    if (data.status === 'ok') window.location.reload();
-                    else alert('Error: ' + data.error);
+                Swal.fire({
+                    title: '¿Eliminar Dependencia?',
+                    text: 'Esta acción romperá el vínculo de producción entre estas dos tareas.',
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonText: 'Sí, eliminar',
+                    cancelButtonText: 'No, mantener',
+                    confirmButtonColor: '#ef4444',
+                    customClass: {
+                        popup: 'premium-swal',
+                        confirmButton: 'premium-confirm',
+                        cancelButton: 'premium-cancel'
+                    }
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        fetch('/api/unlink_tasks/', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify({ predecessor_id: pred, successor_id: succ })
+                        })
+                        .then(res => res.json())
+                        .then(data => {
+                            if (data.status === 'ok') window.location.reload();
+                            else Swal.fire('Error', data.error, 'error');
+                        });
+                    }
                 });
         }
         
@@ -1382,8 +2295,8 @@
             }
         });
         
-        // === DEPENDENCY ARROWS - GLOBAL SCOPE ===
-        const dependencies = JSON.parse('{{ dependency_map_json|escapejs }}');
+        // === DEPENDENCY ARROWS - PREMIUM IMPLEMENTATION ===
+        const dependenciesData = JSON.parse('{{ dependencies_json|safe }}');
         
         window.drawArrow = function(el1, el2, predId, succId) {
             const svgLayer = document.getElementById('dependency-layer');
@@ -1404,83 +2317,320 @@
             const x2 = rect2.left - containerRect.left + scrollLeft;
             const y2 = rect2.top + (rect2.height / 2) - containerRect.top + scrollTop;
             
-            const color = el1.dataset.color || '#00bfff';
+            const color = el1.dataset.color || '#3b82f6';
             const markerId = `arrowhead-${predId}-${succId}`;
             
-            // Create marker
+            // Create marker for arrowhead
             const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
             const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
             marker.setAttribute('id', markerId);
             marker.setAttribute('markerWidth', '10');
-            marker.setAttribute('markerHeight', '7');
+            marker.setAttribute('markerHeight', '10');
             marker.setAttribute('refX', '9');
-            marker.setAttribute('refY', '3.5');
+            marker.setAttribute('refY', '5');
             marker.setAttribute('orient', 'auto');
             
-            const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-            polygon.setAttribute('points', '0 0, 10 3.5, 0 7');
-            polygon.setAttribute('fill', color);
-            marker.appendChild(polygon);
+            const pathHead = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            pathHead.setAttribute('d', 'M0,0 L10,5 L0,10 Z');
+            pathHead.setAttribute('fill', color);
+            marker.appendChild(pathHead);
             defs.appendChild(marker);
             svgLayer.appendChild(defs);
             
-            // Create path
+            // Create the path (Bézier curve for premium look)
             const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            const midX = x1 + (x2 - x1) / 2;
-            const d = `M ${x1} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${x2} ${y2}`;
+            const cp1x = x1 + (x2 - x1) * 0.4;
+            const cp2x = x1 + (x2 - x1) * 0.6;
+            
+            const d = `M ${x1} ${y1} C ${cp1x} ${y1}, ${cp2x} ${y2}, ${x2} ${y2}`;
             
             path.setAttribute('d', d);
             path.setAttribute('stroke', color);
             path.setAttribute('stroke-width', '2');
             path.setAttribute('fill', 'none');
             path.setAttribute('marker-end', `url(#${markerId})`);
-            path.setAttribute('opacity', '0.6');
+            path.setAttribute('class', 'dependency-path');
+            path.setAttribute('opacity', '0.7');
+            path.style.transition = 'all 0.3s ease';
+            
+            // Interactive arrows
+            path.style.cursor = 'pointer';
+            path.style.pointerEvents = 'stroke';
+            
+            path.addEventListener('mouseenter', () => {
+                path.setAttribute('stroke-width', '4');
+                path.setAttribute('opacity', '1');
+            });
+            
+            path.addEventListener('mouseleave', () => {
+                path.setAttribute('stroke-width', '2');
+                path.setAttribute('opacity', '0.7');
+            });
+
+            path.addEventListener('click', (e) => {
+                unlinkTasks(predId, succId);
+            });
             
             svgLayer.appendChild(path);
         };
         
         window.drawDependencies = function() {
             const svgLayer = document.getElementById('dependency-layer');
-            if (!svgLayer) {
-                console.warn('dependency-layer not found!');
-                return;
-            }
+            const timelineArea = document.querySelector('.timeline-area');
+            if (!svgLayer || !timelineArea) return;
+            
+            if (!svgLayer.classList.contains('visible')) return;
+
+            // Sync SVG size to timeline area
+            svgLayer.style.width = timelineArea.scrollWidth + 'px';
+            svgLayer.style.height = timelineArea.scrollHeight + 'px';
             
             // Clear existing arrows
             while (svgLayer.firstChild) {
                 svgLayer.removeChild(svgLayer.firstChild);
             }
             
+            // PRE-CACHE task elements for much faster lookup
+            const taskElementsMap = {};
+            document.querySelectorAll('.task-block').forEach(el => {
+                if (el.dataset.taskId) taskElementsMap[el.dataset.taskId] = el;
+            });
+
             let count = 0;
-            dependencies.forEach(dep => {
-                const predEl = document.querySelector(`.task-block[data-task-id="${dep.pred}"]`);
-                const succEl = document.querySelector(`.task-block[data-task-id="${dep.succ}"]`);
+            // Use requestIdleCallback or chunks if dependencies exceed 500
+            const maxArrows = 1000;
+            const depsToDraw = dependenciesData.slice(0, maxArrows);
+
+            depsToDraw.forEach(dep => {
+                const predEl = taskElementsMap[dep.pred];
+                const succEl = taskElementsMap[dep.succ];
                 
                 if (predEl && succEl) {
                     window.drawArrow(predEl, succEl, dep.pred, dep.succ);
                     count++;
-                } else {
-                    console.log(`Dependency ${dep.pred} -> ${dep.succ}: pred=${!!predEl}, succ=${!!succEl}`);
                 }
             });
             
-            console.log(`Drew ${count} dependency arrows`);
+            if (dependenciesData.length > maxArrows) {
+                 console.warn(`⚠️ Demasiadas dependencias (${dependenciesData.length}). Se limitaron a las primeras ${maxArrows}.`);
+            }
+            console.log(`✅ Visualización de Dependencias: ${count} flechas generadas.`);
         };
         
-        // Draw on load and resize
-        document.addEventListener('DOMContentLoaded', function() {
-            setTimeout(() => {
-                if (typeof window.drawDependencies === 'function') {
-                    window.drawDependencies();
+        // Initial drawing and events
+        document.addEventListener('DOMContentLoaded', () => {
+            setTimeout(window.drawDependencies, 800);
+
+            // --- Analysis Dashboard Toggles ---
+            const btnBottlenecks = document.getElementById('btn-toggle-bottlenecks');
+            const btnAlerts = document.getElementById('btn-toggle-alerts');
+            const rowAnalysis = document.getElementById('analysis-row');
+            const colBottlenecks = document.getElementById('col-bottlenecks');
+            const colAlerts = document.getElementById('col-alerts');
+
+            function updateAnalysisRow() {
+                if (!colBottlenecks || !colAlerts || !rowAnalysis) return;
+                if (colBottlenecks.classList.contains('d-none') && colAlerts.classList.contains('d-none')) {
+                    rowAnalysis.classList.add('d-none');
                 } else {
-                    console.warn('drawDependencies function not found!');
+                    rowAnalysis.classList.remove('d-none');
                 }
-            }, 500);
+            }
+
+            if (btnBottlenecks) {
+                btnBottlenecks.addEventListener('click', function() {
+                    colBottlenecks.classList.toggle('d-none');
+                    this.classList.toggle('active-glass');
+                    updateAnalysisRow();
+                });
+            }
+
+            if (btnAlerts) {
+                btnAlerts.addEventListener('click', function() {
+                    colAlerts.classList.toggle('d-none');
+                    this.classList.toggle('active-glass');
+                    updateAnalysisRow();
+                });
+            }
+
+            // Arrow Toggle logic
+            const btnArrows = document.getElementById('btn-toggle-arrows');
+            const svgLayer = document.getElementById('dependency-layer');
+            if (btnArrows && svgLayer) {
+                btnArrows.addEventListener('click', function() {
+                    svgLayer.classList.toggle('visible');
+                    this.classList.toggle('active-glass');
+                    if (svgLayer.classList.contains('visible')) {
+                        window.drawDependencies();
+                    }
+                });
+            }
+            
+            // Sync scroll for body and header
+            const bodyScroll = document.getElementById('gantt-body-scroll');
+            const headerScroll = document.getElementById('gantt-header-scroll');
+            if (bodyScroll && headerScroll) {
+                bodyScroll.addEventListener('scroll', () => {
+                    headerScroll.scrollLeft = bodyScroll.scrollLeft;
+                    // Redraw arrows on scroll if they feel "stuck"
+                });
+            }
+            
+            // --- SCENARIO MANAGEMENT (moved inside DOMContentLoaded) ---
+            const btnCreateDraft = document.getElementById('btn-create-draft');
+            if (btnCreateDraft) {
+                btnCreateDraft.addEventListener('click', async function() {
+                    const { value: nombre } = await Swal.fire({
+                        title: 'Nuevo Borrador',
+                        input: 'text',
+                        inputLabel: 'Nombre del escenario:',
+                        inputPlaceholder: 'Ej: Plan de Contingencia A',
+                        showCancelButton: true,
+                        confirmButtonText: 'Crear',
+                        customClass: {
+                            popup: 'premium-swal',
+                            confirmButton: 'premium-confirm',
+                            cancelButton: 'premium-cancel'
+                        }
+                    });
+
+                    if (!nombre) return;
+                    
+                    const currentScenarioId = document.getElementById('scenario-selector').value;
+                    
+                    fetch('/api/scenarios/create/', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            nombre: nombre,
+                            descripcion: `Borrador creado el ${new Date().toLocaleString()}`,
+                            copy_from_id: currentScenarioId
+                        })
+                    })
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.status === 'ok') {
+                            alert(`Escenario "${data.scenario.nombre}" creado exitosamente!`);
+                            const url = new URL(window.location.href);
+                            url.searchParams.set('scenario_id', data.scenario.id);
+                            url.searchParams.set('run', '1');
+                            window.location.href = url.toString();
+                        } else {
+                            alert('Error: ' + (data.error || 'Desconocido'));
+                        }
+                    })
+                    .catch(e => alert('Error de red: ' + e));
+                });
+            }
+            
+            const btnPublish = document.getElementById('btn-publish-scenario');
+            if (btnPublish) {
+                btnPublish.addEventListener('click', function() {
+                    const scenarioId = document.getElementById('scenario-selector').value;
+                    const scenarioName = document.getElementById('scenario-selector').selectedOptions[0].text;
+
+                    Swal.fire({
+                        title: '¿Publicar Escenario?',
+                        html: `¿Convertir <b>"${scenarioName}"</b> en el Plan Oficial?<br><br>Esto lo hará visible para toda la planta.`,
+                        icon: 'question',
+                        showCancelButton: true,
+                        confirmButtonText: 'Sí, Publicar',
+                        confirmButtonColor: '#10b981',
+                        customClass: {
+                            popup: 'premium-swal',
+                            confirmButton: 'premium-confirm',
+                            cancelButton: 'premium-cancel'
+                        }
+                    }).then((result) => {
+                        if (!result.isConfirmed) return;
+                        
+                        fetch(`/api/scenarios/${scenarioId}/publish/`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' }
+                        })
+                        .then(r => r.json())
+                        .then(data => {
+                            if (data.status === 'ok') {
+                                Swal.fire({
+                                    title: '¡Publicado!',
+                                    text: 'El plan ha sido actualizado exitosamente.',
+                                    icon: 'success',
+                                    timer: 2000,
+                                    showConfirmButton: false,
+                                    customClass: { popup: 'premium-swal' }
+                                }).then(() => location.reload());
+                            } else {
+                                Swal.fire('Error', data.error, 'error');
+                            }
+                        });
+                    });
+                });
+            }
+            
+            const btnDelete = document.getElementById('btn-delete-scenario');
+            if (btnDelete) {
+                btnDelete.addEventListener('click', function() {
+                    const scenarioId = document.getElementById('scenario-selector').value;
+                    const scenarioName = document.getElementById('scenario-selector').selectedOptions[0].text;
+
+                    Swal.fire({
+                        title: '¿Eliminar Escenario?',
+                        text: `¿Estás seguro de eliminar "${scenarioName}"? Esta acción no se puede deshacer.`,
+                        icon: 'warning',
+                        showCancelButton: true,
+                        confirmButtonText: 'Sí, eliminar',
+                        confirmButtonColor: '#ef4444',
+                        customClass: {
+                            popup: 'premium-swal',
+                            confirmButton: 'premium-confirm',
+                            cancelButton: 'premium-cancel'
+                        }
+                    }).then((result) => {
+                        if (!result.isConfirmed) return;
+                        
+                        fetch(`/api/scenarios/${scenarioId}/delete/`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' }
+                        })
+                        .then(r => r.json())
+                        .then(data => {
+                            if (data.status === 'ok') {
+                                window.location.href = window.location.pathname + "?run=1";
+                            } else {
+                                Swal.fire('Error', data.error, 'error');
+                            }
+                        });
+                    });
+                });
+            }
+            
+            const scenarioSelector = document.getElementById('scenario-selector');
+            if (scenarioSelector) {
+                scenarioSelector.addEventListener('change', function() {
+                    const scenarioId = this.value;
+                    const url = new URL(window.location.href);
+                    url.searchParams.set('scenario_id', scenarioId);
+                    url.searchParams.set('run', '1');
+                    window.location.href = url.toString();
+                });
+            }
         });
         
-        window.addEventListener('resize', function() {
-            if (typeof window.drawDependencies === 'function') {
-                window.drawDependencies();
+        window.addEventListener('resize', window.drawDependencies);
+
+        // --- TOOLTIP SMART POSITIONING ---
+        document.addEventListener('mouseover', function(e) {
+            const block = e.target.closest('.task-block');
+            if (block) {
+                const rect = block.getBoundingClientRect();
+                const tooltipWidth = 350; // Margen para el tooltip de 330px
+                const spaceRight = window.innerWidth - rect.right;
+                
+                if (spaceRight < tooltipWidth) {
+                    block.classList.add('tooltip-flip');
+                } else {
+                    block.classList.remove('tooltip-flip');
+                }
             }
         });
     </script>

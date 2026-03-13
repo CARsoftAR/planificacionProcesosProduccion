@@ -26,6 +26,9 @@ urlpatterns = [
     # Navigation
     path('planificacion/', views.planificacion_list, name='planificacion_view'),
     path('planificacion/visual/', views.planificacion_visual, name='planificacion_visual'),
+    path('proyectos/prioridades/', views.proyectos_prioridades, name='proyectos_prioridades'),
+    path('planillas_diarias/', views.planillas_diarias, name='planillas_diarias'),
+    path('api/proyectos/update_prioridad/', views.update_proyecto_prioridad, name='update_proyecto_prioridad'),
     path('api/move_task/', views.move_task, name='move_task'),
     path('api/update_manual_time/', views.update_manual_time, name='update_manual_time'),
     path('api/update_manual_nivel/', views.update_manual_nivel, name='update_manual_nivel'),
@@ -35,5 +38,14 @@ urlpatterns = [
     path('api/export_excel/', views.export_planificacion_excel, name='export_planificacion_excel'),
     path('api/hide_task/', views.hide_task, name='hide_task'),
     path('api/reset_planning/', views.reset_planning, name='reset_planning'),
+    
+    # Scenario Management
+    path('api/scenarios/create/', views.create_scenario, name='create_scenario'),
+    path('api/scenarios/<int:scenario_id>/delete/', views.delete_scenario, name='delete_scenario'),
+    path('api/scenarios/<int:scenario_id>/publish/', views.publish_scenario, name='publish_scenario'),
+    
+    # Statistics
+    path('estadisticas/', views.estadisticas_produccion, name='estadisticas_produccion'),
+
     path('', views.main_menu, name='home'),
 ]

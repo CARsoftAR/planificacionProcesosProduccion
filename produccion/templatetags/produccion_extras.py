@@ -15,6 +15,17 @@ def multiply(value, arg):
         return 0
 
 @register.filter
+def divide(value, arg):
+    """Divides the value by the arg"""
+    try:
+        f_arg = float(arg)
+        if f_arg == 0:
+            return 0
+        return float(value) / f_arg
+    except (ValueError, TypeError):
+        return 0
+
+@register.filter
 def time_diff_hours(value, arg):
     """Returns difference in hours between two datetimes (value - arg)"""
     try:
@@ -25,24 +36,38 @@ def time_diff_hours(value, arg):
 
 @register.filter
 def string_to_color(value):
-    """Generates a distinct hex color code from a string using HSL color space."""
+    """
+    Generates a visually distinct hex color for each project code.
+    
+    Uses a golden-ratio hue distribution to maximize visual separation
+    between any two projects, even with similar names like '26-002' and '26-003'.
+    
+    The golden angle (~137.5°) ensures consecutive indices are spread
+    maximally around the 360° color wheel.
+    """
     if not value:
-        return "#0d6efd" # Default Blue
+        return "#3b82f6" # Default Blue
     
-    # Generate hash from string
-    hash_val = 0
-    for char in str(value):
-        hash_val = ord(char) + ((hash_val << 5) - hash_val)
+    value = str(value).strip()
     
-    # Use hash to generate HSL values for pastel colors
-    # Hue: 0-360 degrees (full color spectrum)
-    hue = abs(hash_val) % 360
+    # Step 1: Generate a robust hash that amplifies small differences.
+    # We use multiple rounds of mixing to decorrelate similar inputs.
+    hash_val = 5381
+    for i, char in enumerate(value):
+        # Mix position into hash to differentiate "26-002" from "26-020"
+        hash_val = ((hash_val * 33) ^ ord(char) ^ (i * 7)) & 0xFFFFFFFF
+    # Extra mixing rounds (avalanche effect)
+    hash_val = ((hash_val ^ (hash_val >> 16)) * 0x45d9f3b) & 0xFFFFFFFF
+    hash_val = ((hash_val ^ (hash_val >> 13)) * 0x119de1f3) & 0xFFFFFFFF
+    hash_val = (hash_val ^ (hash_val >> 16)) & 0xFFFFFFFF
     
-    # Saturation: 70-100% (vibrant colors)
-    saturation = 70 + (abs(hash_val >> 8) % 30)
+    # Step 2: Use golden ratio to distribute hue evenly
+    GOLDEN_RATIO = 0.618033988749895
+    hue = ((hash_val * GOLDEN_RATIO) % 1.0) * 360.0
     
-    # Lightness: 40-55% (darker colors for better visibility/contrast with white text)
-    lightness = 40 + (abs(hash_val >> 16) % 15)
+    # Step 3: Vary saturation and lightness slightly for more variety
+    saturation = 70 + (hash_val % 25)       # 70-94%
+    lightness  = 38 + ((hash_val >> 8) % 15) # 38-52%
     
     # Convert HSL to RGB
     h = hue / 360.0
@@ -66,10 +91,5 @@ def string_to_color(value):
         g = hue_to_rgb(p, q, h)
         b = hue_to_rgb(p, q, h - 1/3)
     
-    # Convert to hex
-    r_hex = int(r * 255)
-    g_hex = int(g * 255)
-    b_hex = int(b * 255)
-    
-    return f"#{r_hex:02x}{g_hex:02x}{b_hex:02x}"
+    return f"#{int(r*255):02x}{int(g*255):02x}{int(b*255):02x}"
 

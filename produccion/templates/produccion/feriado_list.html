@@ -6,6 +6,7 @@
     <title>Días Festivos - Sistema de Planificación</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
         :root {
             --primary-color: #2563eb;
@@ -396,6 +397,67 @@
             margin-bottom: 1.5rem;
             font-size: 0.875rem;
         }
+
+        /* Modern SweetAlert2 Custom Styles */
+        .swal2-popup.premium-swal {
+            border-radius: 20px;
+            padding: 2.5rem;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+        }
+        .swal2-title {
+            font-weight: 800;
+            color: #1e293b;
+            font-size: 1.6rem;
+            margin-bottom: 1rem;
+        }
+        .swal2-html-container {
+            color: #64748b;
+            font-size: 1.05rem;
+            line-height: 1.6;
+        }
+        .swal2-confirm.premium-confirm {
+            border-radius: 50px !important;
+            padding: 12px 35px !important;
+            font-weight: 600 !important;
+            font-size: 0.95rem !important;
+            box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3) !important;
+        }
+        .swal2-cancel.premium-cancel {
+            border-radius: 50px !important;
+            padding: 12px 35px !important;
+            font-weight: 600 !important;
+            font-size: 0.95rem !important;
+            background: #f1f5f9 !important;
+            color: #475569 !important;
+        }
+        .swal2-icon {
+            border: none !important;
+            width: 100px !important;
+            height: 100px !important;
+            margin: 0 auto 1.5rem !important;
+            border-radius: 50% !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            background: #f8fafc !important;
+        }
+        .swal2-icon.swal2-warning {
+            background: rgba(245, 158, 11, 0.1) !important;
+            color: #f59e0b !important;
+        }
+        .swal2-icon.swal2-error {
+            background: rgba(239, 68, 68, 0.1) !important;
+            color: #ef4444 !important;
+        }
+        .swal2-icon.swal2-success {
+            background: rgba(16, 185, 129, 0.1) !important;
+            color: #10b981 !important;
+        }
+        .swal2-icon.swal2-question {
+            background: rgba(59, 130, 246, 0.1) !important;
+            color: #3b82f6 !important;
+        }
     </style>
 </head>
 <body>
@@ -500,7 +562,7 @@
                                     </label>
                                 </td>
                                 <td style="text-align: center;">
-                                    <form method="post" action="{% url 'feriado_delete' feriado.pk %}" style="display: inline;" onsubmit="return confirm('¿Está seguro de eliminar este feriado?');">
+                                    <form method="post" action="{% url 'feriado_delete' feriado.pk %}" style="display: inline;" onsubmit="confirmFeriadoDelete(event);">
                                         {% csrf_token %}
                                         <button type="submit" class="btn-delete" title="Eliminar">
                                             <i class="bi bi-trash"></i>
@@ -642,6 +704,29 @@
                 }
             }
             return cookieValue;
+        }
+        async function confirmFeriadoDelete(event) {
+            event.preventDefault();
+            const form = event.target;
+            
+            const result = await Swal.fire({
+                title: '¿Eliminar Feriado?',
+                text: '¿Está seguro de que desea eliminar este feriado? Esto afectará los cálculos de planificación.',
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'Sí, eliminar',
+                cancelButtonText: 'Cancelar',
+                confirmButtonColor: '#ef4444',
+                customClass: {
+                    popup: 'premium-swal',
+                    confirmButton: 'premium-confirm',
+                    cancelButton: 'premium-cancel'
+                }
+            });
+
+            if (result.isConfirmed) {
+                form.submit();
+            }
         }
     </script>
 </body>

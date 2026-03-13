@@ -4,23 +4,33 @@ Este archivo rastrea las decisiones de diseño, las pruebas realizadas y las fun
 
 ## Estado Actual
 **Fecha:** 18 de Diciembre, 2025
-**Objetivo:** Implementar "Gestión de Dependencias entre Tareas" - 🔄 **OPCIÓN A IMPLEMENTADA**
+**Objetivo:** Implementar "Gestión de Dependencias" y "Pinning Manual" (Fijar Tareas)
+
 
 ## Opciones de Implementación Evaluadas
 
 ### Opción A: Automática (Basado en Número de Operación) ✅ **IMPLEMENTADA**
 *   **Descripción:** Usar el campo `NumeroOperacion` del SQL Server para vincular tareas secuencialmente de forma automática.
 *   **Lógica:** Dentro de cada orden (Mstnmbr), las operaciones se vinculan automáticamente: Op10 → Op20 → Op30 → Op40
-*   **Estado:** **ACTIVA** - Implementada el 18/12/2025
+*   **Estado:** **DESACTIVADA** - Se detectó que la columna `NumeroOperacion` en SQL Server viene en 0.
+
 *   **Ventajas:**
     - ✅ Completamente automática - sin intervención del usuario
     - ✅ Basada en datos existentes en SQL Server
     - ✅ Lógica estándar de manufactura
     - ✅ Simple y directa
 
-### Opción B: Basado en Recetas (Rutas Maestras)
-*   **Descripción:** Definir rutas estándar por producto.
-*   **Estado:** No implementada (Opción A selected).
+### Opción B: Automática por Nivel (Decreciente) ✅ **IMPLEMENTADA**
+*   **Descripción:** Usar `Nivel_Planificacion` (o `Nivel`) para ordenar la secuencia.
+*   **Lógica:** Nivel Mayor = Operación Anterior. (Ej: Nivel 3 -> Nivel 2 -> Nivel 1).
+*   **Estado:** **ACTIVA** - Implementada como reemplazo de Opción A.
+*   **Ventajas:** Utiliza la estructura de árbol del producto (BOM) ya definida en el ERP.
+
+### Opción C: Pinning Manual (Fijar Fecha/Hora) ✅ **IMPLEMENTADA**
+*   **Descripción:** El usuario puede arrastrar una tarea a una fecha/hora específica (Drag & Drop).
+*   **Lógica:** Se guarda en tabla local `PrioridadManual.fecha_inicio_manual`. El algoritmo de planificación fuerza el inicio en esa fecha, respetando horarios laborales (o saltando al siguiente si cae en feriado/no laboral).
+*   **Estado:** **ACTIVA**.
+
 
 ### Opción C: Manual (Visual) - ❌ **DESACTIVADA**
 *   **Descripción:** El usuario crea vínculos manualmente desde la interfaz visual (Gantt).
@@ -95,8 +105,7 @@ Dependencias Automáticas:
 - **Performance:** Dos pasadas aseguran que dependencias funcionen correctamente incluso cross-machine
 - **Logs:** Mensajes de consola muestran cada dependencia creada automáticamente
 
-## Próximos Pasos (Opcional)
+- [ ] Agregar indicador visual (📌) en el Gantt para tareas fijadas manualmente.
+- [ ] Implementar UI para "Modo Magnético" vs "Modo Libre" (Pinning).
+- [ ] Validar comportamiento de pinning en días no laborales (actualmente salta al siguiente hábil).
 
-- [ ] Agregar toggle UI para activar/desactivar dependencias automáticas
-- [ ] Implementar Opción B (Recetas Maestras) para casos más complejos
-- [ ] Permitir excepciones manuales a las dependencias automáticas

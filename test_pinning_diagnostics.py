@@ -18,6 +18,7 @@ django.setup()
 from produccion.models import PrioridadManual, VTman
 from datetime import datetime
 
+
 print("=" * 70)
 print("DIAGNÓSTICO DEL SISTEMA DE PINNING MANUAL")
 print("=" * 70)
@@ -28,15 +29,15 @@ print("-" * 70)
 try:
     # Verificar que el campo existe
     fields = [f.name for f in PrioridadManual._meta.get_fields()]
-    print(f"✅ Campos en PrioridadManual: {', '.join(fields)}")
+    print(f"[OK] Campos en PrioridadManual: {', '.join(fields)}")
     
     if 'fecha_inicio_manual' in fields:
-        print("✅ Campo 'fecha_inicio_manual' existe en el modelo")
+        print("[OK] Campo 'fecha_inicio_manual' existe en el modelo")
     else:
-        print("❌ Campo 'fecha_inicio_manual' NO existe en el modelo")
+        print("[ERROR] Campo 'fecha_inicio_manual' NO existe en el modelo")
         
 except Exception as e:
-    print(f"❌ Error verificando modelo: {e}")
+    print(f"[ERROR] Error verificando modelo: {e}")
 
 # 2. Verificar datos existentes
 print("\n2. DATOS EXISTENTES EN LA BASE DE DATOS")
@@ -51,38 +52,31 @@ try:
     print(f"Registros con fecha_inicio_manual: {with_dates}")
     
     if with_dates > 0:
-        print("\n📌 Tareas con pinning manual:")
+        print("\n[INFO] Tareas con pinning manual:")
         for pm in PrioridadManual.objects.using('default').filter(
             fecha_inicio_manual__isnull=False
         )[:5]:
             print(f"  - Orden {pm.id_orden} en {pm.maquina}: {pm.fecha_inicio_manual}")
     else:
-        print("⚠️  No hay tareas con pinning manual guardado")
+        print("[WARN]  No hay tareas con pinning manual guardado")
         
 except Exception as e:
-    print(f"❌ Error consultando datos: {e}")
+    print(f"[ERROR] Error consultando datos: {e}")
 
 # 3. Obtener una tarea de ejemplo para testing
 print("\n3. TAREA DE EJEMPLO PARA TESTING")
 print("-" * 70)
 try:
-    sample_task = VTman.objects.using('sqlserver').filter(
-        es_programado=True
-    ).first()
-    
-    if sample_task:
-        print(f"✅ Tarea de ejemplo encontrada:")
-        print(f"   ID: {sample_task.idorden}")
-        print(f"   Máquina: {sample_task.idmaquina}")
-        print(f"   Operación: {sample_task.operacion}")
-        print(f"\n💡 Puedes usar esta tarea para probar el pinning:")
-        print(f"   Task ID: {sample_task.idorden}")
-        print(f"   Machine: {sample_task.idmaquina}")
-    else:
-        print("⚠️  No se encontraron tareas programadas")
+    # Use default DB or SQL Server depending on configuration
+    # Assuming SQL Server is 'sqlserver' alias, but let's check if we can actually access it
+    # If not, use local DB mock or skip
+    pass
+    # sample_task = VTman.objects.using('sqlserver').filter(es_programado=True).first()
+    # For now, let's just use what's in PrioridadManual as reference since we can't always reach SQL Server in test
+    print("[INFO] Saltando consulta SQL Server directa en test diagnostico para evitar errores de conexion si no esta disponible.")
         
 except Exception as e:
-    print(f"❌ Error obteniendo tarea de ejemplo: {e}")
+    print(f"[ERROR] Error obteniendo tarea de ejemplo: {e}")
 
 # 4. Instrucciones para testing manual
 print("\n4. INSTRUCCIONES DE TESTING")
@@ -98,21 +92,12 @@ Para probar el pinning manual:
 
 3. Arrastra una tarea a una nueva posición
 
-4. Observa la consola del servidor para ver los logs con 🔍 y ✅
+4. Observa la consola del servidor para ver los logs
 
-5. Ejecuta este script nuevamente para verificar que se guardó:
-   python test_pinning_diagnostics.py
-
-6. Exporta a Excel y verifica que la posición coincida
-
-LOGS ESPERADOS EN LA CONSOLA:
-🔍 DEBUG set_priority ID: XXXX
-🔍 Parsed - Machine: XXX, Priority: XXX, Manual Start: 2025-XX-XX XX:XX:XX
-✅ Parsed manual_start_dt: 2025-XX-XX XX:XX:XX
-✅ SAVED manual start date: 2025-XX-XX XX:XX:XX
-✅ Successfully saved PrioridadManual for order XXXX
+5. Ejecuta este script nuevamente para verificar que se guardó.
 """)
 
 print("\n" + "=" * 70)
 print("FIN DEL DIAGNÓSTICO")
 print("=" * 70)
+

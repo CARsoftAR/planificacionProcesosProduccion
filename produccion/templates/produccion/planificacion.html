@@ -10,6 +10,73 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <style>
+        /* Modern SweetAlert2 Custom Styles */
+        .swal2-popup.premium-swal {
+            border-radius: 20px;
+            padding: 2.5rem;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+        }
+        .swal2-title {
+            font-weight: 800;
+            color: #1e293b;
+            font-size: 1.6rem;
+            margin-bottom: 1rem;
+        }
+        .swal2-html-container {
+            color: #64748b;
+            font-size: 1.05rem;
+            line-height: 1.6;
+        }
+        .swal2-confirm.premium-confirm {
+            border-radius: 50px !important;
+            padding: 12px 35px !important;
+            font-weight: 600 !important;
+            font-size: 0.95rem !important;
+            box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3) !important;
+        }
+        .swal2-cancel.premium-cancel {
+            border-radius: 50px !important;
+            padding: 12px 35px !important;
+            font-weight: 600 !important;
+            font-size: 0.95rem !important;
+            background: #f1f5f9 !important;
+            color: #475569 !important;
+        }
+        .swal2-icon {
+            border: none !important;
+            width: 100px !important;
+            height: 100px !important;
+            margin: 0 auto 1.5rem !important;
+            border-radius: 50% !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            background: #f8fafc !important;
+        }
+        .swal2-icon.swal2-warning {
+            background: rgba(245, 158, 11, 0.1) !important;
+            color: #f59e0b !important;
+        }
+        .swal2-icon.swal2-error {
+            background: rgba(239, 68, 68, 0.1) !important;
+            color: #ef4444 !important;
+        }
+        .swal2-icon.swal2-success {
+            background: rgba(16, 185, 129, 0.1) !important;
+            color: #10b981 !important;
+        }
+        .swal2-icon.swal2-question {
+            background: rgba(59, 130, 246, 0.1) !important;
+            color: #3b82f6 !important;
+        }
+        .swal2-icon.swal2-info {
+            background: rgba(59, 130, 246, 0.1) !important;
+            color: #3b82f6 !important;
+        }
+    </style>
 </head>
 <body>
     <div class="container-fluid mt-4">
@@ -18,6 +85,12 @@
             <div class="d-flex gap-2">
                 <a href="{% url 'home' %}" class="btn btn-outline-secondary">
                     <i class="fas fa-home me-1"></i> Menú
+                </a>
+                <a href="javascript:void(0)" onclick="openPlanillasDiarias()" class="btn btn-warning text-dark fw-bold">
+                    <i class="fas fa-file-alt me-1"></i> Planillas Diarias
+                </a>
+                <a href="javascript:void(0)" onclick="openProjectPriorities()" class="btn btn-info text-white">
+                    <i class="fas fa-sort-numeric-down me-1"></i> Prioridades de Proyecto
                 </a>
                 <a href="javascript:void(0)" onclick="openGantt(this)" class="btn btn-success">
                     <i class="fas fa-chart-gantt me-1"></i> Ver Gantt
@@ -31,21 +104,100 @@
         <!-- Filtros -->
         <div class="card mb-4">
             <div class="card-body">
-                <form method="GET" class="row g-3 align-items-end">
-                    <div class="col-md-9">
+                <form method="GET" id="plan-filter-form" class="row g-3 align-items-end">
+                    <div class="col-md-7">
                         <label for="proyectos" class="form-label">Proyectos (separados por coma):</label>
                         <div class="input-group">
-                            <input type="text" name="proyectos" id="proyectos" class="form-control" value="{{ request.GET.proyectos }}" placeholder="Ej: 25-001, 23-145">
+                            <input type="text" name="proyectos" id="proyectos" class="form-control" value="{{ proyectos_value|default:'' }}" placeholder="Ej: 25-001, 23-145">
                             <button type="submit" class="btn btn-primary">Filtrar</button>
                             {% if search_active %}
                             <button type="button" id="btnCleanTable" class="btn btn-warning" title="Limpiar todos los movimientos manuales y volver al original">
                                 <i class="fas fa-undo"></i> Restablecer Plan
                             </button>
                             {% endif %}
-                            <a href="{% url 'home' %}" class="btn btn-outline-secondary" title="Volver al Menú Principal"><i class="fas fa-home"></i></a>
+                        </div>
+                    </div>
+                    <div class="col-md-5">
+                        <label for="scenario_id" class="form-label">Escenarios Guardados:</label>
+                        <div class="input-group">
+                            <select name="scenario_id" id="scenario-selector" class="form-select">
+                                <option value="">-- Seleccionar Escenario --</option>
+                                {% for scenario in all_scenarios %}
+                                <option value="{{ scenario.id }}" 
+                                        data-proyectos="{{ scenario.proyectos|default:'' }}"
+                                        {% if active_scenario_id == scenario.id %}selected{% endif %}>
+                                    {{ scenario.nombre }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                            <button type="button" id="btnSaveScenario" class="btn btn-outline-success" title="Guardar lista de proyectos y movimientos actuales">
+                                <i class="fas fa-save"></i> Guardar
+                            </button>
                         </div>
                     </div>
                 </form>
+            </div>
+        </div>
+
+        <!-- Modal Guardar Escenario -->
+        <div class="modal fade" id="saveScenarioModal" tabindex="-1" aria-labelledby="saveScenarioModalLabel" aria-hidden="true">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header bg-success text-white">
+                        <h5 class="modal-title" id="saveScenarioModalLabel">
+                            <i class="fas fa-save me-2"></i>Guardar Escenario
+                        </h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="mb-4">
+                            <label class="form-label fw-bold">Elija una opción:</label>
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="radio" name="saveOption" id="radioNew" value="new" checked>
+                                <label class="form-check-label" for="radioNew">
+                                    <i class="fas fa-plus-circle me-1 text-primary"></i>Crear uno nuevo
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="saveOption" id="radioExisting" value="existing">
+                                <label class="form-check-label" for="radioExisting">
+                                    <i class="fas fa-edit me-1 text-warning"></i>Sobrescribir existente
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <div id="divNewScenario">
+                            <div class="mb-3">
+                                <label for="newScenarioName" class="form-label">Nombre del nuevo escenario:</label>
+                                <input type="text" class="form-control" id="newScenarioName" placeholder="Ej: Plan Alternativo B">
+                            </div>
+                        </div>
+                        
+                        <div id="divExistingScenario" style="display: none;">
+                            <div class="mb-3">
+                                <label for="existingScenarioSelect" class="form-label">Seleccionar escenario a sobrescribir:</label>
+                                <select class="form-select" id="existingScenarioSelect">
+                                    <option value="">-- Seleccionar --</option>
+                                    {% for scenario in all_scenarios %}
+                                        {% if not scenario.es_principal %}
+                                            <option value="{{ scenario.id }}">{{ scenario.nombre }}</option>
+                                        {% endif %}
+                                    {% endfor %}
+                                </select>
+                                <div class="form-text text-danger mt-2">
+                                    <i class="fas fa-exclamation-triangle me-1"></i>
+                                    Atención: Se perderán los movimientos previos del escenario seleccionado.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer bg-light">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="button" class="btn btn-success" id="btnConfirmSave">
+                            <i class="fas fa-check me-1"></i>Confirmar Guardado
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -54,13 +206,15 @@
             {% for machine in machines %}
             <li class="nav-item" role="presentation">
                 <button class="nav-link {% if forloop.first %}active{% endif %}" 
-                        id="tab-{{ forloop.counter }}" 
+                        id="{{ machine|slugify }}-tab" 
                         data-bs-toggle="tab" 
-                        data-bs-target="#content-{{ forloop.counter }}" 
+                        data-bs-target="#{{ machine|slugify }}" 
+                        data-machine="{{ machine }}"
                         type="button" 
                         role="tab" 
                         aria-selected="{% if forloop.first %}true{% else %}false{% endif %}">
                     {{ machine }}
+                    <span class="badge bg-secondary ms-1">{{ grouped_data|get_item:machine|length }}</span>
                 </button>
             </li>
             {% endfor %}
@@ -70,9 +224,9 @@
         <div class="tab-content" id="myTabContent">
             {% for machine in machines %}
             <div class="tab-pane fade {% if forloop.first %}show active{% endif %}" 
-                 id="content-{{ forloop.counter }}" 
+                 id="{{ machine|slugify }}" 
                  role="tabpanel" 
-                 aria-labelledby="tab-{{ forloop.counter }}">
+                 aria-labelledby="{{ machine|slugify }}-tab">
                 
                 <div class="machine-header bg-primary text-white p-2 mb-0 mt-3">
                     <h5 class="m-0 text-center">{{ machine }}</h5>
@@ -130,10 +284,10 @@
                                 <td>{{ item.MAQUINAD }}</td>
                                 <td class="text-end bg-warning-lighter">{{ item.Tiempo|floatformat:2 }}</td>
                                 <td class="text-end bg-warning-lighter">{{ item.Tiempo_Logrado|floatformat:2 }}</td>
-                                <td class="text-end">{{ item.Cantidad|floatformat:2 }}</td>
-                                <td class="text-end">{{ item.Cantidadpp|floatformat:2 }}</td>
+                                <td class="text-end">{{ item.Cantidad|floatformat }}</td>
+                                <td class="text-end">{{ item.Cantidadpp|floatformat }}</td>
                                 <td class="text-end bg-warning-lighter fw-bold">
-                                    {{ item.CantidadesPendientes|floatformat:2 }}
+                                    {{ item.CantidadesPendientes|floatformat }}
                                 </td>
                                 <!-- Verify if 'Tiempo' is the Tiempo Proceso or if we need another field -->
                                 <td class="text-end fw-bold editable-time" 
@@ -200,8 +354,21 @@
                 params.delete('proyectos');
             }
 
+            params.set('run', '1');
+
             // Redirect
             window.location.href = "{% url 'planificacion_visual' %}?" + params.toString();
+        }
+
+        function openProjectPriorities() {
+            const params = new URLSearchParams(window.location.search);
+            window.location.href = "{% url 'proyectos_prioridades' %}?" + params.toString();
+        }
+
+        function openPlanillasDiarias() {
+            const params = new URLSearchParams(window.location.search);
+            params.set('run', '1'); // Force run calculation
+            window.location.href = "{% url 'planillas_diarias' %}?" + params.toString();
         }
 
         document.addEventListener('DOMContentLoaded', function() {
@@ -209,36 +376,80 @@
             const btnClean = document.getElementById('btnCleanTable');
             if (btnClean) {
                 btnClean.addEventListener('click', async function() {
-                    if (!confirm('¿Está seguro de RESTABLECER la planificación?\n\n- Se borrarán todos los movimientos manuales.\n- Se restaurarán las prioridades originales.\n- Reaparecerán tareas ocultas.\n\nEsto devolverá la vista al estado original del ERP.')) {
-                        return;
-                    }
+                    const result = await Swal.fire({
+                        title: '¿RESTABLECER planificación?',
+                        html: `
+                            <div class="text-start mt-3">
+                                <div class="d-flex align-items-center mb-2">
+                                    <i class="fas fa-trash-alt text-danger me-2"></i>
+                                    <span>Se borrarán todos los movimientos manuales.</span>
+                                </div>
+                                <div class="d-flex align-items-center mb-2">
+                                    <i class="fas fa-history text-primary me-2"></i>
+                                    <span>Se restaurarán las prioridades originales.</span>
+                                </div>
+                                <div class="d-flex align-items-center mb-2">
+                                    <i class="fas fa-eye text-success me-2"></i>
+                                    <span>Reaparecerán tareas ocultas.</span>
+                                </div>
+                                <hr>
+                                <p class="text-muted small mb-0">Esta acción devolverá la planificación al estado original del ERP.</p>
+                            </div>
+                        `,
+                        icon: 'warning',
+                        showCancelButton: true,
+                        confirmButtonText: 'Sí, Restablecer',
+                        cancelButtonText: 'Cancelar',
+                        confirmButtonColor: '#ef4444',
+                        customClass: {
+                            popup: 'premium-swal',
+                            confirmButton: 'premium-confirm',
+                            cancelButton: 'premium-cancel'
+                        }
+                    });
+
+                    if (!result.isConfirmed) return;
                     
                     // Collect all IDs on the screen (from all tabs)
                     // We can query all rows with data-id attribute
                     const allRows = document.querySelectorAll('tr[data-id]');
                     const ids = Array.from(allRows).map(r => r.dataset.id);
                     
-                    if (ids.length === 0) {
-                        alert("No hay tareas para restablecer.");
-                        return;
-                    }
-
                     try {
+                        const proyectosInput = document.getElementById('proyectos');
+                        const projVal = proyectosInput ? proyectosInput.value : '';
+                        const scenarioId = new URLSearchParams(window.location.search).get('scenario_id');
+
                         const response = await fetch('/api/reset_planning/', {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json',
                                 'X-CSRFToken': '{{ csrf_token }}'
                             },
-                            body: JSON.stringify({ ids: ids })
+                            body: JSON.stringify({ 
+                                ids: ids, 
+                                scenario_id: scenarioId,
+                                proyectos: projVal
+                            })
                         });
                         
                         if (response.ok) {
-                            alert("Planificación restablecida exitosamente.");
-                            window.location.reload();
+                            Swal.fire({
+                                title: '¡Restablecido!',
+                                text: 'La planificación ha vuelto a su estado original.',
+                                icon: 'success',
+                                timer: 2000,
+                                showConfirmButton: false,
+                                customClass: { popup: 'premium-swal' }
+                            }).then(() => window.location.reload());
                         } else {
                             const data = await response.json();
-                            alert("Error al restablecer: " + (data.error || "Desconocido"));
+                            Swal.fire({
+                                title: 'Error',
+                                text: data.error || "No se pudo restablecer el plan.",
+                                icon: 'error',
+                                customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                            });
                         }
                     } catch (e) {
                         console.error(e);
@@ -281,9 +492,10 @@
                     const row = this.closest('tr');
                     const idOrden = row.dataset.id;
                     const newValue = this.innerText.trim();
-                    const maquina = row.dataset.maquina; // Need machine to create record
-                    
-                    // Validate basic number
+                const maquina = row.dataset.maquina; 
+                const scenarioId = new URLSearchParams(window.location.search).get('scenario_id');
+                
+                // Validate basic number
                     const numVal = parseFloat(newValue.replace(',', '.')); // Handle commas
                     if (isNaN(numVal) || numVal < 0) {
                         alert("Por favor ingrese un número válido.");
@@ -304,7 +516,8 @@
                             body: JSON.stringify({
                                 id_orden: idOrden,
                                 tiempo_manual: numVal,
-                                maquina: maquina // Required to update strict record if depends on it
+                                maquina: maquina,
+                                scenario_id: scenarioId
                             })
                         });
 
@@ -341,6 +554,7 @@
                     const idOrden = row.dataset.id;
                     const newValue = this.innerText.trim();
                     const maquina = row.dataset.maquina; 
+                    const scenarioId = new URLSearchParams(window.location.search).get('scenario_id');
                     
                     // Validate basic integer
                     const numVal = parseInt(newValue);
@@ -362,7 +576,8 @@
                             body: JSON.stringify({
                                 id_orden: idOrden,
                                 nivel_manual: numVal,
-                                maquina: maquina
+                                maquina: maquina,
+                                scenario_id: scenarioId
                             })
                         });
 
@@ -418,7 +633,8 @@
                             maquina: maquina,
                             priority: priority,
                             neighbor_id: neighborId,
-                            neighbor_priority: neighborPriority
+                            neighbor_priority: neighborPriority,
+                            scenario_id: new URLSearchParams(window.location.search).get('scenario_id')
                         })
                     });
 
@@ -456,7 +672,21 @@
             // --- Delete / Hide Logic ---
             document.querySelectorAll('.btn-delete').forEach(btn => {
                 btn.addEventListener('click', async function() {
-                    if (!confirm('¿Está seguro de ocultar esta tarea de la lista?')) return;
+                    const result = await Swal.fire({
+                        title: '¿Ocultar Tarea?',
+                        text: 'Esta tarea ya no aparecerá en las listas ni en el Gantt.',
+                        icon: 'warning',
+                        showCancelButton: true,
+                        confirmButtonText: 'Sí, ocultar',
+                        cancelButtonText: 'Cancelar',
+                        confirmButtonColor: '#64748b',
+                        customClass: {
+                            popup: 'premium-swal',
+                            confirmButton: 'premium-confirm',
+                            cancelButton: 'premium-cancel'
+                        }
+                    });
+                    if (!result.isConfirmed) return;
                     
                     const row = this.closest('tr');
                     const idOrden = row.dataset.id;
@@ -512,7 +742,7 @@
                         const targetTab = elemBelow ? elemBelow.closest('.nav-link') : null;
                         
                         if (targetTab && targetTab.getAttribute('role') === 'tab') {
-                            const targetMachine = targetTab.textContent.trim();
+                            const targetMachine = targetTab.dataset.machine;
                             
                             // Prevent moving to self (tab names match)
                             // The tab text is the machine name.
@@ -520,7 +750,21 @@
                                 return; // Dropped on self, treat as reorder if index changed, but safer to ignore cross-logic
                             }
 
-                            if (!confirm(`¿Mover tarea OP ${idOrden} a máquina ${targetMachine}?`)) {
+                            const result = await Swal.fire({
+                                title: '¿Mover Tarea?',
+                                html: `¿Confirma que desea mover la <b>OP ${idOrden}</b> a la máquina <b>${targetMachine}</b>?`,
+                                icon: 'question',
+                                showCancelButton: true,
+                                confirmButtonText: 'Sí, mover',
+                                cancelButtonText: 'Cancelar',
+                                customClass: {
+                                    popup: 'premium-swal',
+                                    confirmButton: 'premium-confirm',
+                                    cancelButton: 'premium-cancel'
+                                }
+                            });
+
+                            if (!result.isConfirmed) {
                                 window.location.reload(); // Revert visual drag
                                 return;
                             }
@@ -552,7 +796,8 @@
                                     body: JSON.stringify({
                                         id_orden: idOrden,
                                         target_machine_id: targetMachine,
-                                        new_priority: newPriority
+                                        new_priority: newPriority,
+                                        scenario_id: new URLSearchParams(window.location.search).get('scenario_id')
                                     })
                                 });
                                 
@@ -607,7 +852,8 @@
                                 },
                                 body: JSON.stringify({
                                     maquina: maquinaOrigin,
-                                    new_priority: newPriority
+                                    new_priority: newPriority,
+                                    scenario_id: new URLSearchParams(window.location.search).get('scenario_id')
                                 })
                             });
 
@@ -627,6 +873,134 @@
                     }
                 });
             });
+
+            // --- SCENARIO SELECTOR SYNC ---
+            const scenarioSelector = document.getElementById('scenario-selector');
+            if (scenarioSelector) {
+                scenarioSelector.addEventListener('change', function() {
+                    const selectedOption = this.options[this.selectedIndex];
+                    const proyectosInput = document.getElementById('proyectos');
+                    
+                    // If a scenario is selected (not the placeholder), update projects input
+                    if (this.value && proyectosInput) {
+                        const scenarioProyectos = selectedOption.dataset.proyectos || '';
+                        proyectosInput.value = scenarioProyectos;
+                    }
+                    
+                    this.form.submit();
+                });
+            }
+
+            // --- SAVE SCENARIO MODAL LOGIC ---
+            const saveScenarioModalEl = document.getElementById('saveScenarioModal');
+            if (saveScenarioModalEl) {
+                const saveScenarioModal = new bootstrap.Modal(saveScenarioModalEl);
+                const radioNew = document.getElementById('radioNew');
+                const radioExisting = document.getElementById('radioExisting');
+                const divNewScenario = document.getElementById('divNewScenario');
+                const divExistingScenario = document.getElementById('divExistingScenario');
+                const btnConfirmSave = document.getElementById('btnConfirmSave');
+
+                if (radioNew && radioExisting) {
+                    radioNew.addEventListener('change', () => {
+                        divNewScenario.style.display = 'block';
+                        divExistingScenario.style.display = 'none';
+                    });
+                    radioExisting.addEventListener('change', () => {
+                        divNewScenario.style.display = 'none';
+                        divExistingScenario.style.display = 'block';
+                    });
+                }
+
+                const btnSaveScenario = document.getElementById('btnSaveScenario');
+                if (btnSaveScenario) {
+                    btnSaveScenario.addEventListener('click', () => {
+                        saveScenarioModal.show();
+                    });
+                }
+
+                if (btnConfirmSave) {
+                    btnConfirmSave.addEventListener('click', async function() {
+                        const isNew = radioNew.checked;
+                        const proyectosInput = document.getElementById('proyectos');
+                        const proyectosList = proyectosInput ? proyectosInput.value.trim() : '';
+                        const currentScenarioId = new URLSearchParams(window.location.search).get('scenario_id');
+
+                        let payload = {
+                            proyectos: proyectosList,
+                            copy_from_id: currentScenarioId
+                        };
+
+                        if (isNew) {
+                            const nameInput = document.getElementById('newScenarioName');
+                            const name = nameInput ? nameInput.value.trim() : '';
+                            if (!name) { 
+                                alert("Por favor, ingrese un nombre para el nuevo escenario."); 
+                                return; 
+                            }
+                            payload.nombre = name;
+                        } else {
+                            const updateSelect = document.getElementById('existingScenarioSelect');
+                            const updateId = updateSelect ? updateSelect.value : '';
+                            if (!updateId) { 
+                                alert("Por favor, seleccione un escenario para sobrescribir."); 
+                                return; 
+                            }
+                            payload.update_id = updateId;
+                        }
+
+                        try {
+                            const btn = this;
+                            btn.disabled = true;
+                            const originalHTML = btn.innerHTML;
+                            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> Guardando...';
+
+                            const response = await fetch('/api/scenarios/create/', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'X-CSRFToken': '{{ csrf_token }}'
+                                },
+                                body: JSON.stringify(payload)
+                            });
+
+                            const data = await response.json();
+                            if (response.ok) {
+                                saveScenarioModal.hide();
+                                Swal.fire({
+                                    title: '¡Guardado!',
+                                    text: 'Escenario guardado exitosamente.',
+                                    icon: 'success',
+                                    timer: 1500,
+                                    showConfirmButton: false,
+                                    customClass: { popup: 'premium-swal' }
+                                }).then(() => {
+                                    window.location.href = `?scenario_id=${data.scenario.id}`;
+                                });
+                            } else {
+                                Swal.fire({
+                                    title: 'Error',
+                                    text: data.error || "Error al guardar escenario.",
+                                    icon: 'error',
+                                    customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                                });
+                                btn.disabled = false;
+                                btn.innerHTML = originalHTML;
+                            }
+                        } catch (e) {
+                            console.error(e);
+                            Swal.fire({
+                                title: 'Error de Red',
+                                text: 'No se pudo conectar con el servidor.',
+                                icon: 'error',
+                                customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                            });
+                            this.disabled = false;
+                            this.innerHTML = '<i class="fas fa-check me-1"></i>Confirmar Guardado';
+                        }
+                    });
+                }
+            }
         });
     </script>
 </body>

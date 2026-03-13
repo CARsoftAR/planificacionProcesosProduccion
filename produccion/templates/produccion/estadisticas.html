@@ -1,0 +1,438 @@
+{% load l10n %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Estadísticas del Sistema - Producción</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary: #0d6efd;
+            --success: #198754;
+            --danger: #dc3545;
+            --warning: #ffc107;
+            --dark: #212529;
+            --glass: rgba(255, 255, 255, 0.9);
+        }
+
+        body {
+            background: #f0f2f5;
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            color: #333;
+            margin: 0;
+            padding-bottom: 50px;
+        }
+
+        .navbar-custom {
+            background: linear-gradient(135deg, #0d6efd, #0043a8);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            padding: 1rem 2rem;
+        }
+
+        .dashboard-header {
+            padding: 2rem 0;
+            background: white;
+            border-bottom: 1px solid #dee2e6;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: white;
+            border: none;
+            border-radius: 16px;
+            padding: 1.5rem;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            transition: transform 0.3s ease;
+            height: 100%;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .stat-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .progress {
+            height: 10px;
+            border-radius: 5px;
+            background-color: #e9ecef;
+        }
+
+        .progress-bar {
+            border-radius: 5px;
+            transition: width 1s ease-in-out;
+            animation: fillProgress 1.5s ease-out forwards;
+        }
+
+        @keyframes fillProgress {
+            from { width: 0; }
+        }
+
+        .machine-row {
+            background: white;
+            border-radius: 12px;
+            margin-bottom: 1rem;
+            padding: 1.25rem;
+            border: 1px solid #eee;
+            transition: all 0.2s ease;
+        }
+
+        .machine-row:hover {
+            border-color: var(--primary);
+            box-shadow: 0 2px 8px rgba(13, 110, 253, 0.1);
+        }
+
+        .collapsed-badge {
+            background-color: rgba(220, 53, 69, 0.1);
+            color: var(--danger);
+            border: 1px solid var(--danger);
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        .healthy-badge {
+            background-color: rgba(25, 135, 84, 0.1);
+            color: var(--success);
+            border: 1px solid var(--success);
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+        }
+
+        .alert-item {
+            border-left: 4px solid var(--warning);
+            padding: 1rem;
+            background: #fff;
+            border-radius: 0 8px 8px 0;
+            margin-bottom: 0.75rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+        }
+
+        .card-title {
+            font-weight: 700;
+            color: #495057;
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+        }
+
+        .card-title i {
+            margin-right: 10px;
+            color: var(--primary);
+        }
+
+        .btn-back {
+            color: white;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            font-weight: 500;
+        }
+
+        .btn-back:hover {
+            color: #e0e0e0;
+        }
+
+        /* Glassmorphism utility */
+        .glass-card {
+            background: var(--glass);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark navbar-custom">
+        <div class="container">
+            <a class="navbar-brand d-flex align-items-center" href="{% url 'home' %}">
+                <i class="fas fa-industry me-3"></i>
+                <div>
+                    <div class="fw-bold lh-1">ABBAMAT</div>
+                    <div style="font-size: 0.7rem; opacity: 0.8;">PRODUCCION</div>
+                </div>
+            </a>
+            <div class="ms-auto">
+                <a href="{% url 'home' %}" class="btn-back">
+                    <i class="fas fa-chevron-left me-2"></i> Volver al Menú
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="dashboard-header">
+        <div class="container">
+            <div class="row align-items-center">
+                <div class="col-md-8">
+                    <h2 class="fw-bold mb-1">Estadísticas de Ocupación</h2>
+                    <p class="text-muted mb-0">Análisis proyectado a los próximos 7 días laborales.</p>
+                </div>
+                <div class="col-md-4 text-md-end mt-3 mt-md-0">
+                    <span class="badge bg-light text-dark p-2 border">
+                        <i class="far fa-calendar-alt me-2 text-primary"></i> {{ today|date:"d M Y, H:i" }}
+                    </span>
+                    <span class="badge bg-primary p-2 ms-2">
+                        Escenario: {{ active_scenario.nombre|default:"Borrador" }}
+                    </span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- Top Summary Cards -->
+        <div class="row g-4 mb-4">
+            <div class="col-md-3">
+                <div class="stat-card">
+                    <div class="stat-icon bg-primary bg-opacity-10 text-primary">
+                        <i class="fas fa-clock"></i>
+                    </div>
+                    <div class="text-muted small">Horas Totales Planificadas</div>
+                    <div class="h3 fw-bold mb-0 text-dark">{{ total_hours }}h</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-card">
+                    <div class="stat-icon bg-info bg-opacity-10 text-info">
+                        <i class="fas fa-bolt"></i>
+                    </div>
+                    <div class="text-muted small">Capacidad Total (7 días)</div>
+                    <div class="h3 fw-bold mb-0 text-dark">{{ total_capacity }}h</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-card">
+                    <div class="stat-icon {% if avg_load > 85 %}bg-danger{% elif avg_load > 50 %}bg-warning{% else %}bg-success{% endif %} bg-opacity-10 {% if avg_load > 85 %}text-danger{% elif avg_load > 50 %}text-warning{% else %}text-success{% endif %}">
+                        <i class="fas fa-chart-pie"></i>
+                    </div>
+                    <div class="text-muted small">Ocupación Promedio</div>
+                    <div class="h3 fw-bold mb-0 text-dark">{{ avg_load }}%</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-card">
+                    <div class="stat-icon bg-danger bg-opacity-10 text-danger">
+                        <i class="fas fa-exclamation-triangle"></i>
+                    </div>
+                    <div class="text-muted small">Máquinas Al Límite</div>
+                    <div class="h3 fw-bold mb-0 text-dark">{{ collapsed_count }}</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row g-4 mb-4">
+            <!-- Recommendations -->
+            <div class="col-lg-6">
+                <div class="card stat-card shadow-sm h-100">
+                    <div class="card-title">
+                        <i class="fas fa-lightbulb"></i> Recomendaciones
+                    </div>
+                    
+                    <div class="row">
+                        {% if collapsed_machines %}
+                        <div class="col-md-6 mb-4 mb-md-0">
+                            <h6 class="fw-bold text-danger smaller text-uppercase mb-3">Desviar carga de:</h6>
+                            {% for m in collapsed_machines %}
+                            <div class="d-flex align-items-center mb-2">
+                                 <span class="status-dot bg-danger"></span>
+                                 <span class="fw-bold">{{ m.nombre }}</span>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+
+                        {% if healthy_machines %}
+                        <div class="col-md-6">
+                            <h6 class="fw-bold text-success smaller text-uppercase mb-3">Utilizar capacidad en:</h6>
+                            {% for m in healthy_machines %}
+                            <div class="d-flex align-items-center mb-2">
+                                 <span class="status-dot bg-success"></span>
+                                 <span>{{ m.nombre }}</span>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                    </div>
+                    
+                    {% if not collapsed_machines and not healthy_machines %}
+                    <p class="text-muted small">El sistema está operando en niveles óptimos de carga.</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Project Alerts -->
+            <div class="col-lg-6">
+                <div class="card stat-card shadow-sm h-100">
+                    <div class="card-title">
+                        <i class="fas fa-clock"></i> Alertas de Plazo
+                    </div>
+                    
+                    <div class="row g-2">
+                        {% for alert in project_alerts %}
+                        <div class="col-md-6">
+                            <div class="alert-item h-100 mb-0 border-primary bg-light bg-opacity-25">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <span class="fw-bold text-dark">{{ alert.proyecto }}</span>
+                                    <span class="badge bg-danger rounded-pill" style="font-size: 0.65rem;">Atrasado</span>
+                                </div>
+                                <div class="smaller text-muted mt-2">
+                                    <i class="far fa-calendar-times me-1"></i> Fin: {{ alert.max_end|date:"d/m" }} <br>
+                                    <i class="fas fa-history me-1"></i> Vto: {{ alert.vto|date:"d/m" }}
+                                </div>
+                            </div>
+                        </div>
+                        {% empty %}
+                        <div class="col-12 text-center py-4">
+                            <i class="fas fa-check-circle fa-2x text-success opacity-25 mb-2"></i>
+                            <p class="text-success small mb-0">Todos los proyectos están en fecha.</p>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row g-4 mb-5">
+            <!-- Machine Summary Cards -->
+            {% for m in machines %}
+            <div class="col-md-6 col-lg-4 col-xl-3">
+                <div class="card h-100 shadow-sm border-0 position-relative overflow-hidden machine-card" style="border-radius: 12px; transition: transform 0.2s;">
+                    <div class="card-body p-4">
+                        <div class="d-flex justify-content-between align-items-start mb-3">
+                            <div>
+                                <h6 class="fw-bold text-dark mb-0">{{ m.nombre }}</h6>
+                                <span class="text-muted smaller">{{ m.id }}</span>
+                            </div>
+                            {% if m.id == 'MAC00' %}
+                                <span class="badge bg-warning text-dark">SIN ASIGNAR</span>
+                            {% elif m.load_pct >= 100 %}
+                                <span class="badge bg-danger">COLAPSADA</span>
+                            {% elif m.load_pct < 50 %}
+                                <span class="badge bg-success bg-opacity-75">DISPONIBLE</span>
+                            {% else %}
+                                <span class="badge bg-primary bg-opacity-75">OPTIMA</span>
+                            {% endif %}
+                        </div>
+
+                        <div class="mb-3">
+                            <div class="d-flex justify-content-between smaller mb-1">
+                                <span class="text-muted">{% if m.id == 'MAC00' %}Trabajo pendiente{% else %}Carga proyectada{% endif %}</span>
+                                <span class="fw-bold">{% if m.id == 'MAC00' %}{{ m.hours }}h{% else %}{{ m.load_pct }}%{% endif %}</span>
+                            </div>
+                            <div class="progress" style="height: 6px; border-radius: 3px;">
+                                <div class="progress-bar {% if m.id == 'MAC00' %}bg-warning{% elif m.load_pct >= 100 %}bg-danger{% elif m.load_pct >= 80 %}bg-warning{% else %}bg-primary{% endif %}" 
+                                     style="width: {% if m.id == 'MAC00' %}100{% elif m.load_pct > 100 %}100{% else %}{{ m.load_pct|unlocalize }}{% endif %}%"></div>
+                            </div>
+                        </div>
+
+                        <button class="btn btn-outline-primary btn-sm w-100 py-2 border-2 fw-bold" 
+                                data-bs-toggle="modal" 
+                                data-bs-target="#modalMachine{{ m.id|slugify }}">
+                            <i class="fas fa-list-ul me-2"></i>Ver Reporte Detallado
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Modal for this Machine -->
+            <div class="modal fade" id="modalMachine{{ m.id|slugify }}" tabindex="-1" aria-hidden="true">
+                <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+                    <div class="modal-content border-0 shadow-lg" style="border-radius: 15px; max-height: 90vh;">
+                        <div class="modal-header border-0 bg-dark text-white p-4" style="border-radius: 15px 15px 0 0;">
+                            <div>
+                                <h5 class="modal-title fw-bold">MÁQUINA: {{ m.nombre|upper }}</h5>
+                                <div class="smaller opacity-75">Reporte de Carga - Próximos 7 días laborales</div>
+                            </div>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body p-0">
+                            <!-- Machine Stats Bar inside Modal -->
+                            <div class="bg-light p-3 border-bottom d-flex justify-content-between align-items-center sticky-top">
+                                <div class="small">
+                                    {% if m.id == 'MAC00' %}
+                                        <span class="text-muted">Horas totales pendientes de asignación: <strong class="text-danger">{{ m.hours }}h</strong></span>
+                                    {% else %}
+                                        <span class="text-muted me-3">Capacidad Total: <strong>{{ m.capacity }}h</strong></span>
+                                        <span class="text-muted">Horas Planificadas: <strong>{{ m.hours }}h</strong></span>
+                                    {% endif %}
+                                </div>
+                                {% if m.id != 'MAC00' %}
+                                <div class="fw-bold {% if m.load_pct >= 100 %}text-danger{% else %}text-primary{% endif %}">
+                                    Ocupación: {{ m.load_pct }}%
+                                </div>
+                                {% endif %}
+                            </div>
+                            
+                            <div class="table-responsive">
+                                <table class="table table-sm table-hover table-bordered mb-0 align-middle">
+                                    <thead class="text-center fw-bold text-uppercase sticky-top" style="background: #e9ecef; font-size: 0.75rem; top: 0; z-index: 10;">
+                                        <tr>
+                                            <th class="p-2" style="width: 12%; background: #e9ecef;">NRO ORDEN (ID)</th>
+                                            <th class="p-2" style="width: 25%; background: #e9ecef;">PROCESO</th>
+                                            <th class="p-2" style="width: 38%; background: #e9ecef;">ELEMENTO</th>
+                                            <th class="p-2" style="width: 7%; background: #e9ecef;">TIEMPO</th>
+                                            <th class="p-2" style="width: 9%; background: #e9ecef;">INICIO</th>
+                                            <th class="p-2" style="width: 9%; background: #e9ecef;">FIN</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody style="font-size: 0.85rem;">
+                                        {% for t in m.tasks %}
+                                        <tr>
+                                            <td class="text-center fw-bold p-2">{{ t.proyecto }} - (OP): {{ t.id_orden }}</td>
+                                            <td class="p-2">{{ t.proceso }}</td>
+                                            <td class="p-2">{{ t.elemento }}</td>
+                                            <td class="text-center p-2">{{ t.tiempo|floatformat:2 }}</td>
+                                            <td class="text-center p-2">{{ t.start|date:"d/m H:i" }}</td>
+                                            <td class="text-center p-2">{{ t.end|date:"d/m H:i" }}</td>
+                                        </tr>
+                                        {% empty %}
+                                        <tr>
+                                            <td colspan="6" class="text-center py-5 text-muted">
+                                                <i class="fas fa-calendar-check fa-3x mb-3 opacity-25"></i><br>
+                                                No hay tareas programadas para esta máquina en el período analizado.
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        <div class="modal-footer border-0 p-3">
+                            <button type="button" class="btn btn-secondary px-4" data-bs-dismiss="modal">Cerrar</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% empty %}
+            <div class="col-12 text-center py-5">
+                <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
+                <p class="text-muted">No hay máquinas disponibles para analizar.</p>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

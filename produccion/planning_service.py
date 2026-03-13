@@ -1,46 +1,32 @@
 from datetime import timedelta, datetime
 from .models import HorarioMaquina, Feriado
 
-def is_non_working_holiday(date_obj):
+def is_non_working_holiday(date_obj, non_working_days=None):
     """
     Verifica si una fecha es un feriado que NO se trabaja.
-    
-    Args:
-        date_obj: datetime.date o datetime.datetime
-    
-    Returns:
-        bool: True si es feriado no laborable, False en caso contrario
-    """
-    # Convertir datetime a date si es necesario
-    if isinstance(date_obj, datetime):
-        date_obj = date_obj.date()
-    
-    # Buscar feriado activo en esa fecha que NO se planifique (tipo_jornada='NO')
-    feriado = Feriado.objects.filter(
-        fecha=date_obj,
-        activo=True,
-        tipo_jornada='NO'  # Solo los que NO se trabajan
-    ).first()
-    
-    return feriado is not None
-
-def is_half_day_holiday(date_obj):
-    """
-    Verifica si una fecha es feriado de MEDIO DIA (hasta las 12:00 o 13:00).
     """
     if isinstance(date_obj, datetime):
         date_obj = date_obj.date()
     
-    feriado = Feriado.objects.filter(
-        fecha=date_obj,
-        activo=True,
-        tipo_jornada='MEDIO'
-    ).first()
+    if non_working_days is not None:
+        return date_obj in non_working_days
     
-    return feriado is not None
+    return Feriado.objects.filter(fecha=date_obj, activo=True, tipo_jornada='NO').exists()
+
+def is_half_day_holiday(date_obj, half_day_holidays=None):
+    """
+    Verifica si una fecha es feriado de MEDIO DIA.
+    """
+    if isinstance(date_obj, datetime):
+        date_obj = date_obj.date()
+    
+    if half_day_holidays is not None:
+        return date_obj in half_day_holidays
+    
+    return Feriado.objects.filter(fecha=date_obj, activo=True, tipo_jornada='MEDIO').exists()
 
 
-def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=None, task_force_start_times=None):
+def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=None, task_force_start_times=None, non_working_days=None, half_day_holidays=None):
     """
     Calculates the start and end datetime for a list of tasks for a specific machine,
     respecting the machine's configured schedule (LV, SA) and non-working holidays.
@@ -172,7 +158,7 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
             loop_count += 1
             
             # PRIMERO: Verificar si es un feriado no laborable
-            if is_non_working_holiday(current_time):
+            if is_non_working_holiday(current_time, non_working_days):
                 # Es feriado que NO se trabaja - saltar al siguiente día laborable
                 print(f"    FERIADO detectado en {current_time.date()}, saltando...")
                 
@@ -193,12 +179,18 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
                     segment['debug_info'] = f"TP: {duration_hours:.2f}h (Seg: {len(task_segments)+1})"
                     segment['is_new_day'] = is_new_day
                     
+                    # Add progress percentage
+                    if qty > 0:
+                        segment['progress_percent'] = min(100.0, (produced / qty) * 100.0)
+                    else:
+                        segment['progress_percent'] = 0.0
+                        
                     task_segments.append(segment)
                     segment_start = None
                 
                 # Saltar al siguiente día laborable (inicio del horario)
                 next_day = (current_time + timedelta(days=1)).replace(hour=0, minute=0, second=0)
-                current_time = _jump_to_next_start(next_day, schedules)
+                current_time = _jump_to_next_start(next_day, schedules, non_working_days, half_day_holidays)
                 print(f"    Saltando a: {current_time}")
                 continue
             
@@ -225,7 +217,7 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
                 e = sch['end']
                 
                 # CHEQUEO DE MEDIO DIA
-                is_half = is_half_day_holiday(current_time)
+                is_half = is_half_day_holiday(current_time, half_day_holidays)
                 if is_half:
                      # Forzamos fin a las 12:00. 
                      e = datetime.strptime("12:00", "%H:%M").time()
@@ -259,7 +251,7 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
                 e = sch['end']
                 
                 # RE-CHECK FOR HALF DAY (needed again for calculation of available time)
-                if is_half_day_holiday(current_time):
+                if is_half_day_holiday(current_time, half_day_holidays):
                      e = datetime.strptime("12:00", "%H:%M").time()
                 
                 available_seconds = 0
@@ -312,6 +304,12 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
                     segment['debug_info'] = f"TP: {duration_hours:.2f}h (Seg: {len(task_segments)+1})"
                     segment['is_new_day'] = is_new_day
                     
+                    # Add progress percentage
+                    if qty > 0:
+                        segment['progress_percent'] = min(100.0, (produced / qty) * 100.0)
+                    else:
+                        segment['progress_percent'] = 0.0
+                    
                     task_segments.append(segment)
                     segment['segment_index'] = len(task_segments) - 1 # 0-based index of this segment
                     
@@ -337,11 +335,17 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
                     segment['debug_info'] = f"TP: {duration_hours:.2f}h (U:{unit_time:.2f}*P:{pending_qty:.2f})"
                     segment['is_new_day'] = is_new_day
                     
+                    # Add progress percentage
+                    if qty > 0:
+                        segment['progress_percent'] = min(100.0, (produced / qty) * 100.0)
+                    else:
+                        segment['progress_percent'] = 0.0
+                        
                     task_segments.append(segment)
                     segment_start = None
                 
                 original_curr = current_time
-                current_time = _jump_to_next_start(current_time, schedules)
+                current_time = _jump_to_next_start(current_time, schedules, non_working_days, half_day_holidays)
                 
                 # SAFETY: If time didn't advance (infinite loop protection), force +1 min/hour
                 if current_time <= original_curr:
@@ -352,7 +356,7 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
         
     return calculated_tasks
 
-def _jump_to_next_start(current_time, schedules):
+def _jump_to_next_start(current_time, schedules, non_working_days=None, half_day_holidays=None):
     """
     Helper to jump from a non-working non-started time to the next working start time.
     Also skips non-working holidays.
@@ -366,7 +370,7 @@ def _jump_to_next_start(current_time, schedules):
     # Limit lookahead
     for _ in range(14): 
         # Primero verificar si es feriado no laborable
-        if is_non_working_holiday(next_check):
+        if is_non_working_holiday(next_check, non_working_days):
             # Saltar al siguiente día
             next_check = (next_check + timedelta(days=1)).replace(hour=0, minute=0, second=0)
             continue
@@ -380,7 +384,7 @@ def _jump_to_next_start(current_time, schedules):
             e = sch['end']
             
             # CHECK FOR HALF DAY
-            if is_half_day_holiday(next_check):
+            if is_half_day_holiday(next_check, half_day_holidays):
                  e = datetime.strptime("12:00", "%H:%M").time()
             
             sch_start = datetime.combine(next_check.date(), s)
@@ -409,3 +413,47 @@ def _jump_to_next_start(current_time, schedules):
         
     # Restore tzinfo if originally present? No, simulation is usually naive.
     return next_check + timedelta(hours=1)
+
+def get_machine_capacity(maquina, start_date, end_date, non_working_days=None, half_day_holidays=None):
+    """
+    Calculates total working hours for a machine between two dates.
+    """
+    schedules = {}
+    for h in maquina.horarios.all():
+        schedules[h.dia] = {'start': h.hora_inicio, 'end': h.hora_fin}
+
+    if not schedules:
+        # Fallback 07-16 LV
+        schedules['LV'] = {'start': datetime.strptime("07:00", "%H:%M").time(), 'end': datetime.strptime("16:00", "%H:%M").time()}
+
+    total_hours = 0.0
+    # Clean dates to start of day
+    current = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+    limit = end_date.replace(hour=23, minute=59, second=59)
+    
+    while current <= limit:
+        if not is_non_working_holiday(current, non_working_days):
+            weekday = current.weekday()
+            day_type = 'LV' if 0 <= weekday <= 4 else ('SA' if weekday == 5 else None)
+            
+            if day_type in schedules:
+                sch = schedules[day_type]
+                s = sch['start']
+                e = sch['end']
+                
+                if is_half_day_holiday(current, half_day_holidays):
+                    # Half day limit is 12:00
+                    limit_time = datetime.strptime("12:00", "%H:%M").time()
+                    if e > limit_time:
+                         e = limit_time
+                
+                if s < e:
+                    day_h = (datetime.combine(current.date(), e) - datetime.combine(current.date(), s)).total_seconds() / 3600.0
+                    total_hours += max(0, day_h)
+                else:
+                    # Wrap around midnight
+                    total_hours += (24.0 - (s.hour + s.minute/60.0)) + (e.hour + e.minute/60.0)
+                    
+        current += timedelta(days=1)
+    
+    return total_hours

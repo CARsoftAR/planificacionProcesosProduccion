@@ -1,0 +1,156 @@
+{% load static %}
+{% load produccion_extras %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Planillas Diarias de Producción</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f8f9fa;
+        }
+        .printable-page {
+            background: white;
+            padding: 2cm;
+            margin-bottom: 2cm;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            border-radius: 8px;
+        }
+        .header-section {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid #2563eb;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+        }
+        .day-header {
+            background-color: #f1f5f9;
+            padding: 10px 15px;
+            border-left: 4px solid #3b82f6;
+            margin-top: 30px;
+            margin-bottom: 15px;
+            font-weight: 700;
+            color: #1e293b;
+        }
+        .task-table th {
+            background-color: #e2e8f0;
+            color: #475569;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+        }
+        .task-table td {
+            vertical-align: middle;
+            font-size: 0.9rem;
+        }
+        @media print {
+            body {
+                background: white;
+            }
+            .printable-page {
+                box-shadow: none;
+                margin: 0;
+                padding: 0;
+                page-break-after: always;
+                border: none;
+            }
+            .no-print {
+                display: none !important;
+            }
+            .container-fluid {
+                padding: 0 !important;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="fixed-top no-print bg-white shadow-sm p-3">
+        <div class="container d-flex justify-content-between align-items-center">
+            <h4 class="m-0 text-primary"><i class="fas fa-file-alt me-2"></i> Planillas Diarias</h4>
+            <div class="gap-2 d-flex">
+                <a href="javascript:history.back()" class="btn btn-outline-secondary">
+                    <i class="fas fa-arrow-left me-1"></i> Volver
+                </a>
+                <button onclick="window.print()" class="btn btn-primary">
+                    <i class="fas fa-print me-1"></i> Imprimir Todo
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Spacer for fixed top -->
+    <div class="no-print" style="height: 100px;"></div>
+
+    <div class="container-fluid px-5">
+        {% for maquina in daily_plan %}
+        {% if maquina.dates %}
+        <div class="printable-page">
+            <div class="header-section">
+                <div>
+                    <h2 class="text-primary m-0"><i class="fas fa-cogs me-2"></i> {{ maquina.machine_name }}</h2>
+                    <p class="text-muted m-0">Planilla de Producción Diaria</p>
+                </div>
+                <div class="text-end">
+                    <h5 class="m-0">Semana del Plan</h5>
+                    <small class="text-muted">Escenario: {{ active_scenario.nombre|default:"Principal" }}</small>
+                </div>
+            </div>
+
+            {% for date_tuple in target_dates %}
+                {% with date_str=date_tuple.0 nice_name=date_tuple.1 %}
+                {% with tasks_today=maquina.dates|get_item:date_str %}
+                
+                <div class="day-header">
+                    <i class="far fa-calendar-alt me-2"></i> {{ nice_name }}
+                </div>
+                
+                {% if tasks_today %}
+                <table class="table table-bordered task-table table-sm">
+                    <thead>
+                        <tr>
+                            <th width="10%">Hora</th>
+                            <th width="12%">OP / Proy</th>
+                            <th width="20%">Denominación</th>
+                            <th width="30%">Descripción</th>
+                            <th width="8%" class="text-end">Tiempo Std</th>
+                            <th width="10%" class="text-end">Cant. a Producir</th>
+                            <th width="10%" class="text-end">Horas Totales</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for task in tasks_today %}
+                        <tr>
+                            <td><strong>{{ task.start_time }} - {{ task.end_time }}</strong></td>
+                            <td>
+                                <strong>{{ task.orden }}</strong><br>
+                                <small class="text-muted">{{ task.proyecto }}</small>
+                            </td>
+                            <td>{{ task.denominacion }}</td>
+                            <td>{{ task.descripcion }}</td>
+                            <td class="text-end">{{ task.tiempo_standard }}</td>
+                            <td class="text-end fw-bold">{{ task.cantidad_dia|floatformat }}</td>
+                            <td class="text-end fw-bold text-primary">{{ task.tiempo_dia }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <p class="text-muted fst-italic ms-3">Sin tareas asignadas para este día.</p>
+                {% endif %}
+                
+                {% endwith %}
+                {% endwith %}
+            {% endfor %}
+        </div>
+        {% endif %}
+        {% empty %}
+        <div class="alert alert-info mt-5 container">
+            No se encontró información de planificación para las máquinas y proyectos seleccionados.
+        </div>
+        {% endfor %}
+    </div>
+</body>
+</html>

@@ -1,4 +1,4 @@
-﻿from django.db import models
+from django.db import models
 from datetime import date, datetime
 
 class VTman(models.Model):
@@ -67,6 +67,23 @@ class Tpar035(models.Model):
         db_table = 'Tpar035'
 
 
+class Scenario(models.Model):
+    nombre = models.CharField(max_length=100, verbose_name="Nombre del Escenario", default="Plan Oficial")
+    descripcion = models.TextField(blank=True, null=True, verbose_name="Descripción")
+    es_principal = models.BooleanField(default=False, verbose_name="Es Plan Oficial")
+    proyectos = models.TextField(blank=True, null=True, verbose_name="Proyectos (Comas)")
+    fecha_creacion = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        managed = True
+        db_table = 'scenario'
+        verbose_name = 'Escenario de Planificación'
+        verbose_name_plural = 'Escenarios de Planificación'
+
+    def __str__(self):
+        return f"{self.nombre} ({'OFICIAL' if self.es_principal else 'BORRADOR'})"
+
+
 class PrioridadManual(models.Model):
     id_orden = models.BigIntegerField(db_column='IdOrden')
     maquina = models.CharField(max_length=50, blank=True, null=True)
@@ -86,11 +103,19 @@ class PrioridadManual(models.Model):
         verbose_name='Inicio Manual (Pin)',
         help_text='Fecha forzada manualmente por el usuario (Drag & Drop)'
     )
+    scenario = models.ForeignKey(
+        Scenario,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='overrides',
+        verbose_name='Escenario'
+    )
 
     class Meta:
         managed = True
         db_table = 'prioridad_manual'
-        unique_together = ('id_orden', 'maquina')
+        unique_together = ('id_orden', 'maquina', 'scenario') # Unique per task+machine IN A SCENARIO
 
 class MaquinaConfig(models.Model):
     id_maquina = models.CharField(max_length=20, primary_key=True, verbose_name='ID de Maquina')
@@ -200,3 +225,26 @@ class HiddenTask(models.Model):
         db_table = 'hidden_task'
         verbose_name = 'Tarea Oculta'
         verbose_name_plural = 'Tareas Ocultas'
+
+class ProyectoPrioridad(models.Model):
+    proyecto = models.CharField(max_length=50, verbose_name="Proyecto (Formula)")
+    prioridad = models.IntegerField(default=999, verbose_name="Prioridad")
+    scenario = models.ForeignKey(
+        Scenario,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='proyecto_prioridades',
+        verbose_name='Escenario'
+    )
+
+    class Meta:
+        managed = True
+        db_table = 'proyecto_prioridad'
+        unique_together = ('proyecto', 'scenario')
+        verbose_name = 'Prioridad de Proyecto'
+        verbose_name_plural = 'Prioridades de Proyectos'
+
+    def __str__(self):
+        return f"{self.proyecto} (Prioridad {self.prioridad})"
+

@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prioridades de Proyectos</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #f8f9fa;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            padding-bottom: 50px;
+        }
+        .navbar-custom {
+            background: linear-gradient(135deg, #0d6efd, #0043a8);
+        }
+        .main-container {
+            max-width: 900px;
+            margin: 40px auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+            padding: 30px;
+        }
+        .table-custom th {
+            background-color: #f1f4f9;
+            color: #495057;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.85rem;
+            letter-spacing: 0.5px;
+        }
+        .priority-input {
+            width: 100px;
+            text-align: center;
+            font-weight: bold;
+            color: #0d6efd;
+            border-radius: 8px;
+            border: 1px solid #ced4da;
+        }
+        .priority-input:focus {
+            box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+            border-color: #86b7fe;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark navbar-custom shadow-sm">
+        <div class="container-fluid">
+            <a class="navbar-brand fw-bold" href="{% url 'home' %}">
+                <i class="fas fa-industry me-2"></i>ABBAMAT
+            </a>
+            <div class="d-flex">
+                <a href="{% url 'planificacion_view' %}" class="btn btn-outline-light btn-sm me-2">Volver al Gantt</a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container main-container">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div>
+                <h2 class="fw-bold mb-1 text-primary"><i class="fas fa-sort-numeric-down me-2"></i>Prioridades de Proyectos</h2>
+                <p class="text-muted mb-0">Asigne el orden de planificación para cada proyecto.</p>
+            </div>
+            
+            <div class="d-flex align-items-center">
+                <span class="text-muted me-2 small">Escenario:</span>
+                <select class="form-select form-select-sm" id="scenarioSelect" onchange="changeScenario(this.value)" style="width: auto;">
+                    <option value="">ERP Principal (Sin Escenario)</option>
+                    {% for sc in all_scenarios %}
+                        <option value="{{ sc.id }}" {% if active_scenario and active_scenario.id == sc.id %}selected{% endif %}>
+                            {{ sc.nombre }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        {% if has_projects %}
+        <div class="alert alert-info border-0 shadow-sm">
+            <i class="fas fa-info-circle me-2"></i>El algoritmo programará <strong>primero</strong> los proyectos con prioridad <strong>1</strong>.
+        </div>
+        
+        <div class="table-responsive">
+            <table class="table table-hover table-custom align-middle">
+                <thead>
+                    <tr>
+                        <th style="width: 60%">Proyecto / Número de Orden</th>
+                        <th style="text-align: center;">Prioridad</th>
+                    </tr>
+                </thead>
+                <tbody id="projectsTableBody">
+                    {% for item in proyectos_data %}
+                    <tr>
+                        <td>
+                            <div class="d-flex align-items-center">
+                                <div class="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 40px; height: 40px;">
+                                    <i class="fas fa-folder"></i>
+                                </div>
+                                <div>
+                                    <h6 class="mb-0 fw-bold">{{ item.proyecto }}</h6>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="text-center">
+                            <input type="number" 
+                                   class="form-control priority-input mx-auto project-prio-input" 
+                                   data-project="{{ item.proyecto }}"
+                                   value="{{ item.prioridad }}"
+                                   min="1">
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        
+        <div class="text-end mt-4">
+            <button class="btn btn-primary px-4 py-2 fw-bold shadow-sm" onclick="savePriorities()">
+                <i class="fas fa-save me-2"></i>Guardar Prioridades
+            </button>
+        </div>
+        {% else %}
+        <div class="text-center py-5 text-muted">
+            <i class="fas fa-folder-open fa-3x mb-3 text-light"></i>
+            <h4>No hay proyectos seleccionados</h4>
+            <p>Seleccione un escenario que contenga proyectos, o agregue proyectos desde la pantalla principal.</p>
+            <a class="btn btn-outline-primary mt-2" href="{% url 'planificacion_view' %}"><i class="fas fa-arrow-left me-2"></i>Ir a selección</a>
+        </div>
+        {% endif %}
+
+    </div>
+
+    <!-- Modals -->
+    <div class="modal fade" id="loadingModal" tabindex="-1" data-bs-backdrop="static">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 bg-transparent shadow-none">
+                <div class="modal-body text-center">
+                    <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <h5 class="text-white mt-3 fw-bold bg-dark p-2 rounded d-inline-block">Guardando...</h5>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        function changeScenario(scenarioId) {
+            window.location.href = `?scenario_id=${scenarioId}`;
+        }
+        
+        function savePriorities() {
+            const inputs = document.querySelectorAll('.project-prio-input');
+            const updates = [];
+            
+            inputs.forEach(input => {
+                const proj = input.getAttribute('data-project');
+                const prio = input.value;
+                if(proj && prio) {
+                    updates.push({
+                        proyecto: proj,
+                        prioridad: parseInt(prio)
+                    });
+                }
+            });
+            
+            const scenarioId = document.getElementById('scenarioSelect').value;
+            
+            const reqBody = {
+                updates: updates,
+                scenario_id: scenarioId
+            };
+            
+            const myModal = new bootstrap.Modal(document.getElementById('loadingModal'));
+            myModal.show();
+            
+            fetch('{% url "update_proyecto_prioridad" %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(reqBody)
+            })
+            .then(res => res.json())
+            .then(data => {
+                myModal.hide();
+                if(data.status === 'ok') {
+                    // Refresh perfectly ordered
+                    location.reload();
+                } else {
+                    alert("Error: " + data.error);
+                }
+            })
+            .catch(err => {
+                myModal.hide();
+                alert("Error de red: " + err);
+            });
+        }
+    </script>
+</body>
+</html>

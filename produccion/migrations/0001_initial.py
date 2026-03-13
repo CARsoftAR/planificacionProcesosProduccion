@@ -34,7 +34,7 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name='Tman002',
             fields=[
-                ('pk', models.CompositePrimaryKey('articulop', 'formula', 'articuloh', 'item', blank=True, editable=False, primary_key=True, serialize=False)),
+                ('pk', models.CharField(max_length=255, primary_key=True, serialize=False)),
                 ('articulop', models.CharField(db_column='ArticuloP', max_length=20)),
                 ('formula', models.CharField(db_column='Formula', max_length=50)),
                 ('articulohd', models.CharField(blank=True, db_column='ArticuloHD', max_length=200, null=True)),
@@ -150,7 +150,7 @@ class Migration(migrations.Migration):
         migrations.CreateModel(
             name='Tman050',
             fields=[
-                ('pk', models.CompositePrimaryKey('idorden', 'sucursal', blank=True, editable=False, primary_key=True, serialize=False)),
+                ('pk', models.CharField(max_length=255, primary_key=True, serialize=False)),
                 ('articulo', models.CharField(db_column='Articulo', max_length=20)),
                 ('descri', models.CharField(db_column='Descri', max_length=100)),
                 ('formula', models.CharField(db_column='Formula', max_length=50)),
