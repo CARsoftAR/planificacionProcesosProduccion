@@ -179,12 +179,14 @@ def get_planificacion_data(filtros=None, exclude_completed=True):
     # Si hay una lista de proyectos/ordenes especificas
     # Si hay una lista de proyectos/ordenes especificas
     if 'proyectos' in filtros and filtros['proyectos']:
-        # Logic: If query looks like a number, try IdOrden. 
-        # But '25-006' is not a number for SQL unless stripped. 
-        # Also try matching Articulo or Denominacion.
-        
+        proyectos_input = filtros['proyectos']
+        if isinstance(proyectos_input, str):
+            proyectos_list = [p.strip() for p in proyectos_input.split(',') if p.strip()]
+        else:
+            proyectos_list = proyectos_input
+
         clauses = []
-        for val in filtros['proyectos']:
+        for val in proyectos_list:
             val = val.strip()
             
             # User specifically requested searching by Formula for project codes like '25.006'

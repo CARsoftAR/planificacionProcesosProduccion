@@ -11,6 +11,7 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
+    <style>
         :root {
             --bg-deep: #f8f9fa;
             --bg-card: #ffffff;
@@ -24,6 +25,26 @@
             --neon-blue: #0dcaf0;
             --neon-purple: #6f42c1;
             --neon-green: #198754;
+        }
+
+        .btn-ai {
+            background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+            border: none;
+            color: white !important;
+            box-shadow: 0 4px 12px rgba(109, 40, 217, 0.3);
+        }
+        .btn-ai:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(109, 40, 217, 0.4);
+            filter: brightness(1.1);
+        }
+        .ai-loading-pulse {
+            animation: pulse-ai 1.5s infinite;
+        }
+        @keyframes pulse-ai {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.05); opacity: 0.8; }
+            100% { transform: scale(1); opacity: 1; }
         }
 
         body { 
@@ -448,6 +469,21 @@
             transform: translateY(-2px);
             box-shadow: 0 6px 20px rgba(37, 99, 235, 0.4);
             filter: brightness(1.1);
+            color: white !important;
+        }
+
+        .btn-success-modern {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            border: none;
+            color: white !important;
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+        }
+
+        .btn-success-modern:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(16, 185, 129, 0.4);
+            filter: brightness(1.1);
+            color: white !important;
         }
 
         .btn-toggle-inactive {
@@ -556,25 +592,22 @@
                 </div>
             </div>
             
-            <div class="d-flex align-items-center gap-2">
+             <div class="d-flex align-items-center gap-2">
+
                  <!-- Plan Mode Toggle -->
                  <div class="glass-toggle d-flex me-3">
-                     <a href="?{{ request.GET.urlencode }}&plan_mode=original&run=1" 
+                     <a href="#" id="toggleOriginalMode"
                         class="btn-modern {% if request.GET.plan_mode == 'original' %}btn-primary-modern{% else %}btn-toggle-inactive{% endif %}"
                         title="Ver datos originales de SQL Server (Sin modificaciones)">
                          <i class="fas fa-magic"></i> Automático
                      </a>
-                     <a href="?{{ request.GET.urlencode }}&plan_mode=manual&run=1" 
+                     <a href="#" id="toggleManualMode"
                         class="btn-modern {% if request.GET.plan_mode != 'original' %}btn-primary-modern{% else %}btn-toggle-inactive{% endif %}"
                         title="Ver planificación con mis ajustes manuales">
                          <i class="fas fa-hand-pointer"></i> Manual
                      </a>
                  </div>
 
-                 <!-- Action Buttons -->
-                 <a href="?{{ request.GET.urlencode }}&run=1" id="btnExecute" class="btn-modern btn-primary-modern">
-                    <i class="fas fa-play"></i> RE-CALCULAR
-                 </a>
                   <div class="vr mx-2 bg-secondary opacity-25" style="height: 30px;"></div>
                   
                   <!-- Notification Bell -->
@@ -593,6 +626,10 @@
 
                   <button id="btn-toggle-arrows" class="btn-modern glass" title="Mostrar/Ocultar Flechas">
                       <i class="fas fa-project-diagram text-primary"></i> Flechas
+                  </button>
+
+                  <button id="btn-request-ai" class="btn-modern btn-ai" title="Preguntar a la IA">
+                      <i class="fas fa-brain"></i> Sugerencia IA
                   </button>
                  
                  
@@ -774,6 +811,9 @@
         </div>
         
         <script>
+            // Global State
+            const ACTIVE_SCENARIO_ID = "{{ active_scenario.id|default:'' }}";
+
             // Toggle detail rows in analysis cards
             window.toggleDetail = function(id) {
                 const element = document.getElementById('detail-' + id);
@@ -819,30 +859,7 @@
                 window.location.href = "{% url 'planillas_diarias' %}?" + params.toString();
             };
         </script>
-                        
-                        setTimeout(() => {
-                            block.style.boxShadow = originalShadow;
-                            block.style.zIndex = originalZ;
-                            block.style.transform = '';
-                        }, 3000);
-                        
-                        found = true;
-                        break;
-                    }
-                }
-                if (!found) {
-                    console.log('Project not found in current view:', projectCode);
-                }
-            };
 
-            // Script for interactive elements
-            // Note: btnClean is now a simple link, so no JS needed for it.
-            
-            /* Old Logic Preserved for Reference if needed
-            document.getElementById('btnClean').addEventListener('click', ...);
-            */
-
-        </script>
         
         <style>
             /* Link Mode Styles */
@@ -1202,15 +1219,15 @@
                                         <div class="row g-2">
                                             <div class="col-4">
                                                 <div class="tooltip-label">Horas Totales</div>
-                                                <div class="tooltip-value">{{ task.Tiempo|multiply:task.Cantidad|floatformat:1 }}h</div>
+                                                <div class="tooltip-value">{{ task.Tiempo|multiply:task.cantidad_final|floatformat:2 }}h</div>
                                             </div>
                                             <div class="col-4 border-start border-white border-opacity-10 ps-2">
                                                 <div class="tooltip-label">Realizadas</div>
-                                                <div class="tooltip-value text-success">{{ task.Tiempo|multiply:task.Cantidadpp|floatformat:1 }}h</div>
+                                                <div class="tooltip-value text-success">{{ task.Tiempo|multiply:task.cantidad_producida|floatformat:2 }}h</div>
                                             </div>
                                             <div class="col-4 border-start border-white border-opacity-10 ps-2">
                                                 <div class="tooltip-label">Por Hacer</div>
-                                                <div class="tooltip-value text-warning">{{ task.duration_real|floatformat:1 }}h</div>
+                                                <div class="tooltip-value text-warning">{% if task.duration_task %}{{ task.duration_task|floatformat:2 }}{% else %}{{ task.duration_real|floatformat:2 }}{% endif %}h</div>
                                             </div>
                                         </div>
                                     </div>
@@ -1220,7 +1237,7 @@
                                         <div class="row g-2 mb-2">
                                             <div class="col-6">
                                                 <div class="tooltip-label">Cant. Tarea</div>
-                                                <div class="tooltip-value">{{ task.Cantidad|floatformat:0 }} unid.</div>
+                                                <div class="tooltip-value">{{ task.cantidad_final|floatformat:0 }} unid.</div>
                                             </div>
                                             <div class="col-6">
                                                 <div class="tooltip-label">Total Proyecto</div>
@@ -1230,16 +1247,16 @@
                                         <div class="d-flex justify-content-between align-items-end mb-2">
                                             <div>
                                                 <div class="tooltip-label">Avance Global del Proyecto</div>
-                                                <div class="tooltip-value">{{ task.Cantidadpp|floatformat:0 }} / {{ task.Cantidad_Proyecto|floatformat:0 }} unid.</div>
+                                                <div class="tooltip-value">{{ task.cantidad_producida|floatformat:0 }} / {{ task.Cantidad_Proyecto|floatformat:0 }} unid.</div>
                                             </div>
                                             <div class="text-end">
-                                                {% with total_avance=task.Cantidadpp|multiply:100 %}
+                                                {% with total_avance=task.cantidad_producida|multiply:100 %}
                                                 <span class="fs-5 fw-bold text-success">{{ total_avance|multiply:1|divide:task.Cantidad_Proyecto|floatformat:1 }}%</span>
                                                 {% endwith %}
                                             </div>
                                         </div>
                                         <div class="progress" style="height: 6px; background: rgba(255,255,255,0.1); border-radius: 10px;">
-                                            {% with pct=task.Cantidadpp|multiply:100 %}
+                                            {% with pct=task.cantidad_producida|multiply:100 %}
                                             <div class="progress-bar bg-success shadow-sm" style="width: {{ pct|multiply:1|divide:task.Cantidad_Proyecto }}%; border-radius: 10px;"></div>
                                             {% endwith %}
                                         </div>
@@ -1447,11 +1464,15 @@
                         
                         fetch(`/api/set_priority/${taskId}/`, {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
+                            headers: { 
+                                'Content-Type': 'application/json',
+                                'X-CSRFToken': '{{ csrf_token }}'
+                            },
                             body: JSON.stringify({
                                 maquina: targetMachineId,
                                 new_priority: newPriority,
-                                manual_start: manualStartStr
+                                manual_start: manualStartStr,
+                                scenario_id: ACTIVE_SCENARIO_ID
                             })
                         })
                         .then(r => r.json())
@@ -1593,8 +1614,14 @@
                     
                     fetch(`/api/set_priority/${taskId}/`, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
+                        headers: { 
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': '{{ csrf_token }}'
+                        },
+                        body: JSON.stringify({
+                            ...payload,
+                            scenario_id: ACTIVE_SCENARIO_ID
+                        })
                     })
                     .then(response => {
                         if (!response.ok) throw new Error("Server Error: " + response.statusText);
@@ -1849,8 +1876,15 @@
         function linkTasks(pred, succ) {
                 fetch('/api/link_tasks/', {
                     method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ predecessor_id: pred, successor_id: succ })
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': '{{ csrf_token }}'
+                    },
+                    body: JSON.stringify({ 
+                        predecessor_id: pred, 
+                        successor_id: succ,
+                        scenario_id: ACTIVE_SCENARIO_ID
+                    })
                 })
                 .then(res => res.json())
                 .then(data => {
@@ -1877,8 +1911,15 @@
                     if (result.isConfirmed) {
                         fetch('/api/unlink_tasks/', {
                             method: 'POST',
-                            headers: {'Content-Type': 'application/json'},
-                            body: JSON.stringify({ predecessor_id: pred, successor_id: succ })
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRFToken': '{{ csrf_token }}'
+                            },
+                            body: JSON.stringify({ 
+                                predecessor_id: pred, 
+                                successor_id: succ,
+                                scenario_id: ACTIVE_SCENARIO_ID
+                            })
                         })
                         .then(res => res.json())
                         .then(data => {
@@ -1968,11 +2009,15 @@
             // Call API
             fetch('/api/update_overlap_percentage/', {
                 method: 'POST',
-                headers: {'Content-Type': 'application/json'},
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': '{{ csrf_token }}'
+                },
                 body: JSON.stringify({
                     id_orden: currentOverlapTaskId,
                     porcentaje_solapamiento: percentage,
-                    maquina: currentOverlapMaquina
+                    maquina: currentOverlapMaquina,
+                    scenario_id: ACTIVE_SCENARIO_ID
                 })
             })
             .then(res => res.json())
@@ -2286,7 +2331,7 @@
         // Synchronize Scroll functionality
         document.addEventListener('DOMContentLoaded', function() {
             const bodyScroll = document.getElementById('gantt-body-scroll');
-            const headerScroll = document.getElementById('gantt-header-scroll');
+            const headerScroll = document.getElementById('header-container');
             
             if (bodyScroll && headerScroll) {
                 bodyScroll.addEventListener('scroll', function() {
@@ -2468,7 +2513,7 @@
             
             // Sync scroll for body and header
             const bodyScroll = document.getElementById('gantt-body-scroll');
-            const headerScroll = document.getElementById('gantt-header-scroll');
+            const headerScroll = document.getElementById('header-container');
             if (bodyScroll && headerScroll) {
                 bodyScroll.addEventListener('scroll', () => {
                     headerScroll.scrollLeft = bodyScroll.scrollLeft;
@@ -2612,6 +2657,94 @@
                     url.searchParams.set('scenario_id', scenarioId);
                     url.searchParams.set('run', '1');
                     window.location.href = url.toString();
+                });
+            }
+
+            // Url updating functionality for the new layout buttons
+            function updateUrlParam(key, value) {
+                const url = new URL(window.location.href);
+                if (value === null) {
+                    url.searchParams.delete(key);
+                } else {
+                    url.searchParams.set(key, value);
+                }
+                url.searchParams.set('run', '1');
+                window.location.href = url.toString();
+            }
+
+            const toggleOriginalMode = document.getElementById('toggleOriginalMode');
+            if (toggleOriginalMode) toggleOriginalMode.addEventListener('click', (e) => { e.preventDefault(); updateUrlParam('plan_mode', 'original'); });
+
+            const toggleManualMode = document.getElementById('toggleManualMode');
+            if (toggleManualMode) toggleManualMode.addEventListener('click', (e) => { e.preventDefault(); updateUrlParam('plan_mode', 'manual'); });
+
+            // AI SUGGESTION LOGIC
+            const btnRequestAi = document.getElementById('btn-request-ai');
+            if (btnRequestAi) {
+                btnRequestAi.addEventListener('click', function() {
+                    const runParam = new URLSearchParams(window.location.search).get('run');
+                    if (runParam !== '1') {
+                        Swal.fire({
+                            icon: 'info',
+                            title: 'Recalcule primero',
+                            text: 'Debe presionar "RE-CALCULAR" antes de pedir sugerencias a la IA para tener datos actualizados.',
+                            customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                        });
+                        return;
+                    }
+
+                    Swal.fire({
+                        title: 'IA Analizando producción...',
+                        html: 'El cerebro de la fábrica está evaluando la secuencia óptima para minimizar retrasos.',
+                        allowOutsideClick: false,
+                        didOpen: () => {
+                            Swal.showLoading();
+                            btnRequestAi.classList.add('ai-loading-pulse');
+                        }
+                    });
+
+                    fetch(`/planificacion/visual/ai-suggest/?run=1`)
+                        .then(r => r.json())
+                        .then(data => {
+                            btnRequestAi.classList.remove('ai-loading-pulse');
+                            Swal.close();
+
+                            if (data.error) {
+                                Swal.fire('Error de IA', data.error, 'error');
+                                return;
+                            }
+
+                            if (data.sugerencias && data.sugerencias.length > 0) {
+                                let htmlSug = '<div class="text-start small p-2" style="max-height: 300px; overflow-y: auto;">';
+                                data.sugerencias.forEach(s => {
+                                    htmlSug += `
+                                        <div class="mb-3 p-2 border-bottom">
+                                            <div class="fw-bold text-primary">Orden #${s.id_orden}</div>
+                                            <div class="text-muted" style="font-size: 0.75rem;">${s.razon}</div>
+                                            <div class="mt-1 d-flex gap-2">
+                                                <span class="badge bg-light text-dark">Prioridad: ${s.nueva_prioridad}</span>
+                                                ${s.nueva_maquina_id ? `<span class="badge bg-info">${s.nueva_maquina_id}</span>` : ''}
+                                            </div>
+                                        </div>`;
+                                });
+                                htmlSug += '</div>';
+
+                                Swal.fire({
+                                    title: 'Sugerencias de la IA',
+                                    html: htmlSug,
+                                    icon: 'success',
+                                    showCancelButton: false,
+                                    confirmButtonText: 'Entendido',
+                                    customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                                });
+                            } else {
+                                Swal.fire('Planificación Correcta', 'La IA considera que tu planificación actual ya es óptima.', 'success');
+                            }
+                        })
+                        .catch(err => {
+                            btnRequestAi.classList.remove('ai-loading-pulse');
+                            Swal.fire('Error', 'No se pudo conectar con el servicio de IA.', 'error');
+                        });
                 });
             }
         });

@@ -1,10 +1,14 @@
 from django.shortcuts import render, get_object_or_404, redirect
+from django.db import transaction, connections
 from django.http import JsonResponse, HttpResponse
 from .gantt_logic import get_gantt_data
 from .services import get_planificacion_data, get_all_machines
 from itertools import groupby
 from operator import itemgetter
-from .models import PrioridadManual, MaquinaConfig, HorarioMaquina, TaskDependency, HiddenTask
+from .models import (
+    PrioridadManual, MaquinaConfig, HorarioMaquina, 
+    TaskDependency, HiddenTask, Scenario, ProyectoPrioridad
+)
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 import json
@@ -60,11 +64,39 @@ def unlink_tasks(request):
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
+def get_active_scenario(request, scenario_id=None):
+    """
+    Helper to resolve the active scenario from URL, session, or POST body.
+    """
+    if not scenario_id:
+        scenario_id = request.GET.get('scenario_id')
+    
+    if not scenario_id and request.method == 'POST':
+        try:
+            body = json.loads(request.body)
+            scenario_id = body.get('scenario_id')
+        except:
+            pass
+            
+    if not scenario_id:
+        scenario_id = request.session.get('last_scenario_id')
+        
+    active_scenario = None
+    if scenario_id and str(scenario_id).isdigit():
+        active_scenario = Scenario.objects.using('default').filter(id=scenario_id).first()
+        
+    if not active_scenario:
+        active_scenario = Scenario.objects.using('default').filter(es_principal=True).first()
+        
+    if active_scenario:
+        request.session['last_scenario_id'] = str(active_scenario.id)
+        
+    return active_scenario
+
 @csrf_exempt
 def reset_planning(request):
     """
     API to clear manual planning (Visual Priorities, Virtual Moves) for a set of Orders.
-    Optionally, it can also clear Dependencies and Hidden status.
     """
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
@@ -72,27 +104,23 @@ def reset_planning(request):
     try:
         body = json.loads(request.body)
         ids = body.get('ids', [])
-        
-        print(f"DEBUG: reset_planning called with {len(ids)} IDs: {ids}")
+        active_scenario = get_active_scenario(request)
+
+        print(f"DEBUG: reset_planning called for Scenario: {active_scenario.nombre} (ID: {active_scenario.id}) with {len(ids)} IDs")
         
         if not ids:
              return JsonResponse({'status': 'ignored', 'message': 'No IDs provided'})
         
-        # 1. Clear Priorities and Virtual Moves
-        # This deletes the PrioridadManual record, which holds both the manual priority AND the virtual machine override.
-        deleted_prio, _ = PrioridadManual.objects.using('default').filter(id_orden__in=ids).delete()
-        print(f"DEBUG: Deleted {deleted_prio} PrioridadManual entries (Resets Moves & Priorities)")
+        # 1. Clear Priorities and Virtual Moves FOR THIS SCENARIO ONLY
+        deleted_prio, _ = PrioridadManual.objects.using('default').filter(id_orden__in=ids, scenario=active_scenario).delete()
         
         # 2. Clear Dependencies (Manual ones)
+        # These are currently global
         deleted_dep_pred, _ = TaskDependency.objects.using('default').filter(predecessor_id__in=ids).delete()
         deleted_dep_succ, _ = TaskDependency.objects.using('default').filter(successor_id__in=ids).delete()
-        print(f"DEBUG: Deleted dependencies Pred: {deleted_dep_pred}, Succ: {deleted_dep_succ}")
         
         # 3. Clear HIDDEN Status
-        # The user specifically requested that filtering should "clean everything".
-        # If they are resetting the plan, un-hiding hidden tasks is likely desired to get a fresh start.
         deleted_hidden, _ = HiddenTask.objects.using('default').filter(id_orden__in=ids).delete()
-        print(f"DEBUG: Un-hid {deleted_hidden} tasks")
         
         return JsonResponse({'status': 'ok', 'message': f'Reset {len(ids)} tasks'})
     except Exception as e:
@@ -124,7 +152,6 @@ def hide_task(request):
 def update_manual_time(request):
     """
     API to update the manual process time for a task.
-    Updates or creates a PrioridadManual entry.
     """
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
@@ -133,35 +160,23 @@ def update_manual_time(request):
         body = json.loads(request.body)
         id_orden = body.get('id_orden')
         tiempo_manual = body.get('tiempo_manual')
-        maquina = body.get('maquina') # Optional implies current, but better to have it
+        maquina = body.get('maquina') or 'SIN ASIGNAR'
+        active_scenario = get_active_scenario(request)
         
         if not id_orden or tiempo_manual is None:
              return JsonResponse({'error': 'Missing parameters'}, status=400)
              
         time_val = float(tiempo_manual)
         
-        # We need to find if there is an existing entry for this order
-        # If so, update it. If not, create it.
-        # Note: If not exists, what is the default Priority and Machine?
-        # We should use the provided machine, and default priority 9999 or attempt to keep current.
-        
+        # We need to maintain the same machine for the override to be found correctly later
         obj, created = PrioridadManual.objects.using('default').get_or_create(
             id_orden=id_orden,
-            defaults={
-                'maquina': maquina or 'SIN ASIGNAR',
-                'prioridad': 9999, # Default low priority if new
-                'tiempo_manual': time_val
-            }
+            scenario=active_scenario,
+            maquina=maquina
         )
-        
-        if not created:
-            obj.tiempo_manual = time_val
-            # If machine was provided and differs, should we update it? NO, only time edit.
-            # But if the record existed on another machine (unlikely if unique per order), we just update time.
-            obj.save()
+        obj.tiempo_manual = time_val
+        obj.save(using='default')
             
-        print(f"DEBUG: Updated manual time for {id_orden} to {time_val}")
-        
         return JsonResponse({'status': 'ok'})
     except Exception as e:
         print(f"ERROR update_manual_time: {e}")
@@ -172,7 +187,6 @@ def update_manual_time(request):
 def update_manual_nivel(request):
     """
     API to update the manual planning level (Nivel Planificacion) for a task.
-    Updates or creates a PrioridadManual entry.
     """
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
@@ -181,7 +195,8 @@ def update_manual_nivel(request):
         body = json.loads(request.body)
         id_orden = body.get('id_orden')
         nivel_manual = body.get('nivel_manual')
-        maquina = body.get('maquina') 
+        maquina = body.get('maquina') or 'SIN ASIGNAR'
+        active_scenario = get_active_scenario(request)
         
         if not id_orden or nivel_manual is None:
              return JsonResponse({'error': 'Missing parameters'}, status=400)
@@ -190,19 +205,12 @@ def update_manual_nivel(request):
         
         obj, created = PrioridadManual.objects.using('default').get_or_create(
             id_orden=id_orden,
-            defaults={
-                'maquina': maquina or 'SIN ASIGNAR',
-                'prioridad': 9999,
-                'nivel_manual': nivel_val
-            }
+            scenario=active_scenario,
+            maquina=maquina
         )
-        
-        if not created:
-            obj.nivel_manual = nivel_val
-            obj.save()
+        obj.nivel_manual = nivel_val
+        obj.save(using='default')
             
-        print(f"DEBUG: Updated manual nivel for {id_orden} to {nivel_val}")
-        
         return JsonResponse({'status': 'ok'})
     except Exception as e:
         print(f"ERROR update_manual_nivel: {e}")
@@ -212,7 +220,6 @@ def update_manual_nivel(request):
 def update_overlap_percentage(request):
     """
     API to update the overlap percentage for a task.
-    Updates or creates a PrioridadManual entry.
     """
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
@@ -221,30 +228,23 @@ def update_overlap_percentage(request):
         body = json.loads(request.body)
         id_orden = body.get('id_orden')
         porcentaje_solapamiento = body.get('porcentaje_solapamiento')
-        maquina = body.get('maquina')
+        maquina = body.get('maquina') or 'SIN ASIGNAR'
+        active_scenario = get_active_scenario(request)
         
         if not id_orden or porcentaje_solapamiento is None:
             return JsonResponse({'error': 'Missing parameters'}, status=400)
-        
-        # Validate percentage (0-100)
+            
         porcentaje_val = float(porcentaje_solapamiento)
         if porcentaje_val < 0 or porcentaje_val > 100:
             return JsonResponse({'error': 'Percentage must be between 0 and 100'}, status=400)
         
         obj, created = PrioridadManual.objects.using('default').get_or_create(
             id_orden=id_orden,
-            defaults={
-                'maquina': maquina or 'SIN ASIGNAR',
-                'prioridad': 9999,
-                'porcentaje_solapamiento': porcentaje_val
-            }
+            scenario=active_scenario,
+            maquina=maquina
         )
-        
-        if not created:
-            obj.porcentaje_solapamiento = porcentaje_val
-            obj.save()
-        
-        print(f"✅ Updated overlap percentage for task {id_orden} to {porcentaje_val}%")
+        obj.porcentaje_solapamiento = porcentaje_val
+        obj.save(using='default')
         
         return JsonResponse({
             'status': 'ok',
@@ -270,38 +270,47 @@ def main_menu(request):
 def planificacion_list(request):
     """
     View to retrieve planning data and render it in a table.
-    Use ?format=json to get raw JSON data.
     """
-    # Extract query parameters for filtering
-    filtros = {}
-    
+    # Canonical URL Redirect: Ensure scenario_id is always in URL for consistency
+    if 'scenario_id' not in request.GET:
+        active_scenario = get_active_scenario(request)
+        params = request.GET.copy()
+        params['scenario_id'] = active_scenario.id
+        return redirect(f"{request.path}?{params.urlencode()}")
+
+    active_scenario = get_active_scenario(request)
+
     # Example: ?id_orden=123
+    filtros = {}
     id_orden = request.GET.get('id_orden')
     if id_orden:
         filtros['id_orden'] = id_orden
 
     # Example: ?proyectos=1,2,3
     proyectos = request.GET.get('proyectos')
+    # FALLBACK: If no projects in URL, but we have an active scenario, use its projects
+    if not proyectos and active_scenario and active_scenario.proyectos:
+        proyectos = active_scenario.proyectos
+
     if proyectos:
-        filtros['proyectos'] = proyectos.split(',')
+        filtros['proyectos'] = [p.strip() for p in proyectos.split(',') if p.strip()]
 
     try:
-        # --- Local Machine Config Logic (Fetch FIRST to filter query) ---
-        # User requested: "solo pone las maquinas que tens en la base de datos local, y el where lo agregas"
+        # --- Local Machine Config Logic ---
         local_machines = MaquinaConfig.objects.using('default').all()
         using_local_config = local_machines.exists()
         
         if using_local_config:
-            # Map Code -> Name
+            # Map: { ID: Name }
             machine_map = {m.id_maquina.strip(): m.nombre for m in local_machines}
-            # The tabs are the configured names
-            all_machines_list = [m.nombre for m in local_machines]
-            # Add to filters to optimize query
+            # List of objects for the template
+            all_machines_list = [{'id': m.id_maquina.strip(), 'nombre': m.nombre} for m in local_machines]
             filtros['machine_ids'] = list(machine_map.keys())
         else:
-            # Fallback to ERP distinct names
-            all_machines_list = get_all_machines()
-            machine_map = {}
+            names = get_all_machines()
+            # If no local config, Name IS the ID
+            all_machines_list = [{'id': n, 'nombre': n} for n in names]
+            machine_map = {n: n for n in names}
 
         # Optimization: Only fetch data if filters are active
         # Don't count machine_ids as an active user filter, we need user intent (project/id)
@@ -312,6 +321,11 @@ def planificacion_list(request):
         else:
             data = []
         
+        # --- CANONICAL MACHINE HARMONIZATION ---
+        # Build maps to translate between Name and ID for overrides
+        name_to_id = {m.nombre.strip().upper(): m.id_maquina.strip() for m in local_machines}
+        id_to_name = {m.id_maquina.strip(): m.nombre.strip() for m in local_machines}
+        
         # --- FILTER HIDDEN TASKS ---
         hidden_ids = set(HiddenTask.objects.using('default').values_list('id_orden', flat=True))
         if hidden_ids:
@@ -321,22 +335,41 @@ def planificacion_list(request):
         # Determine response format
         if request.GET.get('format') == 'json':
              return JsonResponse({'data': data}, safe=False)
-        
-        # Fetch Local Priorities
-        prioridades_db = PrioridadManual.objects.using('default').all()
-        
-        # Create maps for OVERRIDES
-        # Since we enforce one-assignment-per-order in move_task, we can map by ID directly.
-        # id_orden -> {maquina, prioridad, tiempo_manual}
-        virtual_overrides = { 
-            p.id_orden: {
-                'maquina': p.maquina, 
-                'prioridad': p.prioridad,
-                'tiempo_manual': p.tiempo_manual,
-                'nivel_manual': p.nivel_manual
-            } 
-            for p in prioridades_db 
-        }
+
+        # Determine plan mode
+        plan_mode = request.GET.get('plan_mode', 'manual')
+
+        # Fetch Local Priorities filtered by Scenario
+        virtual_overrides = {}
+        id_to_any_override = {}
+        if plan_mode == 'manual':
+            if active_scenario:
+                prioridades_db = PrioridadManual.objects.using('default').filter(scenario=active_scenario)
+                print(f"DEBUG: planificacion_list - Loading {prioridades_db.count()} overrides for Scenario {active_scenario.nombre}")
+                               # Map for OVERRIDES: (id_orden, maquina_id) -> data
+                # We harvest ALL manual attributes to ensure consistency
+                virtual_overrides = {}
+                id_to_any_override = {}
+                
+                for p in prioridades_db:
+                    oid = int(p.id_orden)
+                    mid = str(p.maquina).strip()
+                    node = {
+                        'maquina': mid, 
+                        'prioridad': p.prioridad,
+                        'tiempo_manual': p.tiempo_manual,
+                        'nivel_manual': p.nivel_manual,
+                        'porcentaje_solapamiento': p.porcentaje_solapamiento,
+                        'fecha_inicio_manual': p.fecha_inicio_manual
+                    }
+                    virtual_overrides[(oid, mid)] = node
+                    id_to_any_override[oid] = mid
+                
+                id_to_override = id_to_any_override
+            else:
+                print("[WARN] No Active Scenario found in manual mode.")
+        else:
+            print("[INFO] AUTOMATIC MODE: Ignoring manual overrides in machine table.")
 
         # 1. Calculate extra fields, assign Priority, and Normalize Machine Name
         # We start with a BASELINE PROIRITY based on the initial SQL sort order (Index).
@@ -345,70 +378,90 @@ def planificacion_list(request):
             # Update Machine Name based on Local Config if active
             native_code = str(item.get('Idmaquina', '')).strip()
             
-                # A. Determine NATIVE Machine Name
+            # A. Determine NATIVE Machine Name & ID
             if using_local_config:
-                if native_code in machine_map:
-                    current_machine = machine_map[native_code]
-                else:
-                    current_machine = 'SIN ASIGNAR'
+                # HARMONIZATION: Translate ERP code to our Canonical ID
+                # erp_code could be "MAC18" OR "VF2" depending on ERP version
+                erp_code = str(item.get('Idmaquina', '')).strip()
+                canonical_id = erp_code
+                
+                # Check if erp_code is actually a Name in our config
+                if erp_code.upper() in name_to_id:
+                    canonical_id = name_to_id[erp_code.upper()]
+                
+                current_machine_id = canonical_id
+                current_machine_name = id_to_name.get(canonical_id, erp_code)
             else:
-                current_machine = item.get('MAQUINAD', 'SIN ASIGNAR')
+                current_machine_id = item.get('MAQUINAD', 'SIN ASIGNAR')
+                current_machine_name = current_machine_id
             
             # B. Check for VIRTUAL OVERRIDE (Moved Task)
-            t_id = item.get('Idorden')
+            t_id_val = int(item.get('Idorden'))
+            override_node = None
             
-            # Robust Lookup Logic
-            override = None
-            if t_id in virtual_overrides:
-                override = virtual_overrides[t_id]
-            else:
-                try:
-                    t_id_int = int(t_id)
-                    if t_id_int in virtual_overrides:
-                        override = virtual_overrides[t_id_int]
-                except (ValueError, TypeError):
-                    pass
+            # Use Canonical ID for lookup
+            m_lookup = str(current_machine_id).strip()
+            
+            keys_to_try = [(t_id_val, m_lookup)]
+            
+            for k in keys_to_try:
+                if k in virtual_overrides:
+                    override_node = virtual_overrides[k]
+                    break
+            
+            if not override_node:
+                # Cross-machine lookup (Moved items)
+                if t_id_val in id_to_any_override:
+                    target_m_id = id_to_any_override[t_id_val]
+                    override_node = virtual_overrides.get((t_id_val, target_m_id))
 
-            if override:
-                target_machine = override['maquina'] # This is usually the ID (e.g. 'STI' or '10')
-                priority_val = override['prioridad']
-                time_manual = override.get('tiempo_manual')
+            if override_node:
+                target_machine_id = str(override_node['maquina']).strip()
+                priority_val = override_node['prioridad']
                 
-                # FIX: Map ID to Name if using local config
-                if using_local_config:
-                    target_code = str(target_machine).strip()
-                    if target_code in machine_map:
-                        target_machine = machine_map[target_code]
-                
-                # Apply Machine & Priority Override
-                current_machine = target_machine
+                # Update current state
+                current_machine_id = target_machine_id
+                # Use name_to_id/id_to_name for robust naming
+                current_machine_name = id_to_name.get(target_machine_id, target_machine_id)
+
                 item['OrdenVisual'] = float(priority_val)
+                item['ManualPriorityFlag'] = True
                 
-                # Apply Time Override
-                if time_manual is not None:
-                     item['Tiempo_Proceso'] = float(time_manual)
-                     item['CalculadoManual'] = True # Flag for UI
+                # Apply Overrides
+                if override_node.get('tiempo_manual') is not None:
+                     item['Tiempo_Proceso'] = float(override_node['tiempo_manual'])
+                     item['CalculadoManual'] = True 
+                else:
+                     item['CalculadoManual'] = False
 
-                # Apply Nivel Override
-                if override.get('nivel_manual') is not None:
-                     item['Nivel_Planificacion'] = override['nivel_manual']
+                if override_node.get('nivel_manual') is not None:
+                     item['Nivel_Planificacion'] = override_node['nivel_manual']
                      item['NivelManualFlag'] = True
+                else:
+                     item['NivelManualFlag'] = False
+                     
+                if override_node.get('porcentaje_solapamiento') is not None:
+                     item['porcentaje_solapamiento'] = override_node['porcentaje_solapamiento']
             else:
-                # Default Priority logic if not moved/overridden
-                default_prio = (idx + 1) * 1000.0
-                item['OrdenVisual'] = default_prio
-                item['CalculadoManual'] = False # Ensure flag is false if not overridden
+                # Default Logic: Base it on SQL Position but spread it out
+                # We will re-number these per-machine later for better UI consistency
+                item['OrdenVisual'] = None # Flag for default
+                item['ManualPriorityFlag'] = False
+                item['CalculadoManual'] = False
+                item['NivelManualFlag'] = False
             
             # Final Assignment to Item
-            item['MAQUINAD'] = current_machine
+            item['MAQUINAD'] = current_machine_name
+            item['MAQUINA_ID'] = current_machine_id
 
-            # Cantidades (Already calculated in SQL in lowercase for driver compatibility)
+            # Cantidades
             item['Cantidad'] = item.get('cantidad_final') or 0
             item['Cantidadpp'] = item.get('cantidad_producida') or 0
             item['CantidadesPendientes'] = item.get('cantidad_pendiente') or 0
 
-        # 2. Initialize Grouping
-        grouped_data = {m: [] for m in all_machines_list}
+
+        # 2. Initialize Grouping using MACHINE NAMES
+        grouped_data = {m['nombre']: [] for m in all_machines_list}
         if 'SIN ASIGNAR' not in grouped_data:
              grouped_data['SIN ASIGNAR'] = []
 
@@ -435,28 +488,45 @@ def planificacion_list(request):
                         if m_name not in all_machines_list:
                             all_machines_list.append(m_name)
         
-        # Sort items within each machine
+        # Sort items within each machine and re-assign visual IDs
         for m_name in grouped_data:
             machine_items = grouped_data[m_name]
-            machine_items.sort(key=lambda x: x.get('OrdenVisual', 9999))
             
-            # Re-assign discrete OrdenVisual
+            # 1. Fill defaults for items without manual priority
+            # We use their original SQL index to maintain the ERP order among non-moved items
             for idx, m_item in enumerate(machine_items):
-                m_item['OrdenVisual'] = (idx + 1) * 1000
+                if m_item['OrdenVisual'] is None:
+                    # We use a large offset to ensure they are usually after small manual priorities (unless manually set high)
+                    # But actually, SQL order is better. 
+                    # Let's use a per-machine index to keep priorities clean.
+                    m_item['OrdenVisual'] = (idx + 1) * 5000.0 # Wide spacing for default
 
-        # Sort machines list just in case
-        if using_local_config:
-            # Keep the order from DB or sort Alphabetically? 
-            # Let's sort alphabetically for now, or maybe MaquinaConfig should have 'orden'?
-            # For now, simplistic sort.
-            processed_machines = sorted(all_machines_list)
-        else:
-            processed_machines = sorted(all_machines_list)
+            # 2. Sort by the finalized OrdenVisual
+            machine_items.sort(key=lambda x: x.get('OrdenVisual', 999999.0))
+            
+            # 3. Re-assign discrete OrdenVisual (1000, 2000, 3000...) for the template/UI
+            # This provides the clean baseline for the next Drag event.
+            for idx, m_item in enumerate(machine_items):
+                val = (idx + 1) * 1000
+                m_item['OrdenVisual'] = float(val)
+                m_item['Idprioridad'] = int(val)
 
-        if 'SIN ASIGNAR' in processed_machines:
-             # Ensure SIN ASIGNAR is at the end?
-             processed_machines.remove('SIN ASIGNAR')
-             processed_machines.append('SIN ASIGNAR')
+        # FINAL FILTER: REMOVED per user request ("no las ocultes")
+        # We keep all machines visible to allow moving tasks to them.
+        processed_machines = []
+        for m in all_machines_list:
+             processed_machines.append({'id': m['id'], 'nombre': m['nombre']})
+        
+        # Sort by name
+        processed_machines.sort(key=lambda x: x['nombre'])
+
+        if any(m['nombre'] == 'SIN ASIGNAR' for m in processed_machines):
+             # Ensure SIN ASIGNAR is at the end
+             sin_a = [m for m in processed_machines if m['nombre'] == 'SIN ASIGNAR'][0]
+             processed_machines.remove(sin_a)
+             processed_machines.append(sin_a)
+        elif 'SIN ASIGNAR' in grouped_data:
+             processed_machines.append({'id': 'SIN ASIGNAR', 'nombre': 'SIN ASIGNAR'})
         
         # FINAL FILTER: REMOVED per user request ("no las ocultes")
         # We keep all machines visible to allow moving tasks to them.
@@ -466,7 +536,11 @@ def planificacion_list(request):
         return render(request, 'produccion/planificacion.html', {
             'grouped_data': grouped_data, 
             'machines': processed_machines,
-            'search_active': search_active
+            'search_active': search_active,
+            'proyectos_value': proyectos if proyectos else '',
+            'id_orden_value': id_orden if id_orden else '',
+            'all_scenarios': Scenario.objects.using('default').all() if 'Scenario' in globals() else [],
+            'active_scenario_id': active_scenario.id if active_scenario else None
         })
     except Exception as e:
         if request.GET.get('format') == 'json':
@@ -474,6 +548,7 @@ def planificacion_list(request):
         return render(request, 'produccion/planificacion.html', {'grouped_data': {}, 'machines': [], 'error': str(e)})
 
 
+@csrf_exempt
 @csrf_exempt
 def move_priority(request, id_orden, direction):
     """
@@ -484,163 +559,104 @@ def move_priority(request, id_orden, direction):
     
     try:
         body = json.loads(request.body)
-        maquina = body.get('maquina')
-        # Fix: Use float to avoid ValueError on fractional strings (1500.5)
+        maquina_raw = body.get('maquina')
         current_priority = float(body.get('priority', 0)) 
-    except Exception as e:
-        return JsonResponse({'error': f'Invalid body: {e}'}, status=400)
-
-    # Simple approach: Swap priority values with the adjacent item.
-    # But since we mix DB priorities and ERP priorities, this is tricky.
-    # Strategy:
-    # 1. We need the list of ALL items for this machine to know who is adjacent.
-    #    This is expensive to fetch again.
-    #
-    # Better Strategy for "Visual Only" with no complex backend state:
-    # When user clicks "Up", frontend sends the ID of the item to move AND the ID of the item above it.
-    # We just swap their priority values in the DB.
-    # If they don't have a value in DB, we create one.
-    
-    # Let's implement specific swap logic
-    # Expecting: { 'neighbor_id': 123, 'neighbor_priority': 100 }
-    
-    neighbor_id = body.get('neighbor_id')
-    neighbor_priority = body.get('neighbor_priority') # Value of neighbor
-    
-    if neighbor_id is None:
-        return JsonResponse({'status': 'ignored', 'message': 'No neighbor'})
-
-    try:
-        # Get or Create objects for both
+        neighbor_id = body.get('neighbor_id')
+        neighbor_priority = body.get('neighbor_priority') 
+        active_scenario = get_active_scenario(request)
         
-        # Target Item
-        obj_target, created_t = PrioridadManual.objects.using('default').get_or_create(
-            id_orden=id_orden, maquina=maquina,
-            defaults={'prioridad': current_priority}
-        )
-        # If it existed but priority was different from what UI sees (e.g. ERP default), update it?
-        # No, we assume UI sends correct current state or we accept current DB state.
-        # If newly created, it took 'current_priority'.
-        
-        # Neighbor Item
-        obj_neighbor, created_n = PrioridadManual.objects.using('default').get_or_create(
-            id_orden=neighbor_id, maquina=maquina,
-            defaults={'prioridad': neighbor_priority}
+        if neighbor_id is None:
+            return JsonResponse({'status': 'ignored', 'message': 'No neighbor'})
+
+        # Harmonize machine key
+        from .models import MaquinaConfig
+        m_conf = MaquinaConfig.objects.filter(nombre=maquina_raw).first()
+        maquina_id = m_conf.id_maquina if m_conf else maquina_raw
+
+        # Target Item (Delete old name-based if moving to ID-based)
+        if m_conf and maquina_raw != maquina_id:
+             PrioridadManual.objects.filter(id_orden=id_orden, maquina=maquina_raw, scenario=active_scenario).delete()
+             PrioridadManual.objects.filter(id_orden=neighbor_id, maquina=maquina_raw, scenario=active_scenario).delete()
+
+        obj_target, _ = PrioridadManual.objects.using("default").update_or_create(
+            id_orden=id_orden, maquina=maquina_id, scenario=active_scenario,
+            defaults={"prioridad": neighbor_priority}
         )
         
-        # Logic fix: Trust the frontend values for the swap.
-        # The frontend has the "Logical" visual order (1000, 2000, 3000...)
-        # We simply enforce that:
-        # Target gets Neighbor's Priority
-        # Neighbor gets Target's Priority
+        obj_neighbor, _ = PrioridadManual.objects.using("default").update_or_create(
+            id_orden=neighbor_id, maquina=maquina_id, scenario=active_scenario,
+            defaults={"prioridad": current_priority}
+        )
         
-        obj_target.prioridad = neighbor_priority
-        obj_neighbor.prioridad = current_priority
-        
-        obj_target.save(using='default')
-        obj_neighbor.save(using='default')
-        
-        return JsonResponse({'status': 'ok'})
+        return JsonResponse({"status": "ok"})
     except Exception as e:
-        return JsonResponse({'error': f'DB Error: {str(e)}'}, status=500)
-
+        return JsonResponse({"error": f"DB Error: {str(e)}"}, status=500)
 
 @csrf_exempt
 def move_task(request):
     """
     API to move a task to a different machine and/or update its priority order.
-    Updates:
-    1. Machine Assignment in Tman050 (if changed)
-    2. Visual Priority in PrioridadManual
     """
-    if request.method != 'POST':
-        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
     
     try:
         body = json.loads(request.body)
-        id_orden = body.get('id_orden')
-        target_machine_id = body.get('target_machine_id')
-        new_priority = body.get('new_priority')
+        id_orden = body.get("id_orden")
+        target_machine_raw = body.get("target_machine_id")
+        new_priority = body.get("new_priority")
+        active_scenario = get_active_scenario(request)
         
-        if not id_orden or not target_machine_id or new_priority is None:
-             return JsonResponse({'error': 'Missing parameters'}, status=400)
+        if not id_orden or not target_machine_raw or new_priority is None:
+             return JsonResponse({"error": "Missing parameters"}, status=400)
              
         new_priority = float(new_priority)
         
-        # 1. Update Machine in Tman050
-        # Tman050 might have composite key, filter by idorden
-        # We assume one record per order for scheduling purposes or update all
-        # 1. Update Machine in Tman050 - REMOVED AS PER USER RESTRICTION (READ ONLY)
-        # We will handle machine moves virtually using PrioridadManual.
-        # The Tman050.idmaquina field in SQL Server remains unchanged.
-        # The view 'planificacion_visual' must respect the 'maquina' field in PrioridadManual as the override.
+        # Harmonize machine
+        from .models import MaquinaConfig
+        m_conf = MaquinaConfig.objects.using("default").filter(nombre=target_machine_raw).first()
+        target_machine_id = m_conf.id_maquina if m_conf else target_machine_raw
 
-        # 2. Update Priority in PrioridadManual
-        # We use the target machine ID for the scope of priority and assignment
-        target_machine_id = str(target_machine_id).strip()
-        print(f"DEBUG: move_task - Request to move ID {id_orden} to Machine '{target_machine_id}' with Prio {new_priority}")
-        
-        # LOGIC: A task should only have ONE 'active' virtual assignment/priority override.
-        # If we just create a new one, we might leave an old one if the unique_together is (id_orden, maquina).
-        # Strategy: Wipe previous override for this order, set new one. But PRESERVE Manual Time.
-        
-        with transaction.atomic():
-            # Check for existing manual data before deleting
+        from django.db import transaction
+        with transaction.atomic(using="default"):
+            old_entry = PrioridadManual.objects.using("default").filter(id_orden=id_orden, scenario=active_scenario).first()
+            
             existing_data = {
-                'tiempo_manual': None,
-                'fecha_inicio_manual': None,
-                'nivel_manual': None,
-                'porcentaje_solapamiento': 0.0
+                "tiempo_manual": old_entry.tiempo_manual if old_entry else None,
+                "fecha_inicio_manual": old_entry.fecha_inicio_manual if old_entry else None,
+                "nivel_manual": old_entry.nivel_manual if old_entry else None,
+                "porcentaje_solapamiento": old_entry.porcentaje_solapamiento if old_entry else 0.0
             }
             
-            old_entries = PrioridadManual.objects.using('default').filter(id_orden=id_orden)
-            if old_entries.exists():
-                prev = old_entries.first()
-                existing_data['tiempo_manual'] = prev.tiempo_manual
-                existing_data['fecha_inicio_manual'] = prev.fecha_inicio_manual
-                existing_data['nivel_manual'] = prev.nivel_manual
-                existing_data['porcentaje_solapamiento'] = prev.porcentaje_solapamiento
+            PrioridadManual.objects.using("default").filter(id_orden=id_orden, scenario=active_scenario).delete()
             
-            # 1. Delete ALL old manual priorities for this task (on any machine)
-            deleted_count, _ = old_entries.delete()
-            print(f"DEBUG: move_task - Deleted {deleted_count} old entries for {id_orden}")
-            
-            # 2. Create the NEW assignment trying to preserve manual time and pinning
-            obj = PrioridadManual.objects.using('default').create(
-                id_orden=id_orden, 
+            PrioridadManual.objects.using("default").create(
+                id_orden=id_orden,
                 maquina=target_machine_id,
                 prioridad=new_priority,
-                tiempo_manual=existing_data['tiempo_manual'],
-                fecha_inicio_manual=existing_data['fecha_inicio_manual'],
-                nivel_manual=existing_data['nivel_manual'],
-                porcentaje_solapamiento=existing_data['porcentaje_solapamiento']
+                scenario=active_scenario,
+                **existing_data
             )
-            print(f"DEBUG: move_task - Created new assignment. ID: {obj.id_orden} Machine: {obj.maquina} Prio: {obj.prioridad}")
-        
-        return JsonResponse({'status': 'ok'})
             
+        return JsonResponse({"status": "ok"})
     except Exception as e:
-        print(f"ERROR move_task: {e}")
-        return JsonResponse({'error': str(e)}, status=500)
+        return JsonResponse({"error": f"DB Error: {str(e)}"}, status=500)
 
 @csrf_exempt
 def set_priority(request, id_orden):
     """
     API to set a specific priority AND/OR manual start date for an order.
-    Used for Drag and Drop (pinning).
+    Used for Drag and Drop (pinning/manual sequencing).
     """
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
     
-    print(f"🔍 DEBUG set_priority ID: {id_orden}")
-    print(f"🔍 DEBUG set_priority body: {request.body}")
     try:
         body = json.loads(request.body)
         maquina = body.get('maquina')
         new_priority = body.get('new_priority')
         manual_start_str = body.get('manual_start')
-        
-        print(f"🔍 Parsed - Machine: {maquina}, Priority: {new_priority}, Manual Start: {manual_start_str}")
+        active_scenario = get_active_scenario(request)
         
         # Validation
         if new_priority is None and manual_start_str is None:
@@ -653,158 +669,65 @@ def set_priority(request, id_orden):
         if manual_start_str:
             try:
                 from django.utils import timezone as django_tz
-                
-                # Robust Date Parsing: Try ISO, Space-sep, and others
+                # Robust Date Parsing
                 manual_start_str = str(manual_start_str).strip()
                 if 'T' in manual_start_str:
-                    # ISO Format (assume already has timezone info)
                     manual_start_dt = datetime.fromisoformat(manual_start_str.replace('Z', '+00:00'))
+                    if manual_start_dt.tzinfo is None:
+                        manual_start_dt = django_tz.make_aware(manual_start_dt)
                 else:
-                    # SQL / Human Format (NO timezone info - assume LOCAL time)
-                    # Truncate milliseconds if present
                     if '.' in manual_start_str:
                         manual_start_str = manual_start_str.split('.')[0]
-                    
-                    # Parse as naive datetime
                     naive_dt = datetime.strptime(manual_start_str, '%Y-%m-%d %H:%M:%S')
-                    
-                    # Convert to timezone-aware datetime using Django's utility
-                    # This automatically uses the configured TIME_ZONE from settings.py
                     manual_start_dt = django_tz.make_aware(naive_dt)
-                    
-                print(f"✅ Parsed manual_start_dt: {manual_start_dt} (TZ: {manual_start_dt.tzinfo})")
-            except ValueError as ve:
-                print(f"❌ ERROR parsing date '{manual_start_str}': {ve}")
-                return JsonResponse({'error': f'Invalid date format: {manual_start_str}. Expecting YYYY-MM-DD HH:MM:SS'}, status=400)
+            except Exception as ve:
+                print(f"ERROR parsing date in set_priority: {ve}")
+                return JsonResponse({'error': f'Invalid date format: {manual_start_str}'}, status=400)
 
-    except Exception as e:
-        print(f"❌ ERROR set_priority body parsing: {e}")
-        return JsonResponse({'error': f'Invalid body: {e}'}, status=400)
+        # Harmonize machine
+        from .models import MaquinaConfig
+        m_conf = MaquinaConfig.objects.using('default').filter(nombre=maquina).first()
+        maquina_id = m_conf.id_maquina if m_conf else maquina
 
-    try:
-        print(f"🔍 Cleaning old entries for order {id_orden} and applying NEW machine {maquina}")
-        
-        # 1. Preserve existing manual data from ANY previous entry
-        existing_manual_data = {
-            'tiempo_manual': None,
-            'nivel_manual': None,
-            'porcentaje_solapamiento': 0.0,
-            'fecha_inicio_manual': None
-        }
-        
-        previous_entries = PrioridadManual.objects.using('default').filter(id_orden=id_orden)
-        if previous_entries.exists():
-            prev = previous_entries.first()
-            existing_manual_data['tiempo_manual'] = prev.tiempo_manual
-            existing_manual_data['nivel_manual'] = prev.nivel_manual
-            existing_manual_data['porcentaje_solapamiento'] = prev.porcentaje_solapamiento
-            existing_manual_data['fecha_inicio_manual'] = prev.fecha_inicio_manual
-            print(f"   (Preserving manual data: {existing_manual_data})")
-
-        # 2. Delete ALL previous assignments
-        deleted_count = previous_entries.delete()[0]
-        
-        # 3. Create NEW assignment
-        # Ensure maquina is stripped
-        safe_maquina = str(maquina).strip() if maquina else 'SIN ASIGNAR'
-        
-        # Determine final Date to save
-        # If manual_start_str was provided (even if valid parsed object is None? No, only if parsed), use it.
-        # Logic: If manual_start_dt is NOT None, use it.
-        # If manual_start_dt IS None:
-        #    Did the request EXPLICITLY ask for None/Null? (Hard to know with .get())
-        #    Assume: If not provided, PRESERVE existing.
-        #    Issue: How to unpin? We'll assume unpin requires specific action or clear.
-        
-        final_start_date = manual_start_dt if manual_start_dt is not None else existing_manual_data['fecha_inicio_manual']
-        
-        obj = PrioridadManual.objects.using('default').create(
-            id_orden=id_orden,
-            maquina=safe_maquina, 
-            prioridad=new_priority if new_priority is not None else 0.0,
-            fecha_inicio_manual=final_start_date,
+        from django.db import transaction
+        with transaction.atomic(using='default'):
+            # Fetch existing to preserve ALL other manual overrides
+            # Use filter to get whatever entry exists for this OP in this scenario, regardless of machine ID/Name mismatch
+            old_entry = PrioridadManual.objects.using('default').filter(id_orden=id_orden, scenario=active_scenario).first()
             
-            # Restore preserved data
-            tiempo_manual=existing_manual_data['tiempo_manual'],
-            nivel_manual=existing_manual_data['nivel_manual'],
-            porcentaje_solapamiento=existing_manual_data['porcentaje_solapamiento']
-        )
+            # Default values if no entry exists
+            existing_data = {
+                'tiempo_manual': old_entry.tiempo_manual if old_entry else None,
+                'nivel_manual': old_entry.nivel_manual if old_entry else None,
+                'porcentaje_solapamiento': old_entry.porcentaje_solapamiento if old_entry else 0.0,
+                'fecha_inicio_manual': old_entry.fecha_inicio_manual if old_entry else None,
+                'prioridad': old_entry.prioridad if old_entry else (new_priority if new_priority is not None else 0.0)
+            }
+            
+            # Clean up before re-creating (task/scenario combo should be unique globally for the move)
+            PrioridadManual.objects.using('default').filter(id_orden=id_orden, scenario=active_scenario).delete()
+            
+            final_start_date = manual_start_dt if manual_start_dt is not None else existing_data['fecha_inicio_manual']
+            final_priority = new_priority if new_priority is not None else existing_data['prioridad']
+            
+            PrioridadManual.objects.using('default').create(
+                id_orden=id_orden,
+                maquina=maquina_id, 
+                prioridad=final_priority,
+                fecha_inicio_manual=final_start_date,
+                scenario=active_scenario,
+                tiempo_manual=existing_data['tiempo_manual'],
+                nivel_manual=existing_data['nivel_manual'],
+                porcentaje_solapamiento=existing_data['porcentaje_solapamiento']
+            )
         
-        print(f"✅ Successfully saved PrioridadManual for order {id_orden} on {safe_maquina}")
-        
-        return JsonResponse({
-            'status': 'ok',
-            'saved_date': str(manual_start_dt) if manual_start_dt else None,
-            'saved_priority': new_priority,
-            'saved_machine': safe_maquina
-        })
+        return JsonResponse({'status': 'ok'})
     except Exception as e:
         print(f"❌ ERROR set_priority DB: {e}")
-        import traceback
-        traceback.print_exc()
         return JsonResponse({'error': f'DB Error: {str(e)}'}, status=500)
     
 
-@csrf_exempt
-@require_POST
-def set_manual_time(request):
-    """
-    Sets a manual 'Tiempo Proceso' for a specific task.
-    Creates or updates PrioridadManual entry.
-    """
-    try:
-        data = json.loads(request.body)
-        id_orden = data.get('id_orden')
-        tiempo_manual = data.get('tiempo_manual')
-        maquina_actual = data.get('maquina') # Current machine to ensure we don't move it accidentally or lose it
 
-        if id_orden is None or tiempo_manual is None:
-            return JsonResponse({'error': 'Faltan parametros (id_orden, tiempo_manual)'}, status=400)
-
-        id_orden = int(id_orden)
-        tiempo_manual = float(tiempo_manual)
-        maquina_str = str(maquina_actual).strip() if maquina_actual else ''
-
-        with transaction.atomic():
-            # Try to get existing entry to preserve other fields (priority, machine)
-            # Or create new one.
-            # Strategy: valid PrioridadManual entry usually exists if dragged.
-            # If not, we create one. But we need to know the 'machine'. 
-            # If it's pure SQL data, we don't have PrioridadManual.
-            # If we create new PM, we must set 'maquina' correct so it doesn't disappear from the view 
-            # (since view checks PM.maquina for location).
-            
-            entry = PrioridadManual.objects.using('default').filter(id_orden=id_orden).first()
-            if entry:
-                entry.tiempo_manual = tiempo_manual
-                entry.save()
-            else:
-                # Create new. 
-                # IMPORTANT: If we create an entry, the planner thinks it's a "Manual Override".
-                # If we don't set 'maquina', it might default to '' and disappear from table if table filters by maquina.
-                # So we MUST save the current machine code.
-                if not maquina_str:
-                     # This is risky? If Frontend sends valid machine, we use it.
-                     pass 
-                
-                PrioridadManual.objects.using('default').create(
-                    id_orden=id_orden,
-                    maquina=maquina_str,
-                    prioridad= 99999999, # Default to end if new? Or 0?
-                    # Ideally we should keep original priority logic but here we are forcing an entry.
-                    # PlanificacionList logic: if PM exists, uses PM.maquina.
-                    # If PM priority is 0, it sorts 0.
-                    # Let's try to preserve relative order? Hard without context.
-                    # Putting it at the end (high number) avoids disruption? Or 0?
-                    # Ideally, PrioridadManual should optionally ONLY override time.
-                    # But the model structure (one row) ties them.
-                    tiempo_manual=tiempo_manual
-                )
-        
-        return JsonResponse({'message': 'Tiempo actualizado.'})
-    except Exception as e:
-        print(f"Error set_manual_time: {e}")
-        return JsonResponse({'error': str(e)}, status=500)
 
 
 # --- Machine Configuration Views ---
@@ -907,9 +830,9 @@ def planificacion_visual_OLD(request):
         return render(request, 'produccion/planificacion_visual.html', context)
 
     # --- AUTOMATIC DEPENDENCY PREPARATION (OPTION B: By Nivel Decreasing) ---
-    print("\n" + "=" * 70)
-    print("🔢 OPCIÓN B: Dependencias Automáticas por Nivel (Mayor a Menor)")
-    print("=" * 70)
+#    print("\n" + "=" * 70)
+#    print("🔢 OPCIÓN B: Dependencias Automáticas por Nivel (Mayor a Menor)")
+#    print("=" * 70)
 
     # 1. Fetch relevant tasks to build the map (Scope to Current Project filter)
     deps_filter = {}
@@ -1050,8 +973,8 @@ def planificacion_visual_OLD(request):
                             print(f"  [DEPENDENCY CREATED] {pred_id} (Nivel {higher_nivel}) -> {succ_id} (Nivel {lower_nivel})")
 
 
-    print(f"\n  ✅ Created {len(dependency_map)} automatic dependencies based on Nivel (Desc)")
-    print("=" * 70 + "\n")
+#    print(f"\n  ✅ Created {len(dependency_map)} automatic dependencies based on Nivel (Desc)")
+#    print("=" * 70 + "\n")
         
     # Global map to track end dates of ALL tasks across ALL machines
     global_task_end_dates = {}
@@ -1062,9 +985,9 @@ def planificacion_visual_OLD(request):
     # ========================================================================
     # FIRST PASS: Calculate ALL tasks to build global_task_end_dates
     # ========================================================================
-    print("=" * 60)
-    print("DEPENDENCY RESOLUTION: FIRST PASS (Building end dates map)")
-    print("=" * 60)
+#    print("=" * 60)
+#    print("DEPENDENCY RESOLUTION: FIRST PASS (Building end dates map)")
+#    print("=" * 60)
     
     for maquina in maquinas:
         machine_id = maquina.id_maquina
@@ -1221,9 +1144,9 @@ def planificacion_visual_OLD(request):
     # ========================================================================
     # SECOND PASS: Recalculate ONLY tasks with dependencies (MULTI-PASS)
     # ========================================================================
-    print("\n" + "=" * 60)
-    print("DEPENDENCY RESOLUTION: SECOND PASS (Applying dependencies - Multi-Pass)")
-    print("=" * 60)
+#    print("\n" + "=" * 60)
+#    print("DEPENDENCY RESOLUTION: SECOND PASS (Applying dependencies - Multi-Pass)")
+#    print("=" * 60)
     
     # Identify which tasks have dependencies
     tasks_with_dependencies = set(dependency_map.keys())
@@ -1303,10 +1226,10 @@ def planificacion_visual_OLD(request):
     # We keep empty rows to allow Drag and Drop to empty machines
     # timeline_data = [row for row in timeline_data if row['tasks']]
 
-    print("=" * 60)
-    print(f"DEPENDENCY RESOLUTION COMPLETE")
-    print(f"Total tasks processed: {len(global_task_end_dates)}")
-    print("=" * 60 + "\n")
+#    print("=" * 60)
+#    print(f"DEPENDENCY RESOLUTION COMPLETE")
+#    print(f"Total tasks processed: {len(global_task_end_dates)}")
+#    print("=" * 60 + "\n")
         
     # 3. Determine Visual Bounds (Min/Max working hours)
     global_min_h = 24
@@ -1538,433 +1461,6 @@ from openpyxl.styles import PatternFill, Border, Side, Alignment, Font, Color
 from openpyxl.utils import get_column_letter
 from datetime import timedelta
 
-def export_planificacion_excel_OLD(request):
-    """
-    Generate a Visual Gantt Chart in Excel.
-    """
-    # 1. Setup Simulation (Same as Visual View)
-    maquinas = MaquinaConfig.objects.using('default').prefetch_related('horarios').all().order_by('id_maquina')
-    
-    fecha_desde = request.GET.get('fecha_desde')
-    if fecha_desde:
-        try:
-            start_simulation = datetime.strptime(fecha_desde, '%Y-%m-%d')
-        except ValueError:
-            start_simulation = datetime.now()
-    else:
-        start_simulation = datetime.now()
-    
-    start_simulation = start_simulation.replace(hour=7, minute=0, second=0, microsecond=0)
-
-    # --- Virtual Moves Logic ---
-    virtual_moves = {}
-    virtual_priorities = {}
-    all_manuals = PrioridadManual.objects.using('default').all()
-    for pm in all_manuals:
-        virtual_moves[pm.id_orden] = pm.maquina 
-        virtual_priorities[pm.id_orden] = pm.prioridad
-
-    tasks_moved_in_map = {}
-    for oid, mid in virtual_moves.items():
-        if mid not in tasks_moved_in_map:
-             tasks_moved_in_map[mid] = []
-        tasks_moved_in_map[mid].append(oid)
-
-    # 2. CALCULATION PHASE
-    # We must run the simulation for ALL machines to determine the Full Date Range and valid Grid.
-    
-    # --- AUTOMATIC DEPENDENCY PREPARATION (Same as Visual View) ---
-    # BUILD AUTOMATIC DEPENDENCIES based on NumeroOperacion
-    all_tasks_for_deps = get_planificacion_data({})
-    
-    from collections import defaultdict
-    orders_map = defaultdict(list)
-    
-    for task in all_tasks_for_deps:
-        mstnmbr = task.get('Mstnmbr')
-        if mstnmbr:
-            orders_map[mstnmbr].append(task)
-    
-    dependency_map = {}
-    
-    for mstnmbr, tasks_in_order in orders_map.items():
-        tasks_sorted = sorted(tasks_in_order, key=lambda x: x.get('NumeroOperacion', 0))
-        
-        for i in range(1, len(tasks_sorted)):
-            predecessor = tasks_sorted[i-1]
-            successor = tasks_sorted[i]
-            
-            pred_id = predecessor.get('Idorden')
-            succ_id = successor.get('Idorden')
-            pred_num = predecessor.get('NumeroOperacion', 0)
-            succ_num = successor.get('NumeroOperacion', 0)
-            
-            if pred_id and succ_id and pred_num < succ_num:
-                if succ_id not in dependency_map:
-                    dependency_map[succ_id] = []
-                dependency_map[succ_id].append(pred_id)
-    
-    global_task_end_dates = {}
-    machine_tasks_map = {}
-    
-    # FIRST PASS: Build end_dates map
-    for maquina in maquinas:
-        machine_id = maquina.id_maquina
-        
-        # Filters (Reuse Logic)
-        filtros = request.GET.copy()
-        machine_filter = {'machine_ids': [machine_id]}
-        if request.GET.get('proyectos'):
-             raw_proyectos = request.GET.get('proyectos')
-             machine_filter['proyectos'] = [p.strip() for p in raw_proyectos.split(',') if p.strip()]
-
-        native_tasks = get_planificacion_data(machine_filter) 
-        
-        # Logic: Move Out
-        active_tasks = []
-        for t in native_tasks:
-            try: oid = int(t.get('Idorden', 0))
-            except: oid = 0
-            
-            if oid in virtual_moves:
-                target_machine = virtual_moves[oid]
-                if str(target_machine).strip() == str(machine_id).strip():
-                    active_tasks.append(t)
-            else:
-                 active_tasks.append(t)
-        
-        # Logic: Move In
-        moved_in_ids = tasks_moved_in_map.get(machine_id, [])
-        if moved_in_ids:
-            inbound_filter = {}
-            if request.GET.get('proyectos'): inbound_filter['proyectos'] = machine_filter['proyectos']
-            inbound_filter['id_orden_in'] = moved_in_ids
-            
-            extra_tasks = get_planificacion_data(inbound_filter)
-            existing_ids = set(t['Idorden'] for t in active_tasks)
-            for t in extra_tasks:
-                if t['Idorden'] not in existing_ids: active_tasks.append(t)
-        
-        # Sort
-        tasks = active_tasks
-        for idx, item in enumerate(tasks):
-             default_prio = (idx + 1) * 1000.0
-             p_id = item['Idorden']
-             if p_id in virtual_priorities: item['OrdenVisual'] = float(virtual_priorities[p_id])
-             else: item['OrdenVisual'] = default_prio
-        tasks.sort(key=lambda x: x.get('OrdenVisual', 999999))
-        for idx, item in enumerate(tasks): item['OrdenVisual'] = (idx + 1) * 1000
-
-        # Store for second pass
-        machine_tasks_map[machine_id] = {'maquina': maquina, 'tasks': tasks}
-        
-        # FIRST PASS: Calculate without dependencies
-        calculated_tasks = calculate_timeline(maquina, tasks, start_date=start_simulation, task_min_start_times=None)
-        
-        # Build end_dates map
-        for ct in calculated_tasks:
-            ct_id = ct.get('Idorden')
-            ct_end = ct.get('end_date')
-            if ct_id and ct_end:
-                if ct_id not in global_task_end_dates or ct_end > global_task_end_dates[ct_id]:
-                    global_task_end_dates[ct_id] = ct_end
-    
-    # SECOND PASS: Recalculate with dependencies
-    tasks_with_dependencies = set(dependency_map.keys())
-    
-    # Initialize variables for second pass
-    processed_data = []
-    global_max_date = start_simulation + timedelta(hours=48)
-    
-    for machine_id, machine_data in machine_tasks_map.items():
-        maquina = machine_data['maquina']
-        tasks = machine_data['tasks']
-        
-        machine_has_dependencies = any(t.get('Idorden') in tasks_with_dependencies for t in tasks)
-        
-        if not machine_has_dependencies:
-            calculated_tasks = calculate_timeline(maquina, tasks, start_date=start_simulation, task_min_start_times=None)
-        else:
-            min_start_times = {}
-            for t in tasks:
-                t_id = t.get('Idorden')
-                if t_id in dependency_map:
-                    preds = dependency_map[t_id]
-                    max_pred_end = None
-                    for pid in preds:
-                        if pid in global_task_end_dates:
-                            end_date = global_task_end_dates[pid]
-                            if max_pred_end is None or end_date > max_pred_end:
-                                max_pred_end = end_date
-                    if max_pred_end:
-                        min_start_times[t_id] = max_pred_end
-            
-            calculated_tasks = calculate_timeline(maquina, tasks, start_date=start_simulation, task_min_start_times=min_start_times)
-        
-        processed_data.append({
-            'machine': maquina,
-            'tasks': calculated_tasks
-        })
-        
-        # Update Global Bounds
-        for t in calculated_tasks:
-            if t['end_date'] and t['end_date'] > global_max_date:
-                global_max_date = t['end_date']
-    
-    # Set global min date
-    global_min_date = start_simulation
-
-    # 3. BUILD TIME GRID (Columns)
-    # We want columns ONLY for working hours found in the machine configurations?
-    # Or simplified: 07:00 to 22:00 for every day from min to max.
-    # Let's check the global schedule limits again.
-    
-    grid_min_h = 24
-    grid_max_h = 0
-    has_schedules = False
-    for m in maquinas:
-        for h in m.horarios.all():
-            has_schedules = True
-            if h.hora_inicio.hour < grid_min_h: grid_min_h = h.hora_inicio.hour
-            if h.hora_fin.hour > grid_max_h: grid_max_h = h.hora_fin.hour
-            
-    if not has_schedules:
-        grid_min_h = 7
-        grid_max_h = 18
-    elif grid_max_h <= grid_min_h: # Wrap around or error
-        grid_max_h = 23
-        grid_min_h = 0
-        
-    # Generate map: Datetime (Round to Hour) -> Column Index (1-based for Excel)
-    # Excel Cols: A=Machine. Time starts at B (2).
-    
-    time_cols_map = {} # datetime(Y,M,D,H,0,0) -> col_index
-    grid_headers = [] # List of datetimes for header generation
-    
-    current_pointer = global_min_date.replace(hour=grid_min_h, minute=0, second=0, microsecond=0)
-    # Adjust valid range slightly buffer
-    end_pointer = global_max_date + timedelta(days=1)
-    
-    col_counter = 2 # Start at Column B
-    
-    while current_pointer <= end_pointer:
-        # Is this hour valid?
-        # Check day of week + hour range
-        wd = current_pointer.weekday()
-        # Simplified Check: Just check Hour Range (User usually wants Mon-Fri + Sat?)
-        # Let's rely on hour range for simplicity of grid, visual view does same.
-        
-        if grid_min_h <= current_pointer.hour < grid_max_h:
-            # Add to grid
-            # But skip Sundays? Visual view filters days.
-            # Visual View Logic: Mon-Fri=Always, Sat=IfConfigured.
-            # Let's blindly include all days for safety or check 'SA'.
-            # Assuming Mon-Fri (0-4) + Sat (5) if needed.
-            # Let's include Mon-Sat to be safe.
-            if wd != 6: # Skip Sunday
-                time_cols_map[current_pointer] = col_counter
-                grid_headers.append(current_pointer)
-                col_counter += 1
-                
-        current_pointer += timedelta(hours=1)
-        
-    # verify we have columns
-    if not grid_headers:
-        return HttpResponse("No valid time range calculated.")
-
-    # 4. EXCEL GENERATION
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "Gantt Visual"
-    
-    # --- STYLES ---
-    # Colors from user image approximation
-    FILL_HEADER_MACHINE = PatternFill("solid", fgColor="C6E0B4") # Light Green
-    FILL_HEADER_DAY     = PatternFill("solid", fgColor="4472C4") # Blue
-    FILL_MACHINE_ROW    = PatternFill("solid", fgColor="D99795") # Salmon/Reddish
-    
-    FONT_BOLD_WHITE = Font(bold=True, color="FFFFFF")
-    FONT_BOLD_BLACK = Font(bold=True, color="000000")
-    
-    BORDER_THIN = Border(left=Side(style='thin', color="CCCCCC"), 
-                         right=Side(style='thin', color="CCCCCC"), 
-                         top=Side(style='thin', color="CCCCCC"), 
-                         bottom=Side(style='thin', color="CCCCCC"))
-                         
-    BORDER_DOTTED_VERT = Border(left=Side(style='dotted', color="BBBBBB"), 
-                                right=Side(style='dotted', color="BBBBBB"), 
-                                top=Side(style='thin', color="EEEEEE"), 
-                                bottom=Side(style='thin', color="EEEEEE"))
-
-    ALIGN_CENTER = Alignment(horizontal='center', vertical='center')
-    ALIGN_WRAP   = Alignment(horizontal='center', vertical='center', wrap_text=True)
-    
-    # Task Colors (Pastel Palette)
-    colors = ['FFB6C1', 'ADD8E6', '90EE90', 'FFD700', 'E6E6FA', 'FFAB91', '80DEEA', 'C5E1A5']
-    
-    # --- HEADER CONSTRUCTION ---
-    
-    # 1. "MAQUINA" Label (Merged A2:A3 usually, or just A2 if we want to align with Day Header)
-    # User image shows MAQUINA header spanning Row 2 and 3? Or just Row 2?
-    # Let's merge A2:A3 to cover Day and Hour rows for the label.
-    ws.merge_cells("A2:A3")
-    c_maquina = ws["A2"]
-    c_maquina.value = "MAQUINA"
-    c_maquina.fill = FILL_HEADER_MACHINE
-    c_maquina.font = FONT_BOLD_BLACK
-    c_maquina.alignment = ALIGN_CENTER
-    c_maquina.border = BORDER_THIN
-    # Apply style to A3 too?
-    ws["A3"].border = BORDER_THIN
-
-    # 2. Day Headers (Row 2) & Hour Headers (Row 3)
-    
-    # Setup standard column widths for time
-    for col_idx in time_cols_map.values():
-        ws.column_dimensions[get_column_letter(col_idx)].width = 3.5
-
-    # Group headers by Day
-    current_day = None
-    start_merge = -1
-    
-    for i, dt in enumerate(grid_headers):
-        col_idx = i + 2
-        
-        # HOUR HEADER (Row 3)
-        c_hour = ws.cell(row=3, column=col_idx)
-        c_hour.value = dt.hour
-        c_hour.alignment = ALIGN_CENTER
-        c_hour.border = BORDER_THIN # Keep hours with solid thin border for readability
-        c_hour.font = Font(size=8)
-        
-        # DAY HEADER LOGIC
-        day_str = dt.strftime('%a, %d-%b')
-        if day_str != current_day:
-            # Close previous merge
-            if current_day is not None:
-                ws.merge_cells(start_row=2, start_column=start_merge, end_row=2, end_column=col_idx-1)
-                c_day = ws.cell(row=2, column=start_merge)
-                c_day.value = current_day
-                c_day.alignment = ALIGN_CENTER
-                c_day.fill = FILL_HEADER_DAY
-                c_day.font = FONT_BOLD_WHITE
-                c_day.border = BORDER_THIN
-            
-            current_day = day_str
-            start_merge = col_idx
-            
-    # Close last day
-    if current_day is not None and start_merge != -1:
-        ws.merge_cells(start_row=2, start_column=start_merge, end_row=2, end_column=col_counter-1)
-        c_day = ws.cell(row=2, column=start_merge)
-        c_day.value = current_day
-        c_day.alignment = ALIGN_CENTER
-        c_day.fill = FILL_HEADER_DAY
-        c_day.font = FONT_BOLD_WHITE
-        c_day.border = BORDER_THIN
-
-    # Fix Column A width
-    ws.column_dimensions['A'].width = 25
-    
-    # --- RENDER DATA ---
-    current_row = 4
-    
-    for p_data in processed_data:
-        maquina = p_data['machine']
-        tasks = p_data['tasks']
-        
-        # 1. Machine Name (Column A)
-        c_name = ws.cell(row=current_row, column=1)
-        c_name.value = maquina.nombre
-        c_name.alignment = ALIGN_CENTER
-        c_name.font = FONT_BOLD_BLACK
-        c_name.fill = FILL_MACHINE_ROW
-        c_name.border = BORDER_THIN
-        
-        ws.row_dimensions[current_row].height = 45
-        
-        # 2. Prepare Grid Background (Dashed vertical lines for empty slots)
-        # We process all valid columns for this row to set the default grid style
-        for col_idx in time_cols_map.values():
-            c_bg = ws.cell(row=current_row, column=col_idx)
-            c_bg.border = BORDER_DOTTED_VERT
-            
-        # Track occupied columns
-        occupied_cols = set()
-        
-        # 3. Render Tasks
-        for i, t in enumerate(tasks):
-            t_start = t['start_date']
-            t_end = t['end_date']
-            
-            if not t_start or not t_end: continue
-            
-            t_start_h = t_start.replace(minute=0, second=0, microsecond=0)
-            start_col = time_cols_map.get(t_start_h)
-            
-            if not start_col: continue 
-                
-            duration_h = int(t['duration_real'])
-            if duration_h < 1: duration_h = 1
-            
-            sorted_keys = sorted(time_cols_map.keys())
-            try:
-                start_idx_in_keys = sorted_keys.index(t_start_h)
-                end_idx_in_keys = min(start_idx_in_keys + duration_h - 1, len(sorted_keys)-1)
-                end_time_key = sorted_keys[end_idx_in_keys]
-                end_col = time_cols_map[end_time_key]
-            except ValueError:
-                continue
-
-            if end_col < start_col: end_col = start_col
-            
-            # Check Collision
-            is_collision = False
-            for c_idx in range(start_col, end_col + 1):
-                if c_idx in occupied_cols:
-                    is_collision = True
-                    break
-            
-            # Prepare Text uses Project Code and OP ID
-            line1 = f"{t.get('ProyectoCode', '')} ({t.get('Idorden')})"
-            line2 = t.get('Descripcion', '')[:20]
-            task_text = f"{line1}\n{line2}"
-
-            if is_collision:
-                # Append to existing
-                cell = ws.cell(row=current_row, column=start_col)
-                if cell.value:
-                    existing = str(cell.value)
-                    if task_text not in existing: # Avoid EXACT dupes
-                         cell.value = existing + "\n" + task_text
-                else:
-                    cell.value = task_text
-            else:
-                # Mark occupied
-                for c_idx in range(start_col, end_col + 1):
-                    occupied_cols.add(c_idx)
-                
-                # Merge
-                if end_col > start_col:
-                    ws.merge_cells(start_row=current_row, start_column=start_col, end_row=current_row, end_column=end_col)
-                
-                cell = ws.cell(row=current_row, column=start_col)
-                cell.value = task_text
-                
-                # Task Style (Solid fill, thin border overrides dotted)
-                color_idx = i % len(colors)
-                cell.fill = PatternFill("solid", fgColor=colors[color_idx])
-                cell.alignment = ALIGN_WRAP
-                cell.font = Font(size=8, bold=False)
-                cell.border = BORDER_THIN
-            
-        current_row += 1
-
-    # Output
-    response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-    response['Content-Disposition'] = f'attachment; filename=PlanificacionVisual_{datetime.now().strftime("%Y%m%d_%H%M")}.xlsx'
-    wb.save(response)
-    return response
 
 
 # --- Feriados Views ---
@@ -2241,13 +1737,21 @@ def planificacion_visual(request):
         for pred_id in pred_ids:
             dependencies_list.append({'pred': pred_id, 'succ': succ_id})
 
+    # Fetch all scenarios for selector (used in template)
+    from .models import Scenario
+    all_scenarios = Scenario.objects.using('default').all().order_by('-es_principal', 'nombre')
+
     context = {
         'timeline_data': timeline_data,
         'time_columns': time_columns,
-        'start_date': start_simulation, 
+        'start_date': start_simulation,
         'dependencies_json': json.dumps(dependencies_list),
         'today': start_simulation,
-        'total_width': len(time_columns) * 40 if time_columns else 15*40
+        'total_width': len(time_columns) * 40 if time_columns else 15*40,
+        'system_alerts': data.get('system_alerts', []),
+        'analysis': data.get('analysis', {'machines': [], 'project_alerts': []}),
+        'all_scenarios': all_scenarios,
+        'active_scenario': data.get('active_scenario'),
     }
     return render(request, 'produccion/planificacion_visual.html', context)
 
@@ -2265,6 +1769,7 @@ def export_planificacion_excel(request):
     global_min_h = data['global_min_h']
     global_max_h = data['global_max_h']
     start_simulation = data['start_simulation']
+    active_scenario = data.get('active_scenario')
     
     if not time_columns:
          return HttpResponse("No hay datos calculados para exportar. Ejecute la planificación visual primero.")
@@ -2274,9 +1779,18 @@ def export_planificacion_excel(request):
     ws = wb.active
     ws.title = "Gantt Visual"
     
+    # helper for positioning
+    hours_per_day = (global_max_h - global_min_h)
+    unique_dates = []
+    for dt in time_columns:
+        if dt.date() not in unique_dates:
+            unique_dates.append(dt.date())
+    date_to_index = {d: i for i, d in enumerate(unique_dates)}
+    
     # --- STYLES ---
     FILL_HEADER_MACHINE = PatternFill("solid", fgColor="4472C4") # Blue header
     FILL_HEADER_DAY     = PatternFill("solid", fgColor="4472C4") # Blue
+    FILL_HEADER_HOUR    = PatternFill("solid", fgColor="CFD8DC") # Grey/Blue for hour headers
     FILL_MACHINE_ROW    = PatternFill("solid", fgColor="000000") # BLACK for machine names
     
     FONT_BOLD_WHITE = Font(bold=True, color="FFFFFF")
@@ -2290,12 +1804,11 @@ def export_planificacion_excel(request):
         bottom=Side(style='thin', color="CCCCCC")
     )
     
-    # Thin borders for task cards (clean, subtle - almost invisible)
     BORDER_TASK_CARD = Border(
-        left=Side(style='thin', color="CCCCCC"), 
-        right=Side(style='thin', color="CCCCCC"), 
-        top=Side(style='thin', color="CCCCCC"), 
-        bottom=Side(style='thin', color="CCCCCC")
+        left=Side(style='medium', color="FFFFFF"), 
+        right=Side(style='medium', color="FFFFFF"), 
+        top=Side(style='medium', color="FFFFFF"), 
+        bottom=Side(style='medium', color="FFFFFF")
     )
                          
     BORDER_DOTTED_VERT = Border(
@@ -2307,6 +1820,7 @@ def export_planificacion_excel(request):
 
     ALIGN_CENTER = Alignment(horizontal='center', vertical='center')
     ALIGN_WRAP   = Alignment(horizontal='center', vertical='center', wrap_text=True)
+    ALIGN_LEFT_WRAP = Alignment(horizontal='left', vertical='center', wrap_text=True)
     
     # Task Colors - Assign by ProyectoCode using Hash Algorithm (Same as Visual View)
     def string_to_rgb_hex(value):
@@ -2358,6 +1872,18 @@ def export_planificacion_excel(request):
     
     # --- HEADER CONSTRUCTION ---
     
+    # Grid Total Width
+    grid_cols_total = (len(time_columns) * COLS_PER_HOUR)
+
+    # Title Row (Row 1)
+    ws.row_dimensions[1].height = 35
+    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=1 + grid_cols_total)
+    c_title = ws.cell(row=1, column=1)
+    scenario_name = active_scenario.nombre.upper() if active_scenario else "PRINCIPAL"
+    c_title.value = f"PLANIFICACIÓN DE PRODUCCIÓN - ESCENARIO: {scenario_name}"
+    c_title.font = Font(bold=True, size=16, color="4472C4")
+    c_title.alignment = ALIGN_CENTER
+
     # "MAQUINA" Label
     ws.merge_cells("A2:A3")
     c_maquina = ws["A2"]
@@ -2386,19 +1912,29 @@ def export_planificacion_excel(request):
         time_cols_map[dt] = col_idx
         
         ws.column_dimensions[get_column_letter(col_idx)].width = 3.5
+    # We use 6 columns per hour (10 min each)
+    COLS_PER_HOUR = 6
+    
+    for h_idx, hour in enumerate(time_columns):
+        hour_base_col = 2 + (h_idx * COLS_PER_HOUR)
         
-        # HOUR HEADER (Row 3)
-        c_hour = ws.cell(row=3, column=col_idx)
-        c_hour.value = dt.hour
-        c_hour.alignment = ALIGN_CENTER
-        c_hour.border = BORDER_THIN
-        c_hour.font = Font(size=8)
-        
-        # DAY HEADER LOGIC
-        day_str = dt.strftime('%a, %d-%b')
+        ws.merge_cells(start_row=3, start_column=hour_base_col, end_row=3, end_column=hour_base_col + COLS_PER_HOUR - 1)
+        c_h = ws.cell(row=3, column=hour_base_col)
+        c_h.value = hour.strftime("%H:%M")
+        c_h.alignment = ALIGN_CENTER
+        c_h.fill = FILL_HEADER_HOUR
+        c_h.font = Font(size=9, bold=True, color="263238")
+        c_h.border = BORDER_THIN
+
+        # Set Column Widths for the tiny columns
+        for sub_c in range(COLS_PER_HOUR):
+            ws.column_dimensions[get_column_letter(hour_base_col + sub_c)].width = 2.5
+
+        # Day Header Logic
+        day_str = hour.strftime("%A %d/%m").upper()
         if day_str != current_day:
             if current_day is not None:
-                ws.merge_cells(start_row=2, start_column=start_merge, end_row=2, end_column=col_idx-1)
+                ws.merge_cells(start_row=2, start_column=start_merge, end_row=2, end_column=hour_base_col - 1)
                 c_day = ws.cell(row=2, column=start_merge)
                 c_day.value = current_day
                 c_day.alignment = ALIGN_CENTER
@@ -2407,11 +1943,11 @@ def export_planificacion_excel(request):
                 c_day.border = BORDER_THIN
             
             current_day = day_str
-            start_merge = col_idx
+            start_merge = hour_base_col
             
     # Close last day
     if current_day is not None and start_merge != -1:
-        last_col = 2 + len(time_columns) - 1
+        last_col = 2 + (len(time_columns) * COLS_PER_HOUR) - 1
         ws.merge_cells(start_row=2, start_column=start_merge, end_row=2, end_column=last_col)
         c_day = ws.cell(row=2, column=start_merge)
         c_day.value = current_day
@@ -2420,7 +1956,7 @@ def export_planificacion_excel(request):
         c_day.font = FONT_BOLD_WHITE
         c_day.border = BORDER_THIN
 
-    ws.column_dimensions['A'].width = 25
+    ws.column_dimensions['A'].width = 32
     
     # --- RENDER DATA ---
     current_row = 4
@@ -2429,172 +1965,95 @@ def export_planificacion_excel(request):
         maquina = row_data['machine']
         tasks = row_data['tasks']
         
+        # Omit 'SIN ASIGNAR' machine if it has no tasks, as requested by user
+        if maquina.nombre.upper() == 'SIN ASIGNAR' and not tasks:
+            continue
+
         # Machine Name
         c_name = ws.cell(row=current_row, column=1)
-        c_name.value = maquina.nombre
+        c_name.value = maquina.nombre.upper()
         c_name.alignment = ALIGN_CENTER
         c_name.font = FONT_BOLD_WHITE  # White text on black background
         c_name.fill = FILL_MACHINE_ROW
         c_name.border = BORDER_THIN
         
-        ws.row_dimensions[current_row].height = 45
+        ws.row_dimensions[current_row].height = 75
         
         # Grid Background
-        for col_idx in time_cols_map.values():
+        grid_width = len(time_columns) * COLS_PER_HOUR
+        for col_idx in range(2, 2 + grid_width):
             c_bg = ws.cell(row=current_row, column=col_idx)
-            c_bg.border = BORDER_DOTTED_VERT
-            
-        occupied_cols = set()
-        
-        for i, t in enumerate(tasks):
-            t_start = t['start_date']
-            t_duration = t['duration_real']
-            
-            if not t_start: continue
-            
-            # --- ROBUST MATHEMATICAL POSITIONING (Same as Scheduler JS/CSS) ---
-            t_start_h = t_start.replace(minute=0, second=0, microsecond=0)
-            
-            # 1. Find the starting column for this DATE
-            # We need a map of { Date -> Base Column Index }
-            # Since we iterate time_columns, we can build this map or just calculate it from valid_dates.
-            # But let's use the time_cols_map we already somewhat have, or better:
-            # Reconstruct the logic: Col = Base(Date) + (Hour - MinH)
-            
-            t_date = t_start.date()
-            
-            # Find the *first* column that matches this date to get the Base Index
-            # (Optimization: Build this map once outside the loop for speed)
-            if 'date_base_col_map' not in locals():
-                date_base_col_map = {}
-                for idx, col_dt in enumerate(time_columns):
-                    d_key = col_dt.date()
-                    if d_key not in date_base_col_map:
-                        date_base_col_map[d_key] = idx
-                        
-            if t_date not in date_base_col_map:
-                # Date not in valid dates (pinned way out?)
-                # Try fallback: matching nearest date? Or just Skip.
-                continue
-                
-            base_col_idx = date_base_col_map[t_date]
-            
-            # 2. Add Hour Offset
-            # hour_diff = (t_hour - global_min_h)
-            # Check for TZ issues: use naive hour
-            t_h = t_start.hour
-            if t_start.tzinfo:
-                # If aware, ensure we compare apples to apples?
-                # Actually .hour on a local-aware datetime is usually correct relative to the day.
-                pass
-
-            hour_offset = t_h - global_min_h
-            
-            # Handle implicit clipping if task starts before min_h (e.g. 05:00 when min is 07:00)
-            if hour_offset < 0:
-                 # It starts before the visual grid of the day.
-                 # Does it extend INTO the grid?
-                 duration_full = t_duration
-                 if (hour_offset + duration_full) > 0:
-                     # Yes, it spans into the visible area.
-                     # Clip start to 0
-                     hour_offset = 0
-                 else:
-                     # Totally before
-                     continue
-
-            # 3. Calculate Start Index in the list
-            start_l_idx = base_col_idx + hour_offset
-            
-            # 4. Calculate End Index
-            # Duration is in hours
-            duration_h = int(t_duration)
-            if duration_h < 1: duration_h = 1
-            
-            end_l_idx = min(start_l_idx + duration_h - 1, len(time_columns) - 1)
-            
-            if end_l_idx < start_l_idx:
-                continue
-            
-            start_col = 2 + int(start_l_idx)
-            end_col = 2 + int(end_l_idx)
-            
-            # Check Collision
-            is_collision = False
-            for c_idx in range(start_col, end_col + 1):
-                if c_idx in occupied_cols:
-                    is_collision = True
-                    break
-            
-            # Text
-            line1 = f"{t.get('ProyectoCode', '')} ({t.get('Idorden')})"
-            line2 = t.get('Descripcion', '')[:20]
-            task_text = f"{line1}\n{line2}"
-
-            if is_collision:
-                cell = ws.cell(row=current_row, column=start_col)
-                # FIX: Check if cell is 'MergedCell' (read-only)
-                # In openpyxl, MergedCell doesn't support value assignment.
-                # Only the top-left cell of a merge range is real.
-                from openpyxl.cell.cell import MergedCell
-                if isinstance(cell, MergedCell):
-                    # Find the top-left cell of the merge range this cell belongs to?
-                    # Too complex for quick fix. If it's merged, we skip overwriting or log it.
-                    # Or better: We just don't write to it if it's not a normal cell.
-                    pass 
-                else:
-                    if cell.value:
-                        existing = str(cell.value)
-                        if task_text not in existing:
-                             cell.value = existing + "\n" + task_text
-                    else:
-                        cell.value = task_text
+            # Use dotted for 10-min marks, thin for hourly marks
+            if (col_idx - 2) % COLS_PER_HOUR == 0:
+                c_bg.border = BORDER_THIN
             else:
-                for c_idx in range(start_col, end_col + 1):
-                    occupied_cols.add(c_idx)
-                
-                if end_col > start_col:
-                    ws.merge_cells(start_row=current_row, start_column=start_col, end_row=current_row, end_column=end_col)
-                
-                # Get color based on ProyectoCode
-                proyecto_code = t.get('ProyectoCode', '')
-                task_color = proyecto_color_map.get(proyecto_code, default_color)
-                
-                # Define Sides
-                side_thick_color = Side(style='thick', color=task_color)
-                side_thin_grey = Side(style='thin', color="CCCCCC")
-                
-                # Apply styles to ALL cells in the range
-                for c_idx in range(start_col, end_col + 1):
-                    cell_sub = ws.cell(row=current_row, column=c_idx)
-                    
-                    # Logic for Merged Cells Borders:
-                    # Left Border: Only on the first cell
-                    # Right Border: Only on the last cell
-                    
-                    if c_idx == start_col:
-                        b_left = side_thick_color
-                    else:
-                        b_left = side_thin_grey 
-                        
-                    if c_idx == end_col:
-                        b_right = side_thick_color
-                    else:
-                        b_right = side_thin_grey
-                        
-                    cell_sub.border = Border(
-                        left=b_left,
-                        right=b_right,
-                        top=side_thin_grey,
-                        bottom=side_thin_grey
-                    )
-                    
-                    cell_sub.fill = PatternFill("solid", fgColor="FFFFFF")
+                c_bg.border = BORDER_DOTTED_VERT
+            
+        for t in tasks:
+            start_date = t.get('start_date')
+            t_duration = t.get('duration_real', 0)
+            
+            if not start_date: continue
+            
+            # --- ROBUST MATHEMATICAL POSITIONING (10-min precision) ---
+            t_date = start_date.date()
+            day_idx = date_to_index.get(t_date)
+            if day_idx is None: continue
+            
+            # Base column for the day and starting hour
+            hour_offset = start_date.hour - global_min_h
+            minute_offset = start_date.minute / 10.0
+            
+            task_col_start_float = 2 + (day_idx * hours_per_day * COLS_PER_HOUR) + (hour_offset * COLS_PER_HOUR) + minute_offset
+            
+            start_col = int(task_col_start_float)
+            cols_to_span = t_duration * COLS_PER_HOUR
+            task_col_end_float = task_col_start_float + cols_to_span
+            
+            end_col = int(task_col_end_float)
+            # If it spills more than 2 minutes into the next 10-min block, round up
+            if (task_col_end_float - end_col) > 0.2:
+                 end_col += 1
 
-                    if c_idx == start_col:
-                        cell_sub.value = task_text
-                        cell_sub.alignment = ALIGN_WRAP
-                        cell_sub.font = Font(size=8, bold=True, color="000000")
+            # Limit to the grid width
+            max_grid_col = 2 + (len(time_columns) * COLS_PER_HOUR) - 1
+            if start_col > max_grid_col: continue
+            if end_col > max_grid_col + 1: end_col = max_grid_col + 1
+            if start_col < 2: start_col = 2
+            
+            if start_col < end_col:
+                from openpyxl.cell.cell import MergedCell
+                
+                try:
+                    # Content: Proyecto (OP)
+                    proj = t.get('ProyectoCode', 'S/P')
+                    op = t.get('Idorden', '')
+                    # Use a very compact format but always identifiable
+                    task_text = f"{proj}\n#{op}"
+                    
+                    # Formatting
+                    color = proyecto_color_map.get(proj, default_color)
+                    
+                    # Merge cells for the task duration if spans multiple 10-min blocks
+                    if end_col > start_col + 1:
+                        ws.merge_cells(start_row=current_row, start_column=start_col, end_row=current_row, end_column=end_col-1)
+                    
+                    c_task = ws.cell(row=current_row, column=start_col)
+                    if not isinstance(c_task, MergedCell):
+                        c_task.value = task_text
+                        c_task.fill = PatternFill("solid", fgColor=color)
+                        c_task.font = Font(size=8, color="FFFFFF", bold=True)
+                        c_task.alignment = ALIGN_WRAP
+                        # IMPORTANT: Apply white border to separate task blocks clearly
+                        c_task.border = BORDER_TASK_CARD
+                except Exception:
+                    # Fallback write to start cell if NOT merged
+                    c_err = ws.cell(row=current_row, column=start_col)
+                    if not isinstance(c_err, MergedCell):
+                        if not c_err.value:
+                            c_err.value = f"{t.get('Idorden')}"
+                            c_err.font = Font(size=6)
+
             
         current_row += 1
 
@@ -2617,7 +2076,7 @@ def create_scenario(request):
         es_principal = data.get('es_principal', False)
         proyectos = data.get('proyectos', '')
         copy_from_id = data.get('copy_from_id')
-        scenario_id = data.get('id')  # If editing
+        scenario_id = data.get('id') or data.get('update_id')
         
         with transaction.atomic(using='default'):
             if es_principal:
@@ -2626,12 +2085,44 @@ def create_scenario(request):
             if scenario_id:
                 # Update existing
                 scenario = Scenario.objects.using('default').get(pk=scenario_id)
-                scenario.nombre = nombre
-                scenario.descripcion = descripcion
+                if nombre:
+                    scenario.nombre = nombre
+                if descripcion:
+                    scenario.descripcion = descripcion
                 scenario.es_principal = es_principal
-                if proyectos:
-                    scenario.proyectos = proyectos
+                scenario.proyectos = proyectos
                 scenario.save(using='default')
+                
+                # If we are "overwriting" (copying data from another scenario)
+                if copy_from_id and str(copy_from_id) != str(scenario_id):
+                    # Clean target scenario first
+                    PrioridadManual.objects.using('default').filter(scenario=scenario).delete()
+                    ProyectoPrioridad.objects.using('default').filter(scenario=scenario).delete()
+                    
+                    # Clone from source
+                    source = Scenario.objects.using('default').get(pk=copy_from_id)
+                    
+                    # Clone Overrides
+                    overrides = PrioridadManual.objects.using('default').filter(scenario=source)
+                    new_overrides = [
+                        PrioridadManual(
+                            id_orden=o.id_orden, maquina=o.maquina, prioridad=o.prioridad,
+                            tiempo_manual=o.tiempo_manual, nivel_manual=o.nivel_manual,
+                            porcentaje_solapamiento=o.porcentaje_solapamiento,
+                            fecha_inicio_manual=o.fecha_inicio_manual, scenario=scenario
+                        ) for o in overrides
+                    ]
+                    PrioridadManual.objects.using('default').bulk_create(new_overrides)
+                    
+                    # Clone Project Priorities
+                    p_priorities = ProyectoPrioridad.objects.using('default').filter(scenario=source)
+                    new_p_priorities = [
+                        ProyectoPrioridad(
+                            scenario=scenario, proyecto=p.proyecto, prioridad=p.prioridad
+                        ) for p in p_priorities
+                    ]
+                    ProyectoPrioridad.objects.using('default').bulk_create(new_p_priorities)
+
                 return JsonResponse({'status': 'ok', 'scenario': {'id': scenario.id, 'nombre': scenario.nombre}})
                 
             else:
@@ -2837,7 +2328,7 @@ def update_proyecto_prioridad(request):
                             defaults={'prioridad': int(prioridad)}
                        )
                        
-        return JsonResponse({'status': 'success'})
+        return JsonResponse({'status': 'ok'})
         
     except Exception as e:
         import traceback
@@ -3033,4 +2524,19 @@ def planillas_diarias(request):
     }
     
     return render(request, 'produccion/planillas_diarias.html', context)
+
+def ai_planning_suggest_api(request):
+    """
+    API endpoint que devuelve sugerencias de IA para la planificación de producción.
+    """
+    from .ai_planning_service import get_ai_planning_suggestion
+    
+    if not request.GET.get('run') == '1':
+        return JsonResponse({'error': 'Debe ejecutar la planificación primero (Re-Calcular) para tener datos de contexto.'}, status=400)
+        
+    try:
+        suggestions = get_ai_planning_suggestion(request)
+        return JsonResponse(suggestions)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
 

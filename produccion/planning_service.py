@@ -75,7 +75,16 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
         if duration_hours <= 0.001:
              continue
              
-        # Safety check for minimal duration
+        # Detection of 'SIN ASIGNAR' row (MAC00)
+        if isinstance(maquina, dict):
+            m_id = str(maquina.get('id_maquina', '')).strip()
+            m_name = str(maquina.get('nombre', '')).strip().upper()
+        else:
+            m_id = str(getattr(maquina, 'id_maquina', '')).strip()
+            m_name = str(getattr(maquina, 'nombre', '')).strip().upper()
+        
+        is_unassigned_row = (m_id == 'MAC00') or ('SIN ASIGNAR' in m_name)
+
         # Safety check for minimal duration
         if duration_hours < 0.001:
             duration_hours = 0.001 # Minimum visibility
@@ -93,20 +102,34 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
                     break
         
         if forced_time:
-             # Force the time (Collision allowed!)
-             current_time = forced_time
-             
-             # If the forced time is timezone-aware (UTC from DB), convert to local time
-             if current_time.tzinfo is not None:
+             # NORMALIZE to naive local before comparisons
+             if forced_time.tzinfo is not None:
                  from django.utils import timezone as django_tz
-                 # Convert from UTC to local timezone
-                 current_time = current_time.astimezone(django_tz.get_current_timezone())
-                 # Now remove timezone info (but it's already in local time)
-                 current_time = current_time.replace(tzinfo=None)
-                 
-             print(f"DEBUG: Task {task.get('Idorden')} FORCED to {current_time}")
+                 forced_time = forced_time.astimezone(django_tz.get_current_timezone()).replace(tzinfo=None)
+             
+             if current_time and current_time.tzinfo is not None:
+                 from django.utils import timezone as django_tz
+                 current_time = current_time.astimezone(django_tz.get_current_timezone()).replace(tzinfo=None)
+
+             # En la fila SIN ASIGNAR, forzamos que sea secuencial 
+             if is_unassigned_row:
+                 if forced_time < current_time:
+                     # Si el pin es anterior al fin de la tarea previa, la empujamos al final de la anterior + buffer
+                     current_time = current_time + timedelta(minutes=5)
+                 else:
+                     current_time = forced_time
+             else:
+                 # En máquinas normales respetamos el solapamiento manual si existe
+                 current_time = forced_time
+             
+             print(f"DEBUG: Task {task.get('Idorden')} en fila {'MAC00' if is_unassigned_row else 'NORMAL'} -> {current_time}")
 
         # Check for dependencies / constraints (Soft Limits)
+        # En la fila SIN ASIGNAR, aunque no haya PIN, forzamos que espere a la anterior + buffer
+        if is_unassigned_row and not forced_time:
+             # Solo empujamos si el current_time (fin de anterior) es posterior al inicio por defecto
+             current_time = current_time + timedelta(minutes=5)
+
         # ONLY IF NOT FORCED (Manual override wins over Physics)
         if not forced_time and task_min_start_times:
             raw_id = task.get('Idorden')
@@ -176,6 +199,7 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
                     segment['start_date'] = segment_start
                     segment['end_date'] = segment_end
                     segment['duration_real'] = (segment_end - segment_start).total_seconds() / 3600.0
+                    segment['duration_task'] = duration_hours # Preserve total duration
                     segment['debug_info'] = f"TP: {duration_hours:.2f}h (Seg: {len(task_segments)+1})"
                     segment['is_new_day'] = is_new_day
                     

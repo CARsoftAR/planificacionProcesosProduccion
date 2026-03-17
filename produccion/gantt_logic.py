@@ -66,33 +66,27 @@ def get_gantt_data(request, force_run=False):
         
     virtual_overrides = {}
     
-    if active_scenario:
-        print(f"[INFO] Loading Scenario: {active_scenario.nombre} ({active_scenario.id})")
-        manual_entries = PrioridadManual.objects.using('default').filter(scenario=active_scenario)
-    else:
-        # Fallback empty logic or all? Better empty to avoid mixing.
-        print("[WARN] No Active Scenario found. Loading EMPTY overrides.")
-        manual_entries = []
-
-    for entry in manual_entries:
-        ov_data = {
-            'maquina': entry.maquina,
-            'prioridad': entry.prioridad,
-            'tiempo_manual': entry.tiempo_manual,
-            'nivel_manual': entry.nivel_manual,
-            'porcentaje_solapamiento': entry.porcentaje_solapamiento if entry.porcentaje_solapamiento is not None else 0.0,
-            'manual_start': entry.fecha_inicio_manual 
-        }
-        
-        # In 'original' mode, we IGNORE PINNING (manual_start) to allow auto-scheduling
-        # But we RESPECT machine moves.
-        if plan_mode != 'manual':
-            ov_data['manual_start'] = None
+    # ONLY load overrides if mode is MANUAL. 
+    # If mode is 'original' (Automatico), we want pure ERP data.
+    if plan_mode == 'manual':
+        if active_scenario:
+            # print(f"[INFO] Loading Scenario: {active_scenario.nombre} ({active_scenario.id})")
+            manual_entries = PrioridadManual.objects.using('default').filter(scenario=active_scenario)
             
-        virtual_overrides[entry.id_orden] = ov_data
-
-    if plan_mode != 'manual':
-        print("[INFO] GANTT INFO: Auto Mode - Loaded Assignments but Ignored Pins")
+            for entry in manual_entries:
+                ov_data = {
+                    'maquina': entry.maquina,
+                    'prioridad': entry.prioridad,
+                    'tiempo_manual': entry.tiempo_manual,
+                    'nivel_manual': entry.nivel_manual,
+                    'porcentaje_solapamiento': entry.porcentaje_solapamiento if entry.porcentaje_solapamiento is not None else 0.0,
+                    'manual_start': entry.fecha_inicio_manual 
+                }
+                virtual_overrides[entry.id_orden] = ov_data
+        else:
+            pass # print("[WARN] No Active Scenario found. Loading EMPTY overrides.")
+    else:
+        pass # print("[INFO] AUTOMATIC MODE: Ignoring manual overrides (Rerouting, Pinning, etc.)")
         
     tasks_moved_in_map = {}
     for oid, override_data in virtual_overrides.items():
@@ -133,9 +127,12 @@ def get_gantt_data(request, force_run=False):
         }
 
     # --- AUTOMATIC DEPENDENCIES (Option B: Nivel) ---
-    print("\n" + "=" * 70)
-    print("[INFO] SHARED GANTT LOGIC: Dependencias Automaticas por Nivel")
-    print("=" * 70)
+    # print("\n" + "=" * 70)
+    # print("[INFO] SHARED GANTT LOGIC: Dependencias Automaticas por Nivel")
+    # print("=" * 70)
+
+    # NEW FEATURE: Automatic or Manual Overlap (Default to False/0%)
+    auto_overlap = False
 
     deps_filter = {}
     if raw_proyectos:
@@ -143,12 +140,32 @@ def get_gantt_data(request, force_run=False):
     if request.GET.get('id_orden'):
         deps_filter['id_orden'] = request.GET.get('id_orden')
     
-    all_tasks_for_deps = get_planificacion_data(deps_filter) 
+    all_tasks_raw = get_planificacion_data(deps_filter)
+
+    # OPCION A: Exclude tasks with no machine assigned from the Gantt entirely.
+    # These tasks have Idmaquina empty or MAQUINAD = 'SIN ASIGNAR'.
+    all_tasks_for_deps = [
+        t for t in all_tasks_raw
+        if str(t.get('Idmaquina', '')).strip() != ''
+        and str(t.get('MAQUINAD', '')).strip().upper() != 'SIN ASIGNAR'
+    ]
     
+    print(f"[INFO] Tareas totales: {len(all_tasks_raw)}, Tareas con maquina asignada: {len(all_tasks_for_deps)} (excluidas sin maquina: {len(all_tasks_raw) - len(all_tasks_for_deps)})")
+
     # Pre-group tasks by machine for internal loop efficiency
     all_tasks_by_machine = defaultdict(list)
+    # Harmonization map for ERP IDs based on local MaquinaConfig
+    # This ensures if ERP says 'VF2' but we mapped it to 'MAC10', we group by 'MAC10'
+    m_config_map = {m.id_maquina.strip(): m.id_maquina.strip() for m in maquinas}
+    # Also add reverse map from Name to ID in case ERP uses Name as ID
+    name_to_id = {m.nombre.strip(): m.id_maquina.strip() for m in maquinas}
+
     for t in all_tasks_for_deps:
         mid_code = str(t.get('Idmaquina', '')).strip()
+        # Harmonize: If this ID is a name in our config, use the corresponding ID
+        if mid_code in name_to_id:
+            mid_code = name_to_id[mid_code]
+        
         all_tasks_by_machine[mid_code].append(t)
         
     # Fetch Holidays once
@@ -160,7 +177,8 @@ def get_gantt_data(request, force_run=False):
     system_alerts = []
     if raw_proyectos:
         requested_list = [p.strip() for p in raw_proyectos.split(',') if p.strip()]
-        found_active_projects = set(t.get('ProyectoCode') for t in all_tasks_for_deps)
+        # Use all_tasks_raw so projects with only unassigned tasks aren't wrongly flagged as "completed"
+        found_active_projects = set(t.get('ProyectoCode') for t in all_tasks_raw)
         
         for req in requested_list:
             if req not in found_active_projects:
@@ -208,50 +226,77 @@ def get_gantt_data(request, force_run=False):
             return 0
 
     for formula, tasks_in_order in orders_map.items():
-        tasks_sorted = sorted(tasks_in_order, key=get_nivel, reverse=True)
-        tasks_assigned = [t for t in tasks_sorted if t.get('MAQUINAD') and t.get('MAQUINAD') != 'SIN ASIGNAR']
-        
-        nivel_groups = {}
-        for task in tasks_assigned:
-            nivel = get_nivel(task)
-            if nivel not in nivel_groups:
-                nivel_groups[nivel] = []
-            nivel_groups[nivel].append(task)
-        
-        # Group by Dependency Key within project to avoid M*N cross-lines
+        # Component key: Prefix of Descri before the last process name
         def get_dep_key(t):
             desc = str(t.get('Descri', '')).strip()
             if " - " in desc:
                 parts = desc.split(" - ")
                 if len(parts) > 1:
                     return " - ".join(parts[:-1]).strip()
-            return desc
-
-        sorted_niveles = sorted(nivel_groups.keys(), reverse=True)
-        for i in range(len(sorted_niveles) - 1):
-            higher_nivel = sorted_niveles[i]
-            lower_nivel = sorted_niveles[i + 1]
             
-            for successor in nivel_groups[lower_nivel]:
-                succ_id = successor.get('Idorden')
-                if not succ_id: continue
-                succ_key = get_dep_key(successor)
-                
-                # Link ONLY if component prefix matches (Sequential operations on same part)
-                for predecessor in nivel_groups[higher_nivel]:
-                    pred_id = predecessor.get('Idorden')
-                    if not pred_id or pred_id == succ_id: continue
-                    
-                    if get_dep_key(predecessor) == succ_key:
-                        s_succ_id = str(succ_id)
-                        s_pred_id = str(pred_id)
-                        
-                        if s_succ_id not in dependency_map:
-                            dependency_map[s_succ_id] = []
-                        if s_pred_id not in dependency_map[s_succ_id]:
-                            dependency_map[s_succ_id].append(s_pred_id)
+            # Fallback for descriptions without " - " (e.g. from older imports or different formats)
+            # We want them to still group together if they are part of the same base project.
+            # Using the ProyectoCode as a fallback base group.
+            return f"DEFAULT_GROUP_{t.get('ProyectoCode', 'UNKNOWN')}"
 
-    print(f"\n  [OK] Created {len(dependency_map)} refined automatic dependencies")
+        # IMPORTANT: Use all_tasks_raw to include unassigned tasks in the dependency chain
+        project_tasks_raw = [t for t in all_tasks_raw if t.get('ProyectoCode') == formula]
+        
+        parts_groups = defaultdict(list)
+        for t in project_tasks_raw:
+            key = get_dep_key(t)
+            parts_groups[key].append(t)
+
+        # For each piece/component, link its operations in descending order of Nivel_Planificacion
+        for part_key, part_tasks in parts_groups.items():
+            # Sort by level descending (e.g. 10 -> 9 -> 7 -> 5)
+            # Higher numbers (e.g. 10) are starting operations, lower numbers (e.g. 1) are assembly/final.
+            p_tasks_sorted = sorted(part_tasks, key=get_nivel, reverse=True)
+            
+            for j in range(len(p_tasks_sorted) - 1):
+                predecessor = p_tasks_sorted[j]
+                successor = p_tasks_sorted[j+1]
+                
+                pred_id = str(predecessor.get('Idorden'))
+                succ_id = str(successor.get('Idorden'))
+                
+                if pred_id and succ_id and pred_id != succ_id:
+                    if succ_id not in dependency_map:
+                        dependency_map[succ_id] = []
+                    if pred_id not in dependency_map[succ_id]:
+                        dependency_map[succ_id].append(pred_id)
+
+    global_task_end_dates = {}
+
+    # --- PASS 0: Calculate Virtual End Dates for UNASSIGNED tasks ---
+    # This ensures that assigned tasks waiting for "SIN ASIGNAR" predecessors have a start time.
+    unassigned_tasks = [
+        t for t in all_tasks_raw 
+        if str(t.get('Idmaquina', '')).strip() == '' or str(t.get('MAQUINAD', '')).strip().upper() == 'SIN ASIGNAR'
+    ]
+    # Simple virtual calculation (Sequential by level within piece, starting from start_simulation)
+    # We don't respect full calendar here, just a rough estimate to unblock successors.
+    for formula, tasks in orders_map.items():
+        pass # The loop above already builds the map. 
+        
+    for ut in sorted(unassigned_tasks, key=get_nivel, reverse=True):
+        tid = str(ut.get('Idorden'))
+        duration = float(ut.get('Tiempo_Proceso', 0.1) or 0.1)
+        
+        # Start time is either start_simulation or end of predecessor
+        v_start = start_simulation
+        if tid in dependency_map:
+            preds = dependency_map[tid]
+            max_p_end = start_simulation
+            for pid in preds:
+                if pid in global_task_end_dates:
+                    if global_task_end_dates[pid] > max_p_end:
+                        max_p_end = global_task_end_dates[pid]
+            v_start = max_p_end
+            
+        global_task_end_dates[tid] = v_start + timedelta(hours=duration)
+
+    print(f"\n  [OK] Created {len(dependency_map)} robust dependencies including {len(unassigned_tasks)} virtual tasks")
 
     # Load Explicit Database Dependencies
     db_deps = TaskDependency.objects.all()
@@ -268,7 +313,6 @@ def get_gantt_data(request, force_run=False):
     print(f"\n  [OK] Final Dependency Map: {len(dependency_map)} tasks have dependencies")
 
     # --- SIMULATION ---
-    global_task_end_dates = {}
     machine_tasks_map = {}
     
     # Pre-calculate Moved Tasks Map to handle Re-routing
@@ -286,31 +330,32 @@ def get_gantt_data(request, force_run=False):
     print(f"DEBUG: tasks_moved_in_map: {dict(tasks_moved_in_map)}")
 
     # FIRST PASS
-    print("=" * 60)
-    print("DEPENDENCY RESOLUTION: FIRST PASS")
-    print("=" * 60)
+    # print("=" * 60)
+    # print("DEPENDENCY RESOLUTION: FIRST PASS")
+    # print("=" * 60)
     
-    # Check for unassigned tasks (tasks with empty machine ID or "SIN ASIGNAR" name)
-    unassigned_tasks_exist = any(str(t.get('Idmaquina', '')).strip() == '' or str(t.get('MAQUINAD', '')).strip() == 'SIN ASIGNAR' for t in all_tasks_for_deps)
-    if unassigned_tasks_exist:
-        # Create a virtual machine for unassigned tasks
-        from types import SimpleNamespace
-        mock_maquina = SimpleNamespace(
-            id_maquina='MAC00',
-            nombre='SIN ASIGNAR',
-            horarios=MaquinaConfig.objects.none()
-        )
-        maquinas.append(mock_maquina)
+    # OPCION A: Do NOT create virtual SIN ASIGNAR row.
+    # Tasks without a machine were already excluded above.
+
+    # Ensure no duplicates in maquinas list by id_maquina
+    unique_maquinas_list = []
+    seen_machine_ids = set()
+    for m in maquinas:
+        m_id = str(m.id_maquina).strip()
+        if m_id not in seen_machine_ids:
+            unique_maquinas_list.append(m)
+            seen_machine_ids.add(m_id)
+    maquinas = unique_maquinas_list
 
     for maquina in maquinas:
-        machine_id = maquina.id_maquina
-        current_machine_code = str(machine_id).strip()
-        current_machine_name = str(maquina.nombre).strip()
+        machine_id = str(maquina.id_maquina).strip()
+        current_machine_code = machine_id
+        current_machine_name = str(maquina.nombre).strip().upper()
         
         # USE PRE-FETCHED DATA
-        if current_machine_code == 'MAC00' or current_machine_name == 'SIN ASIGNAR':
+        if current_machine_code == 'MAC00' or 'SIN ASIGNAR' in current_machine_name:
             # Collect all tasks that are truly unassigned
-            native_tasks = [t for t in all_tasks_for_deps if str(t.get('Idmaquina', '')).strip() == '' or str(t.get('MAQUINAD', '')).strip() == 'SIN ASIGNAR']
+            native_tasks = [t for t in all_tasks_for_deps if str(t.get('Idmaquina', '')).strip() == '' or str(t.get('Idmaquina', '')).strip() == 'MAC00' or str(t.get('MAQUINAD', '')).strip().upper() == 'SIN ASIGNAR']
         else:
             native_tasks = all_tasks_by_machine.get(current_machine_code, [])
             if not native_tasks and current_machine_name in all_tasks_by_machine:
@@ -383,6 +428,12 @@ def get_gantt_data(request, force_run=False):
 
              else:
                  item['OrdenVisual'] = default_prio
+             
+             # NORMALIZE FOR TEMPLATE
+             if 'Cantidad' not in item:
+                 item['Cantidad'] = item.get('cantidad_final', item.get('Cantidad_Proyecto', 0))
+             if 'Cantidadpp' not in item:
+                 item['Cantidadpp'] = item.get('cantidad_producida', 0)
                  
         tasks.sort(key=lambda x: x.get('OrdenVisual', 999999))
         
@@ -393,7 +444,7 @@ def get_gantt_data(request, force_run=False):
                                             non_working_days=non_working_days, half_day_holidays=half_day_holidays)
         
         for ct in calculated_tasks:
-             ct_id = ct.get('Idorden')
+             ct_id = str(ct.get('Idorden')) # Normalize to String
              ct_end = ct.get('end_date')
              if ct_id and ct_end:
                  if ct_id not in global_task_end_dates or ct_end > global_task_end_dates[ct_id]:
@@ -427,7 +478,7 @@ def get_gantt_data(request, force_run=False):
         from .overlap_calculator import calcular_inicio_optimo_sucesor
         
         final_timeline_map = {}
-        NUM_PASSES = 3
+        NUM_PASSES = 5
         
         # Build task info map for overlap calculations
         task_info_map = {}  # task_id -> {duration, cantidad, start_date, end_date}
@@ -464,7 +515,7 @@ def get_gantt_data(request, force_run=False):
                          man_start = virtual_overrides[t_id_int].get('manual_start')
     
                     if man_start:
-                        force_start_times[t_id] = man_start
+                        force_start_times[t_id_str] = man_start
     
                     # Check Dependencies using STRING KEYS
                     if t_id_str in dependency_map:
@@ -479,7 +530,12 @@ def get_gantt_data(request, force_run=False):
                         
                         # ... Logica de Solapamiento
                         calculated_start_times = []
-                        if overlap_pct > 0 and pass_idx > 0:
+                        
+                        # Use overlap ONLY if explicitly set to > 0%
+                        use_overlap = (overlap_pct > 0)
+                        calc_overlap_pct = overlap_pct
+
+                        if use_overlap and pass_idx > 0:
                             for pid in preds: # pid is String
                                 if pid in task_info_map: # task_info_map must use String keys
                                     pred_info = task_info_map[pid]
@@ -493,15 +549,28 @@ def get_gantt_data(request, force_run=False):
                                             pred_cantidad=pred_info['cantidad'],
                                             succ_duration=succ_duration,
                                             succ_cantidad=succ_cantidad,
-                                            porcentaje_minimo=overlap_pct
+                                            porcentaje_minimo=calc_overlap_pct
                                         )
                                         if inicio_optimo > pred_info['start_date']:
                                             calculated_start_times.append(inicio_optimo)
+                                        else:
+                                            calculated_start_times.append(pred_info['end_date'])
                                     except:
                                         calculated_start_times.append(pred_info['end_date'])
-                                        
+                            
+                            # CRITICAL FIX: Assign the calculated times to min_start_times
                             if calculated_start_times:
-                                min_start_times[t_id] = max(calculated_start_times)
+                                min_start_times[t_id_str] = max(calculated_start_times)
+                            else:
+                                # Fallback to standard wait if overlap calculation failed or yielded no results
+                                max_pred_end = None
+                                for pid in preds:
+                                    if pid in global_task_end_dates:
+                                        end_date = global_task_end_dates[pid]
+                                        if max_pred_end is None or end_date > max_pred_end:
+                                            max_pred_end = end_date
+                                if max_pred_end:
+                                    min_start_times[t_id_str] = max_pred_end
                         else:
                             # Standard Wait-for-End
                             max_pred_end = None
@@ -510,12 +579,13 @@ def get_gantt_data(request, force_run=False):
                                     end_date = global_task_end_dates[pid]
                                     if max_pred_end is None or end_date > max_pred_end:
                                         max_pred_end = end_date
+                            
                             if max_pred_end:
-                                min_start_times[t_id] = max_pred_end
+                                min_start_times[t_id_str] = max_pred_end
     
                 # Sort tasks
                 def get_sort_key(t):
-                     tid = t.get('Idorden')
+                     tid = str(t.get('Idorden'))
                      
                      try: nivel = float(t.get('Nivel_Planificacion') or 0)
                      except: nivel = 0
@@ -525,14 +595,16 @@ def get_gantt_data(request, force_run=False):
                      min_start = min_start_times.get(tid, start_simulation)
                      if min_start and min_start.tzinfo: min_start = min_start.replace(tzinfo=None)
                      
+                     # Tie-breaker: Use ID descending for stability and matching Machine Table
+                     try: tid_num = -int(tid)
+                     except: tid_num = 0
+
                      if tid in force_start_times:
                          fst = force_start_times[tid]
                          if fst and fst.tzinfo: fst = fst.replace(tzinfo=None)
-                         return (0, fst, -nivel, visual_order) 
+                         return (0, fst, -nivel, visual_order, tid_num) 
                      
-                     # If unpinned, prioritize Nivel but also consider if it CAN start early?
-                     # No, Nivel is King for sequence.
-                     return (1, -nivel, min_start, visual_order)
+                     return (1, -nivel, min_start, visual_order, tid_num)
                 
                 tasks.sort(key=get_sort_key)
                 

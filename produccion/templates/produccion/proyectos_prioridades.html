@@ -52,7 +52,7 @@
                 <i class="fas fa-industry me-2"></i>ABBAMAT
             </a>
             <div class="d-flex">
-                <a href="{% url 'planificacion_view' %}" class="btn btn-outline-light btn-sm me-2">Volver al Gantt</a>
+                <a href="{% url 'planificacion_view' %}?{{ request.GET.urlencode }}" class="btn btn-outline-light btn-sm me-2">Volver al la Planificación</a>
             </div>
         </div>
     </nav>
@@ -126,7 +126,7 @@
             <i class="fas fa-folder-open fa-3x mb-3 text-light"></i>
             <h4>No hay proyectos seleccionados</h4>
             <p>Seleccione un escenario que contenga proyectos, o agregue proyectos desde la pantalla principal.</p>
-            <a class="btn btn-outline-primary mt-2" href="{% url 'planificacion_view' %}"><i class="fas fa-arrow-left me-2"></i>Ir a selección</a>
+            <a class="btn btn-outline-primary mt-2" href="{% url 'planificacion_view' %}?{{ request.GET.urlencode }}"><i class="fas fa-arrow-left me-2"></i>Ir a selección</a>
         </div>
         {% endif %}
 

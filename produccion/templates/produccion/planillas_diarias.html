@@ -12,6 +12,8 @@
         body {
             background-color: #f8f9fa;
         }
+        .no-print { display: block; }
+        .only-print { display: none; }
         .printable-page {
             background: white;
             padding: 2cm;
@@ -47,21 +49,38 @@
             font-size: 0.9rem;
         }
         @media print {
+            @page { 
+                margin: 1cm; 
+            }
             body {
-                background: white;
+                background: white !important;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
             }
             .printable-page {
                 box-shadow: none;
                 margin: 0;
                 padding: 0;
-                page-break-after: always;
                 border: none;
             }
             .no-print {
                 display: none !important;
             }
+            .only-print {
+                display: table-row !important;
+            }
             .container-fluid {
                 padding: 0 !important;
+            }
+            /* Repeat table header on multiple pages */
+            thead {
+                display: table-header-group;
+            }
+            tr {
+                page-break-inside: avoid;
+            }
+            .day-header {
+                page-break-after: avoid;
             }
         }
     </style>
@@ -74,9 +93,9 @@
                 <a href="javascript:history.back()" class="btn btn-outline-secondary">
                     <i class="fas fa-arrow-left me-1"></i> Volver
                 </a>
-                <button onclick="window.print()" class="btn btn-primary">
+                <!-- <button onclick="window.print()" class="btn btn-primary">
                     <i class="fas fa-print me-1"></i> Imprimir Todo
-                </button>
+                </button> -->
             </div>
         </div>
     </div>
@@ -87,13 +106,17 @@
     <div class="container-fluid px-5">
         {% for maquina in daily_plan %}
         {% if maquina.dates %}
-        <div class="printable-page">
-            <div class="header-section">
+        <div class="printable-page" id="machine-page-{{ forloop.counter }}">
+            <!-- Título Principal para la Pantalla (no se repite en impresión, se usa el del thead) -->
+            <div class="header-section no-print">
                 <div>
                     <h2 class="text-primary m-0"><i class="fas fa-cogs me-2"></i> {{ maquina.machine_name }}</h2>
                     <p class="text-muted m-0">Planilla de Producción Diaria</p>
                 </div>
                 <div class="text-end">
+                    <button onclick="printMachine('machine-page-{{ forloop.counter }}')" class="btn btn-sm btn-outline-primary no-print mb-2">
+                        <i class="fas fa-print me-1"></i> Imprimir esta Máquina
+                    </button>
                     <h5 class="m-0">Semana del Plan</h5>
                     <small class="text-muted">Escenario: {{ active_scenario.nombre|default:"Principal" }}</small>
                 </div>
@@ -103,13 +126,20 @@
                 {% with date_str=date_tuple.0 nice_name=date_tuple.1 %}
                 {% with tasks_today=maquina.dates|get_item:date_str %}
                 
-                <div class="day-header">
+                <!-- Cabecera para pantalla -->
+                <div class="day-header no-print">
                     <i class="far fa-calendar-alt me-2"></i> {{ nice_name }}
                 </div>
                 
                 {% if tasks_today %}
                 <table class="table table-bordered task-table table-sm">
                     <thead>
+                        <!-- Nombre del Día (Repetible si el día tiene muchas hojas) -->
+                        <tr class="day-header-row">
+                            <th colspan="7" class="day-header-print">
+                                <i class="far fa-calendar-alt me-2"></i> {{ nice_name }}
+                            </th>
+                        </tr>
                         <tr>
                             <th width="10%">Hora</th>
                             <th width="12%">OP / Proy</th>
@@ -152,5 +182,139 @@
         </div>
         {% endfor %}
     </div>
+    <!-- Iframe invisible para impresión segmentada -->
+    <iframe id="print-frame" style="display:none;"></iframe>
+
+    <script>
+        function printMachine(id) {
+            const element = document.getElementById(id);
+            if (!element) return;
+            
+            // Extraer datos para el encabezado repetible
+            const machineName = element.querySelector('h2').innerText;
+            const scenarioName = element.querySelector('small').innerText;
+            
+            const printFrame = document.getElementById('print-frame');
+            const frameDoc = printFrame.contentWindow.document;
+            
+            const printCSS = `
+                <style>
+                    @media all {
+                        /* El margen 0mm intenta ocultar encabezados/pies de página del navegador */
+                        @page { 
+                            margin: 0mm; 
+                            size: auto; 
+                        }
+                        body { 
+                            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+                            font-size: 9pt; background: white !important; color: black !important;
+                            margin: 0; 
+                            padding: 1.5cm 1cm 1.5cm 1cm; /* Margen real de la hoja */
+                        }
+                        .container-fluid { padding: 0; width: 100%; }
+                        
+                        /* ENCABEZADO MAESTRO QUE REPITEN EN CADA HOJA */
+                        .master-table { width: 100%; border-collapse: collapse; border: none; }
+                        .master-thead { display: table-header-group !important; }
+                        
+                        .main-header {
+                            border-bottom: 2px solid #0d6efd;
+                            padding-bottom: 10px;
+                            margin-bottom: 15px;
+                            display: flex;
+                            justify-content: space-between;
+                            align-items: center;
+                        }
+                        .main-header h1 { color: #0d6efd; margin: 0; font-size: 18pt; }
+                        .main-header .info { text-align: right; }
+                        
+                        /* TABLAS DE DATOS */
+                        table.data-table { 
+                            width: 100%; border-collapse: collapse; margin-bottom: 20px; 
+                            table-layout: fixed;
+                        }
+                        table.data-table th, table.data-table td { 
+                            border: 1px solid #dee2e6; padding: 5px; text-align: left; 
+                        }
+                        table.data-table th { 
+                            background-color: #f1f5f9 !important; font-weight: bold; 
+                            text-transform: uppercase; font-size: 8pt; 
+                        }
+                        
+                        /* Cabecera del Día Repetible */
+                        .day-header-print {
+                            background-color: #f8fafc !important;
+                            padding: 8px 10px !important;
+                            border-left: 5px solid #3b82f6 !important;
+                            font-weight: bold !important;
+                            font-size: 11pt !important;
+                            text-align: left !important;
+                            text-transform: none !important;
+                        }
+                        
+                        thead { display: table-header-group !important; }
+                        tr { page-break-inside: avoid; }
+                        .text-primary { color: #0d6efd !important; font-weight: bold; }
+                        .text-muted { color: #6c757d !important; font-size: 8pt; }
+                        .no-print { display: none !important; }
+                        
+                        /* Forzar colores en impresión */
+                        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+                    }
+                </style>
+            `;
+            
+            // Limpiamos el contenido de botones y headers de pantalla
+            const contentClone = element.cloneNode(true);
+            const noisyElements = contentClone.querySelectorAll('.no-print, .only-print');
+            noisyElements.forEach(el => el.remove());
+
+            const htmlContent = `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="UTF-8">
+                    ${printCSS}
+                </head>
+                <body>
+                    <table class="master-table">
+                        <thead class="master-thead">
+                            <tr>
+                                <td>
+                                    <div class="main-header">
+                                        <div>
+                                            <h1>${machineName}</h1>
+                                            <div style="color: #64748b; font-size: 9pt;">Planilla de Producción Diaria</div>
+                                        </div>
+                                        <div class="info">
+                                            <div style="font-weight: bold; font-size: 11pt;">Semana del Plan</div>
+                                            <div style="color: #64748b; font-size: 9pt;">${scenarioName}</div>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>
+                                    ${contentClone.innerHTML}
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </body>
+                </html>
+            `;
+            
+            frameDoc.open();
+            frameDoc.write(htmlContent);
+            frameDoc.close();
+
+            setTimeout(() => {
+                printFrame.contentWindow.focus();
+                printFrame.contentWindow.print();
+            }, 100); 
+        }
+    </script>
 </body>
 </html>

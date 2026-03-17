@@ -26,6 +26,7 @@ urlpatterns = [
     # Navigation
     path('planificacion/', views.planificacion_list, name='planificacion_view'),
     path('planificacion/visual/', views.planificacion_visual, name='planificacion_visual'),
+    path('planificacion/visual/ai-suggest/', views.ai_planning_suggest_api, name='ai_planning_suggest_api'),
     path('proyectos/prioridades/', views.proyectos_prioridades, name='proyectos_prioridades'),
     path('planillas_diarias/', views.planillas_diarias, name='planillas_diarias'),
     path('api/proyectos/update_prioridad/', views.update_proyecto_prioridad, name='update_proyecto_prioridad'),

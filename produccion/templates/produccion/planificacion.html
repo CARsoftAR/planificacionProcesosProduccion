@@ -105,17 +105,19 @@
         <div class="card mb-4">
             <div class="card-body">
                 <form method="GET" id="plan-filter-form" class="row g-3 align-items-end">
-                    <div class="col-md-7">
+                    <div class="col-md-4">
                         <label for="proyectos" class="form-label">Proyectos (separados por coma):</label>
                         <div class="input-group">
                             <input type="text" name="proyectos" id="proyectos" class="form-control" value="{{ proyectos_value|default:'' }}" placeholder="Ej: 25-001, 23-145">
                             <button type="submit" class="btn btn-primary">Filtrar</button>
-                            {% if search_active %}
-                            <button type="button" id="btnCleanTable" class="btn btn-warning" title="Limpiar todos los movimientos manuales y volver al original">
-                                <i class="fas fa-undo"></i> Restablecer Plan
-                            </button>
-                            {% endif %}
                         </div>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="plan_mode" class="form-label">Modo de Plan:</label>
+                        <select name="plan_mode" id="plan-mode-selector" class="form-select" onchange="this.form.submit()">
+                            <option value="manual" {% if request.GET.plan_mode != 'original' %}selected{% endif %}>Optimizado (Manual)</option>
+                            <option value="original" {% if request.GET.plan_mode == 'original' %}selected{% endif %}>Original (ERP)</option>
+                        </select>
                     </div>
                     <div class="col-md-5">
                         <label for="scenario_id" class="form-label">Escenarios Guardados:</label>
@@ -125,14 +127,26 @@
                                 {% for scenario in all_scenarios %}
                                 <option value="{{ scenario.id }}" 
                                         data-proyectos="{{ scenario.proyectos|default:'' }}"
+                                        data-principal="{{ scenario.es_principal|yesno:'1,0' }}"
                                         {% if active_scenario_id == scenario.id %}selected{% endif %}>
-                                    {{ scenario.nombre }}
+                                    {{ scenario.nombre }} {% if scenario.es_principal %}(Activo){% endif %}
                                 </option>
                                 {% endfor %}
                             </select>
-                            <button type="button" id="btnSaveScenario" class="btn btn-outline-success" title="Guardar lista de proyectos y movimientos actuales">
-                                <i class="fas fa-save"></i> Guardar
+                            <button type="button" id="btnSaveScenario" class="btn btn-success" title="Guardar escenario actual">
+                                <i class="fas fa-save"></i>
                             </button>
+                            <button type="button" id="btnPublishScenario" class="btn btn-outline-primary" title="Hacer este escenario el principal">
+                                <i class="fas fa-cloud-upload-alt"></i>
+                            </button>
+                            <button type="button" id="btnDeleteScenario" class="btn btn-outline-danger" title="Eliminar este escenario">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                            {% if search_active %}
+                            <button type="button" id="btnCleanTable" class="btn btn-warning" title="Restablecer movimientos">
+                                <i class="fas fa-undo"></i>
+                            </button>
+                            {% endif %}
                         </div>
                     </div>
                 </form>
@@ -206,15 +220,15 @@
             {% for machine in machines %}
             <li class="nav-item" role="presentation">
                 <button class="nav-link {% if forloop.first %}active{% endif %}" 
-                        id="{{ machine|slugify }}-tab" 
+                        id="{{ machine.nombre|slugify }}-tab" 
                         data-bs-toggle="tab" 
-                        data-bs-target="#{{ machine|slugify }}" 
-                        data-machine="{{ machine }}"
+                        data-bs-target="#{{ machine.nombre|slugify }}" 
+                        data-machine="{{ machine.id }}"
                         type="button" 
                         role="tab" 
                         aria-selected="{% if forloop.first %}true{% else %}false{% endif %}">
-                    {{ machine }}
-                    <span class="badge bg-secondary ms-1">{{ grouped_data|get_item:machine|length }}</span>
+                    {{ machine.nombre }}
+                    <span class="badge bg-secondary ms-1">{{ grouped_data|get_item:machine.nombre|length }}</span>
                 </button>
             </li>
             {% endfor %}
@@ -224,12 +238,12 @@
         <div class="tab-content" id="myTabContent">
             {% for machine in machines %}
             <div class="tab-pane fade {% if forloop.first %}show active{% endif %}" 
-                 id="{{ machine|slugify }}" 
+                 id="{{ machine.nombre|slugify }}" 
                  role="tabpanel" 
-                 aria-labelledby="{{ machine|slugify }}-tab">
+                 aria-labelledby="{{ machine.nombre|slugify }}-tab">
                 
                 <div class="machine-header bg-primary text-white p-2 mb-0 mt-3">
-                    <h5 class="m-0 text-center">{{ machine }}</h5>
+                    <h5 class="m-0 text-center">{{ machine.nombre }}</h5>
                 </div>
 
                 <div class="table-responsive">
@@ -249,13 +263,14 @@
                                 <th>Cantidad</th>
                                 <th>Cantidad Producida</th>
                                 <th class="bg-warning-subtle">Cantidades Pendientes</th>
-                                <th>Tiempo Proceso</th>
-                            </tr>
+                                 <th class="bg-info-subtle">% Solapamiento</th>
+                                 <th>Tiempo Proceso</th>
+                             </tr>
                         </thead>
                         <tbody>
                             <!-- Retrieve list for this machine from the dictionary -->
-                             {% for item in grouped_data|get_item:machine %}
-                            <tr data-id="{{ item.Idorden }}" data-maquina="{{ item.MAQUINAD }}" data-priority="{{ item.OrdenVisual }}" style="cursor: grab;">
+                             {% for item in grouped_data|get_item:machine.nombre %}
+                            <tr data-id="{{ item.Idorden }}" data-maquina="{{ item.MAQUINA_ID }}" data-priority="{{ item.OrdenVisual }}" style="cursor: grab;">
                                 <td class="text-center" style="white-space: nowrap;">
                                     <button class="btn btn-sm btn-outline-primary btn-up d-inline-flex align-items-center justify-content-center" style="width: 28px; height: 28px; padding: 0; margin-right: 4px;" title="Subir">
                                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-chevron-up" viewBox="0 0 16 16">
@@ -267,14 +282,14 @@
                                           <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z"/>
                                         </svg>
                                     </button>
-                                    <button class="btn btn-sm btn-outline-danger btn-delete d-inline-flex align-items-center justify-content-center" style="width: 28px; height: 28px; padding: 0; margin-left: 4px;" title="Borrar (Ocultar)">
-                                        <i class="fas fa-trash-alt"></i>
+                                    <button class="btn btn-sm btn-outline-secondary btn-delete d-inline-flex align-items-center justify-content-center" style="width: 28px; height: 28px; padding: 0; margin-left: 4px;" title="Ocultar OP (No borra del SQLServer)">
+                                        <i class="fas fa-eye-slash"></i>
                                     </button>
                                 </td>
                                 <td>{{ item.ProyectoCode|default:"-" }}</td>
-                                <td class="text-truncate" style="max-width: 200px;" title="{{ item.Denominacion }}">{{ item.Denominacion }}</td>
+                                 <td style="min-width: 150px; white-space: normal;" title="{{ item.Denominacion }}">{{ item.Denominacion }}</td>
                                 <td>{{ item.Idorden }}</td>
-                                <td class="text-truncate" style="max-width: 250px;" title="{{ item.Descri }}">{{ item.Descri }}</td>
+                                 <td style="min-width: 250px; white-space: normal;" title="{{ item.Descri }}">{{ item.Descri }}</td>
                                 <td class="text-center">{{ item.Idprioridad|default:"-" }}</td>
                                 <td class="text-end fw-bold editable-nivel" 
                                     contenteditable="true"
@@ -282,23 +297,27 @@
                                     style="cursor: text; text-align: center; {% if item.NivelManualFlag %}background-color: #ffeeba;{% endif %}"
                                 >{{ item.Nivel_Planificacion|default:"0" }}</td>
                                 <td>{{ item.MAQUINAD }}</td>
-                                <td class="text-end bg-warning-lighter">{{ item.Tiempo|floatformat:2 }}</td>
+                                <td class="text-end bg-warning-lighter">{{ item.Tiempo|floatformat:3 }}</td>
                                 <td class="text-end bg-warning-lighter">{{ item.Tiempo_Logrado|floatformat:2 }}</td>
                                 <td class="text-end">{{ item.Cantidad|floatformat }}</td>
                                 <td class="text-end">{{ item.Cantidadpp|floatformat }}</td>
                                 <td class="text-end bg-warning-lighter fw-bold">
                                     {{ item.CantidadesPendientes|floatformat }}
                                 </td>
-                                <!-- Verify if 'Tiempo' is the Tiempo Proceso or if we need another field -->
-                                <td class="text-end fw-bold editable-time" 
-                                    contenteditable="true" 
-                                    title="Click para editar tiempo manual"
-                                    style="cursor: text; {% if item.CalculadoManual %}background-color: #ffeeba;{% endif %}"
-                                >{{ item.Tiempo_Proceso|floatformat:2 }}</td> 
+                                                           <td class="text-end fw-bold editable-solapamiento" 
+                                     contenteditable="true" 
+                                     title="0 para Automático, o ingrese % manual (Ej: 30)"
+                                     style="cursor: text; {% if item.porcentaje_solapamiento > 0 %}background-color: #ffeeba;{% endif %}"
+                                 >{{ item.porcentaje_solapamiento|default:"0" }}%</td>
+                                 <td class="text-end fw-bold editable-time" 
+                                     contenteditable="true" 
+                                     title="Click para editar tiempo manual"
+                                     style="cursor: text; {% if item.CalculadoManual %}background-color: #ffeeba;{% endif %}"
+                                 >{{ item.Tiempo_Proceso|floatformat:2 }}</td> 
                             </tr>
                             {% empty %}
                             <tr>
-                                <td colspan="14" class="text-center">No hay datos para esta máquina.</td>
+                                <td colspan="15" class="text-center">No hay datos para esta máquina.</td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -597,6 +616,63 @@
                 });
             });
 
+            // --- Manual Overlap Edit Logic ---
+            const editableSolapamientoCells = document.querySelectorAll('.editable-solapamiento');
+            editableSolapamientoCells.forEach(cell => {
+                cell.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        this.blur();
+                    }
+                });
+
+                cell.addEventListener('blur', async function() {
+                    const row = this.closest('tr');
+                    const idOrden = row.dataset.id;
+                    const rawValue = this.innerText.replace('%', '').trim();
+                    const maquina = row.dataset.maquina; 
+                    const scenarioId = new URLSearchParams(window.location.search).get('scenario_id');
+                    
+                    const numVal = parseFloat(rawValue);
+                    if (isNaN(numVal) || numVal < 0 || numVal > 100) {
+                        alert("Por favor ingrese un porcentaje válido (0 a 100).");
+                        this.innerText = "0%"; 
+                        return;
+                    }
+
+                    this.style.backgroundColor = '#e2e6ea'; 
+
+                    try {
+                        const response = await fetch('/api/update_overlap_percentage/', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRFToken': '{{ csrf_token }}'
+                            },
+                            body: JSON.stringify({
+                                id_orden: idOrden,
+                                porcentaje_solapamiento: numVal,
+                                maquina: maquina,
+                                scenario_id: scenarioId
+                            })
+                        });
+
+                        if (response.ok) {
+                            this.style.backgroundColor = numVal > 0 ? '#ffeeba' : 'transparent'; 
+                            this.innerText = numVal + '%';
+                        } else {
+                            const data = await response.json();
+                            alert("Error al guardar solapamiento: " + (data.error || "Desconocido"));
+                            this.style.backgroundColor = '#f8d7da'; 
+                        }
+                    } catch (e) {
+                        console.error(e);
+                        alert("Error de conexión al guardar.");
+                        this.style.backgroundColor = '#f8d7da';
+                    }
+                });
+            });
+
 
 
             // --- Reordering Logic (Buttons) ---
@@ -673,9 +749,9 @@
             document.querySelectorAll('.btn-delete').forEach(btn => {
                 btn.addEventListener('click', async function() {
                     const result = await Swal.fire({
-                        title: '¿Ocultar Tarea?',
-                        text: 'Esta tarea ya no aparecerá en las listas ni en el Gantt.',
-                        icon: 'warning',
+                        title: '¿Ocultar esta OP?',
+                        text: 'La tarea se ocultará de la vista actual y del Gantt, pero NO se borrará de la base de datos de SQLSERVER. Es una acción segura.',
+                        icon: 'info',
                         showCancelButton: true,
                         confirmButtonText: 'Sí, ocultar',
                         cancelButtonText: 'Cancelar',
@@ -692,20 +768,27 @@
                     const idOrden = row.dataset.id;
                     
                     try {
+                        const scenarioId = new URLSearchParams(window.location.search).get('scenario_id');
                         const response = await fetch('/api/hide_task/', {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json',
+                                'X-CSRFToken': '{{ csrf_token }}'
                             },
-                            body: JSON.stringify({ id_orden: idOrden })
+                            body: JSON.stringify({ 
+                                id_orden: idOrden,
+                                scenario_id: scenarioId
+                            })
                         });
                         
                         if (response.ok) {
                             row.remove();
                         } else {
-                            alert('Error al ocultar tarea');
+                            const data = await response.json();
+                            alert('Error al ocultar tarea: ' + (data.error || "Desconocido"));
                         }
                     } catch (e) {
+                        console.error(e);
                         alert('Error de conexión');
                     }
                 });
@@ -874,6 +957,72 @@
                 });
             });
 
+            // --- PUBLISH SCENARIO ---
+            const btnPublish = document.getElementById('btnPublishScenario');
+            if (btnPublish) {
+                btnPublish.addEventListener('click', async () => {
+                    const sel = document.getElementById('scenario-selector');
+                    const id = sel.value;
+                    if (!id) return alert("Seleccione un escenario primero.");
+                    
+                    const result = await Swal.fire({
+                        title: '¿Publicar Escenario?',
+                        text: "Este escenario se convertirá en el plan principal del sistema.",
+                        icon: 'warning',
+                        showCancelButton: true,
+                        confirmButtonText: 'Sí, publicar',
+                        customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                    });
+                    
+                    if (result.isConfirmed) {
+                        try {
+                            const resp = await fetch(`/api/scenarios/publish/${id}/`, { 
+                                method: 'POST',
+                                headers: { 'X-CSRFToken': '{{ csrf_token }}' }
+                            });
+                            if (resp.ok) window.location.reload();
+                            else alert("Error al publicar");
+                        } catch(e) { console.error(e); }
+                    }
+                });
+            }
+
+            // --- DELETE SCENARIO ---
+            const btnDeleteScen = document.getElementById('btnDeleteScenario');
+            if (btnDeleteScen) {
+                btnDeleteScen.addEventListener('click', async () => {
+                    const sel = document.getElementById('scenario-selector');
+                    const id = sel.value;
+                    if (!id) return alert("Seleccione un escenario primero.");
+                    
+                    const opt = sel.options[sel.selectedIndex];
+                    if (opt.dataset.principal === '1') {
+                        return alert("No se puede eliminar el escenario principal.");
+                    }
+
+                    const result = await Swal.fire({
+                        title: '¿Eliminar Escenario?',
+                        text: "Esta acción no se puede deshacer.",
+                        icon: 'error',
+                        showCancelButton: true,
+                        confirmButtonText: 'Sí, eliminar',
+                        confirmButtonColor: '#d33',
+                        customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                    });
+                    
+                    if (result.isConfirmed) {
+                        try {
+                            const resp = await fetch(`/api/scenarios/delete/${id}/`, { 
+                                method: 'POST',
+                                headers: { 'X-CSRFToken': '{{ csrf_token }}' }
+                            });
+                            if (resp.ok) window.location.href = window.location.pathname;
+                            else alert("Error al eliminar");
+                        } catch(e) { console.error(e); }
+                    }
+                });
+            }
+
             // --- SCENARIO SELECTOR SYNC ---
             const scenarioSelector = document.getElementById('scenario-selector');
             if (scenarioSelector) {
@@ -922,13 +1071,13 @@
                 if (btnConfirmSave) {
                     btnConfirmSave.addEventListener('click', async function() {
                         const isNew = radioNew.checked;
+                        const activeScenarioId = '{{ active_scenario_id|default:'' }}';
                         const proyectosInput = document.getElementById('proyectos');
                         const proyectosList = proyectosInput ? proyectosInput.value.trim() : '';
-                        const currentScenarioId = new URLSearchParams(window.location.search).get('scenario_id');
 
                         let payload = {
                             proyectos: proyectosList,
-                            copy_from_id: currentScenarioId
+                            copy_from_id: activeScenarioId // Clone from currently viewed scenario
                         };
 
                         if (isNew) {
@@ -946,7 +1095,8 @@
                                 alert("Por favor, seleccione un escenario para sobrescribir."); 
                                 return; 
                             }
-                            payload.update_id = updateId;
+                            payload.id = updateId; // Set 'id' for the backend
+                            payload.update_id = updateId; // Keep 'update_id' for compatibility
                         }
 
                         try {
@@ -969,34 +1119,29 @@
                                 saveScenarioModal.hide();
                                 Swal.fire({
                                     title: '¡Guardado!',
-                                    text: 'Escenario guardado exitosamente.',
+                                    text: 'El escenario ha sido guardado exitosamente.',
                                     icon: 'success',
                                     timer: 1500,
-                                    showConfirmButton: false,
-                                    customClass: { popup: 'premium-swal' }
+                                    showConfirmButton: false
                                 }).then(() => {
-                                    window.location.href = `?scenario_id=${data.scenario.id}`;
+                                    // Redirect to the saved scenario
+                                    window.location.href = `?scenario_id=${data.scenario.id}&proyectos=${encodeURIComponent(proyectosList)}`;
                                 });
                             } else {
+                                btn.disabled = false;
+                                btn.innerHTML = originalHTML;
                                 Swal.fire({
                                     title: 'Error',
                                     text: data.error || "Error al guardar escenario.",
                                     icon: 'error',
                                     customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
                                 });
-                                btn.disabled = false;
-                                btn.innerHTML = originalHTML;
                             }
                         } catch (e) {
                             console.error(e);
-                            Swal.fire({
-                                title: 'Error de Red',
-                                text: 'No se pudo conectar con el servidor.',
-                                icon: 'error',
-                                customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
-                            });
                             this.disabled = false;
                             this.innerHTML = '<i class="fas fa-check me-1"></i>Confirmar Guardado';
+                            alert("Error de red o conexión.");
                         }
                     });
                 }
