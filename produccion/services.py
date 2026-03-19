@@ -205,12 +205,11 @@ def get_planificacion_data(filtros=None, exclude_completed=True):
         if clauses:
             where_clauses.append(" AND (" + " OR ".join(clauses) + ")")
 
-    # Filter specific machine IDs if provided (Local Config optimization)
     if 'machine_ids' in filtros and filtros['machine_ids']:
         # machine_ids matches T.IdMaquina (or MAC.IdMaquina)
         m_ids = filtros['machine_ids']
         placeholders_m = ', '.join(['%s'] * len(m_ids))
-        where_clauses.append(f" AND T.IdMaquina IN ({placeholders_m})")
+        where_clauses.append(f" AND (T.IdMaquina IN ({placeholders_m}) OR T.IdMaquina IS NULL OR T.IdMaquina = '')")
         params.extend(m_ids)
     else:
         # Filter out excluded machines

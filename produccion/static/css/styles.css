@@ -184,8 +184,9 @@ tbody tr:hover {
 .nav-link.active {
     background: #fff;
     border-color: #dee2e6 #dee2e6 #fff;
-    color: #0d6efd; /* Soft Blue active */
-    box-shadow: 0 -3px 0 #0d6efd inset; /* Top highlight Blue */
+    color: #dc3545; /* Strong Red active text */
+    box-shadow: 0 -5px 0 #dc3545 inset; /* Thick Red highlight at bottom */
+    font-weight: 800;
     opacity: 1;
     z-index: 1;
 }

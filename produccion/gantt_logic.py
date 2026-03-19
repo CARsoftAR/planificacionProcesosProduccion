@@ -218,25 +218,48 @@ def get_gantt_data(request, force_run=False):
     dependency_map = {}
 
     def get_nivel(t):
+        """
+        Robust level resolution.
+        Priority: Nivel_Planificacion (manual) > Nivel (ERP).
+        """
         try:
-            val = t.get('Nivel_Planificacion')
-            if val is None: return 0
-            return float(val)
+            # We treat 0 as 'not set' or 'legacy level' in this context
+            plan_lvl = t.get('Nivel_Planificacion')
+            if plan_lvl is not None and float(plan_lvl) != 0:
+                return float(plan_lvl)
+            
+            erp_lvl = t.get('Nivel')
+            if erp_lvl is not None:
+                return float(erp_lvl)
+            
+            return 0.0
         except (ValueError, TypeError):
-            return 0
+            return 0.0
 
     for formula, tasks_in_order in orders_map.items():
         # Component key: Prefix of Descri before the last process name
         def get_dep_key(t):
-            desc = str(t.get('Descri', '')).strip()
-            if " - " in desc:
-                parts = desc.split(" - ")
+            desc = str(t.get('Descri', '')).strip().upper()
+            
+            # 1. Clean common prefixes that shouldn't split a component into different groups
+            # (e.g. 'ARMADO REPUESTO' should group with 'REPUESTO')
+            prefixes_to_ignore = ["ARMADO ", "MATERIAL ", "COMPRA ", "RECEPCION ", "SERVICIO ", "TERCERO "]
+            trimmed_desc = desc
+            for p in prefixes_to_ignore:
+                if trimmed_desc.startswith(p):
+                    trimmed_desc = trimmed_desc[len(p):].strip()
+
+            # 2. Use the ' - ' separator to identify the component prefix
+            if " - " in trimmed_desc:
+                parts = trimmed_desc.split(" - ")
                 if len(parts) > 1:
                     return " - ".join(parts[:-1]).strip()
             
-            # Fallback for descriptions without " - " (e.g. from older imports or different formats)
-            # We want them to still group together if they are part of the same base project.
-            # Using the ProyectoCode as a fallback base group.
+            # 3. If no separator, the trimmed description itself is the grouping key
+            # (unless it is empty, then fallback to project code)
+            if trimmed_desc:
+                return trimmed_desc
+
             return f"DEFAULT_GROUP_{t.get('ProyectoCode', 'UNKNOWN')}"
 
         # IMPORTANT: Use all_tasks_raw to include unassigned tasks in the dependency chain
@@ -586,9 +609,7 @@ def get_gantt_data(request, force_run=False):
                 # Sort tasks
                 def get_sort_key(t):
                      tid = str(t.get('Idorden'))
-                     
-                     try: nivel = float(t.get('Nivel_Planificacion') or 0)
-                     except: nivel = 0
+                     nivel = get_nivel(t)
                      
                      visual_order = t.get('OrdenVisual', 999999)
                      

@@ -11,7 +11,77 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
-    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        /* Modern SweetAlert2 Custom Styles */
+        .swal2-popup.premium-swal {
+            border-radius: 20px;
+            padding: 2.5rem;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+        }
+        .swal2-title {
+            font-weight: 800;
+            color: #1e293b;
+            font-size: 1.6rem;
+            margin-bottom: 1rem;
+        }
+        .swal2-html-container {
+            color: #64748b;
+            font-size: 1.05rem;
+            line-height: 1.6;
+        }
+        .swal2-confirm.premium-confirm {
+            border-radius: 50px !important;
+            padding: 12px 35px !important;
+            font-weight: 600 !important;
+            font-size: 0.95rem !important;
+            box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3) !important;
+        }
+        .swal2-cancel.premium-cancel {
+            border-radius: 50px !important;
+            padding: 12px 35px !important;
+            font-weight: 600 !important;
+            font-size: 0.95rem !important;
+            background: #f1f5f9 !important;
+            color: #475569 !important;
+        }
+        .swal2-icon {
+            border: none !important;
+            width: 5em !important;
+            height: 5em !important;
+            margin: 1.25em auto 1.875em !important;
+            border-radius: 50% !important;
+            background: #f8fafc !important;
+            transition: all 0.3s ease;
+            box-sizing: content-box;
+        }
+        .swal2-x-mark, .swal2-success-fix, .swal2-success-ring {
+            /* Scale down SWAL internal SVG/elements slightly for a cleaner look */
+            transform: scale(0.75);
+        }
+        .swal2-icon.swal2-warning {
+            background: rgba(245, 158, 11, 0.1) !important;
+            color: #f59e0b !important;
+        }
+        .swal2-icon.swal2-error {
+            background: rgba(239, 68, 68, 0.1) !important;
+            color: #ef4444 !important;
+        }
+        .swal2-icon.swal2-success {
+            background: rgba(16, 185, 129, 0.1) !important;
+            color: #10b981 !important;
+        }
+        .swal2-icon.swal2-question {
+            background: rgba(59, 130, 246, 0.1) !important;
+            color: #3b82f6 !important;
+        }
+        .swal2-icon.swal2-info {
+            background: rgba(59, 130, 246, 0.1) !important;
+            color: #3b82f6 !important;
+        }
         :root {
             --bg-deep: #f8f9fa;
             --bg-card: #ffffff;
@@ -25,6 +95,29 @@
             --neon-blue: #0dcaf0;
             --neon-purple: #6f42c1;
             --neon-green: #198754;
+        }
+
+        /* Dropdown custom */
+        .no-caret::after { display: none !important; }
+        .dropdown-menu-premium {
+            border-radius: 12px !important;
+            border: 1px solid rgba(0,0,0,0.05) !important;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.1) !important;
+            overflow: hidden !important;
+            padding: 0.5rem !important;
+            min-width: 200px !important;
+        }
+        .dropdown-item-premium {
+            padding: 0.7rem 1rem;
+            font-weight: 500;
+            border-radius: 8px;
+            transition: all 0.2s;
+            font-size: 0.85rem;
+            color: #475569;
+        }
+        .dropdown-item-premium:hover {
+            background: #f1f5f9;
+            color: #2563eb;
         }
 
         .btn-ai {
@@ -547,35 +640,37 @@
             color: #475569 !important;
         }
         .swal2-icon {
-            border: none !important;
-            width: 100px !important;
-            height: 100px !important;
+            border: 3px solid #f8fafc !important;
+            width: 80px !important;
+            height: 80px !important;
             margin: 0 auto 1.5rem !important;
             border-radius: 50% !important;
             display: flex !important;
             align-items: center !important;
             justify-content: center !important;
             background: #f8fafc !important;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
         }
         .swal2-icon.swal2-warning {
-            background: rgba(245, 158, 11, 0.1) !important;
+            border-color: #f59e0b !important;
             color: #f59e0b !important;
         }
         .swal2-icon.swal2-error {
-            background: rgba(239, 68, 68, 0.1) !important;
+            border-color: #ef4444 !important;
             color: #ef4444 !important;
         }
         .swal2-icon.swal2-success {
-            background: rgba(16, 185, 129, 0.1) !important;
+            border-color: #10b981 !important;
             color: #10b981 !important;
         }
-        .swal2-icon.swal2-question {
-            background: rgba(59, 130, 246, 0.1) !important;
+        .swal2-icon.swal2-question, .swal2-icon.swal2-info {
+            border-color: #3b82f6 !important;
             color: #3b82f6 !important;
         }
-        .swal2-icon.swal2-info {
-            background: rgba(59, 130, 246, 0.1) !important;
-            color: #3b82f6 !important;
+        /* Icon content scaling fix */
+        .swal2-icon .swal2-icon-content {
+            font-size: 3rem !important;
+            line-height: 80px !important;
         }
     </style>
 </head>
@@ -583,40 +678,72 @@
     <div class="container-fluid p-0">
         <div class="top-bar d-flex justify-content-between align-items-center">
             <div class="d-flex align-items-center">
-                <div class="bg-primary p-2 rounded-3 me-3" style="box-shadow: 0 0 15px rgba(59, 130, 246, 0.5);">
+                <div class="bg-primary p-2 rounded-3 me-3" style="box-shadow: 0 8px 20px rgba(59, 130, 246, 0.3);">
                     <i class="fas fa-chart-gantt text-white fs-4"></i>
                 </div>
                 <div>
-                    <h4 class="m-0 fw-bold" style="letter-spacing: -0.5px;">Planificación <span class="text-primary">Visual</span></h4>
-                    <small class="text-muted">Control de línea y procesos ABBAMAT</small>
+                    <h4 class="m-0 fw-bold" style="letter-spacing: -0.5px; font-size: 1.25rem;">Planificación <span class="text-primary">Visual</span></h4>
+                    <small class="text-muted" style="font-size: 0.7rem;">Control de línea ABBAMAT</small>
                 </div>
             </div>
             
              <div class="d-flex align-items-center gap-2">
 
-                 <!-- Plan Mode Toggle -->
-                 <div class="glass-toggle d-flex me-3">
+                 <!-- 1. Mode Group -->
+                 <div class="bg-light p-1 rounded-pill border d-flex me-2">
                      <a href="#" id="toggleOriginalMode"
-                        class="btn-modern {% if request.GET.plan_mode == 'original' %}btn-primary-modern{% else %}btn-toggle-inactive{% endif %}"
-                        title="Ver datos originales de SQL Server (Sin modificaciones)">
-                         <i class="fas fa-magic"></i> Automático
+                        class="btn-modern rounded-pill px-3 py-1 {% if request.GET.plan_mode == 'original' %}btn-primary-modern shadow-sm{% else %}text-muted{% endif %}"
+                        style="font-size: 0.8rem; height: 32px;"
+                        title="Automático: Datos SQL">
+                         <i class="fas fa-magic"></i> Auto
                      </a>
                      <a href="#" id="toggleManualMode"
-                        class="btn-modern {% if request.GET.plan_mode != 'original' %}btn-primary-modern{% else %}btn-toggle-inactive{% endif %}"
-                        title="Ver planificación con mis ajustes manuales">
+                        class="btn-modern rounded-pill px-3 py-1 {% if request.GET.plan_mode != 'original' %}btn-primary-modern shadow-sm{% else %}text-muted{% endif %}"
+                        style="font-size: 0.8rem; height: 32px;"
+                        title="Manual: Ajustes manuales">
                          <i class="fas fa-hand-pointer"></i> Manual
                      </a>
                  </div>
 
-                  <div class="vr mx-2 bg-secondary opacity-25" style="height: 30px;"></div>
+                 <!-- 2. AI Button -->
+                  <button id="btn-request-ai" class="btn-modern btn-ai rounded-pill px-3" style="height: 34px; font-size: 0.8rem;" title="Optimizar con IA">
+                      <i class="fas fa-brain"></i> Sugerencia IA
+                  </button>
+
+                  <div class="vr mx-2 bg-secondary opacity-25" style="height: 25px;"></div>
                   
-                  <!-- Notification Bell -->
-                  <div class="position-relative me-2">
-                    <button class="btn-modern glass" type="button" data-bs-toggle="offcanvas" data-bs-target="#notificationCenter">
+                  <!-- 3. Actions Dropdown -->
+                  <div class="dropdown me-1">
+                      <button class="btn-modern glass rounded-pill no-caret px-3" style="height: 34px; border-color: #e2e8f0; color: #475569;" type="button" data-bs-toggle="dropdown">
+                          <i class="fas fa-plus-circle text-primary"></i> Herramientas
+                      </button>
+                      <ul class="dropdown-menu dropdown-menu-end dropdown-menu-premium mt-2">
+                          <li>
+                              <a class="dropdown-item dropdown-item-premium" href="#" id="btn-toggle-arrows">
+                                  <i class="fas fa-project-diagram me-2 text-primary"></i> Ver Dependencias
+                              </a>
+                          </li>
+                          <li><hr class="dropdown-divider"></li>
+                          <li>
+                              <a class="dropdown-item dropdown-item-premium" href="#" id="btnPlanillasDiarias" onclick="openPlanillasDiarias()">
+                                  <i class="fas fa-file-alt me-2 text-warning"></i> Planillas Diarias
+                              </a>
+                          </li>
+                          <li>
+                              <a class="dropdown-item dropdown-item-premium" href="#" id="btnExport">
+                                  <i class="fas fa-file-excel me-2 text-success"></i> Exportar Excel
+                              </a>
+                          </li>
+                      </ul>
+                  </div>
+
+                  <!-- 4. Alerts -->
+                  <div class="position-relative me-1">
+                    <button class="btn-modern glass rounded-pill px-2" style="height: 34px; border-color: #e2e8f0;" type="button" data-bs-toggle="offcanvas" data-bs-target="#notificationCenter">
                         <i class="fas fa-bell {% if system_alerts or analysis.project_alerts %}bell-neon-alert{% else %}bell-green-ok{% endif %}"></i>
                         {% with total_alerts=system_alerts|length|add:analysis.project_alerts|length %}
                         {% if total_alerts > 0 %}
-                        <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size: 0.65rem; padding: 0.35em 0.6em; border: 2px solid white;">
+                        <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size: 0.6rem; padding: 0.2em 0.4em; border: 1px solid white;">
                             {{ total_alerts }}
                         </span>
                         {% endif %}
@@ -624,59 +751,9 @@
                     </button>
                   </div>
 
-                  <button id="btn-toggle-arrows" class="btn-modern glass" title="Mostrar/Ocultar Flechas">
-                      <i class="fas fa-project-diagram text-primary"></i> Flechas
-                  </button>
-
-                  <button id="btn-request-ai" class="btn-modern btn-ai" title="Preguntar a la IA">
-                      <i class="fas fa-brain"></i> Sugerencia IA
-                  </button>
-                 
-                 
-                 <div class="vr mx-2 bg-secondary opacity-25 d-none" style="height: 30px;"></div>
-
-                 <a href="#" id="btnPlanillasDiarias" onclick="openPlanillasDiarias()" class="btn-modern bg-white text-dark shadow-sm border" style="border-color: #ffc107 !important;">
-                    <i class="fas fa-file-alt text-warning"></i> Planillas Diarias
-                 </a>
-
-                 <!-- Scenario Selector -->
-                 <div class="d-flex align-items-center gap-2 d-none">
-                     <label class="small text-muted mb-0" style="white-space: nowrap;">
-                         <i class="fas fa-layer-group me-1"></i>Escenario:
-                     </label>
-                     <select id="scenario-selector" class="form-select form-select-sm bg-light text-dark border-secondary" style="width: 200px;">
-                         {% for scenario in all_scenarios %}
-                         <option value="{{ scenario.id }}" 
-                                 {% if active_scenario and scenario.id == active_scenario.id %}selected{% endif %}
-                                 data-is-principal="{{ scenario.es_principal|yesno:'true,false' }}">
-                             {% if scenario.es_principal %}⭐ {% endif %}{{ scenario.nombre }}
-                         </option>
-                         {% endfor %}
-                     </select>
-                     
-                     <button id="btn-create-draft" class="btn-modern glass text-dark" title="Crear Borrador">
-                         <i class="fas fa-copy"></i> Borrador
-                     </button>
-                     
-                     <button id="btn-publish-scenario" class="btn-modern btn-success-modern" title="Publicar como Plan Oficial"
-                             {% if active_scenario.es_principal %}disabled{% endif %}>
-                         <i class="fas fa-check-circle"></i> Publicar
-                     </button>
-                     
-                     <button id="btn-delete-scenario" class="btn-modern btn-danger-modern" title="Eliminar Escenario"
-                             {% if active_scenario.es_principal %}disabled{% endif %}>
-                         <i class="fas fa-trash"></i>
-                     </button>
-                 </div>
-                 
-                 <div class="vr mx-2 bg-secondary opacity-25 d-none" style="height: 30px;"></div>
-
-                 <a href="#" id="btnExport" class="btn-modern bg-white text-dark shadow-sm border" style="border-color: #198754 !important;">
-                    <i class="fas fa-file-excel text-success"></i> Exportar
-                 </a>
-                 
-                <a href="{% url 'planificacion_view' %}?{{ request.GET.urlencode }}" class="btn-modern bg-white text-dark shadow-sm border">
-                    <i class="fas fa-chevron-left"></i> Volver
+                  <!-- 5. Back -->
+                 <a href="{% url 'planificacion_view' %}?{{ request.GET.urlencode }}" class="btn-modern bg-white rounded-pill border shadow-sm px-3" style="height: 34px; color: #64748b;" title="Volver">
+                    <i class="fas fa-chevron-left"></i>
                  </a>
             </div>
         </div>
@@ -850,7 +927,18 @@
                         break;
                     }
                 }
-                if (!found) alert('Proyecto no visible en el Gantt actual');
+                if (!found) {
+                    Swal.fire({
+                        title: 'Aviso de Planificación',
+                        text: `El proyecto ${projectCode} no tiene tareas programadas o visibles en el rango de fechas actual del Gantt.`,
+                        icon: 'info',
+                        confirmButtonText: 'Entendido',
+                        customClass: { 
+                            popup: 'premium-swal', 
+                            confirmButton: 'premium-confirm px-4' 
+                        }
+                    });
+                }
             };
 
             window.openPlanillasDiarias = function() {
@@ -1197,6 +1285,7 @@
                                     <div class="tooltip-section">
                                         <div class="tooltip-label">Denominación / Artículo</div>
                                         <div class="tooltip-value small">{{ task.Denominacion }}</div>
+                                        <div class="tooltip-value mt-1 text-info fw-bold" style="font-size: 0.75rem;">{{ task.Descri|default:"" }}</div>
                                         <div class="text-muted" style="font-size: 0.65rem;">Code: {{ task.Articulo }}</div>
                                     </div>
 
@@ -1462,53 +1551,15 @@
                         taskEl.style.opacity = '0.5';
                         taskEl.style.cursor = 'wait';
                         
-                        fetch(`/api/set_priority/${taskId}/`, {
-                            method: 'POST',
-                            headers: { 
-                                'Content-Type': 'application/json',
-                                'X-CSRFToken': '{{ csrf_token }}'
-                            },
-                            body: JSON.stringify({
-                                maquina: targetMachineId,
-                                new_priority: newPriority,
-                                manual_start: manualStartStr,
-                                scenario_id: ACTIVE_SCENARIO_ID
-                            })
-                        })
-                        .then(r => r.json())
-                        .then(data => {
-                            if (data.status === 'ok') {
-                                taskEl.style.border = "3px solid #00ff00";
-                                taskEl.style.boxShadow = "0 0 15px #00ff00";
-                                console.log("✅ SAVE SUCCESS:", data);
-                                
-                                // Force reload in MANUAL mode to see changes
-                                // Construct URL with plan_mode=manual
-                                const url = new URL(window.location.href);
-                                url.searchParams.set('plan_mode', 'manual');
-                                url.searchParams.set('run', '1'); // Ensure it runs
-                                
-                                setTimeout(() => window.location.href = url.toString(), 10);
-                            } else {
-                                Swal.fire({
-                                    title: 'Error Backend',
-                                    text: data.error || 'Ocurrió un error inesperado.',
-                                    icon: 'error',
-                                    customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
-                                });
-                                taskEl.style.opacity = '1';
-                                taskEl.style.border = "3px solid red";
-                            }
-                        })
-                        .catch(e => {
-                            Swal.fire({
-                                title: 'Error de Red',
-                                text: e.message || e,
-                                icon: 'error',
-                                customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
-                            });
-                            taskEl.style.opacity = '1';
-                        });
+                        // THE API CALL WAS MOVED TO THE 'ondrop' EVENT OF THE DROPZONE
+                        // THIS 'end' LISTENER SHOULD ONLY HANDLE VISUAL RESET AND STATE
+                        console.log("Drag ended, handing over to ondrop (if applicable)");
+                        
+                        /* 
+                        // DEPRECATED REDUNDANT SAVE
+                        fetch(`/api/set_priority/${taskId}/`, { ... })
+                        */
+
 
                     } else {
                         console.warn("Row Index out of bounds");
@@ -2710,7 +2761,13 @@
                             Swal.close();
 
                             if (data.error) {
-                                Swal.fire('Error de IA', data.error, 'error');
+                                Swal.fire({
+                                    icon: 'warning', // Warning looks slightly friendlier than error for service limits
+                                    title: 'Servicio de IA',
+                                    text: data.error,
+                                    footer: data.technical_details ? '<div class="small text-muted text-center border-top pt-2">Detalle técnico: ' + data.technical_details + '</div>' : '',
+                                    customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                                });
                                 return;
                             }
 
@@ -2733,17 +2790,52 @@
                                     title: 'Sugerencias de la IA',
                                     html: htmlSug,
                                     icon: 'success',
-                                    showCancelButton: false,
-                                    confirmButtonText: 'Entendido',
-                                    customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                                    showCancelButton: true,
+                                    confirmButtonText: '<i class="fas fa-magic"></i> Aplicar Automáticamente',
+                                    cancelButtonText: 'Cerrar',
+                                    customClass: { 
+                                        popup: 'premium-swal', 
+                                        confirmButton: 'premium-confirm btn-lg', 
+                                        cancelButton: 'btn btn-outline-secondary' 
+                                    }
+                                }).then((result) => {
+                                    if (result.isConfirmed) {
+                                        Swal.fire({ title: 'Aplicando...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+                                        fetch('/planificacion/visual/ai-apply/', {
+                                            method: 'POST',
+                                            headers: { 
+                                                'Content-Type': 'application/json',
+                                                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value
+                                            },
+                                            body: JSON.stringify({ suggestions: data.sugerencias })
+                                        })
+                                        .then(r => r.json())
+                                        .then(res => {
+                                            if (res.status === 'ok') {
+                                                Swal.fire({ icon: 'success', title: '¡Listo!', timer: 1500, showConfirmButton: false }).then(() => window.location.reload());
+                                            } else {
+                                                Swal.fire('Error', res.error || 'No se pudo aplicar', 'error');
+                                            }
+                                        });
+                                    }
                                 });
                             } else {
-                                Swal.fire('Planificación Correcta', 'La IA considera que tu planificación actual ya es óptima.', 'success');
+                                Swal.fire({
+                                    title: 'Planificación Correcta',
+                                    text: 'La IA considera que tu planificación actual ya es óptima.',
+                                    icon: 'success',
+                                    customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                                });
                             }
                         })
                         .catch(err => {
                             btnRequestAi.classList.remove('ai-loading-pulse');
-                            Swal.fire('Error', 'No se pudo conectar con el servicio de IA.', 'error');
+                            Swal.fire({
+                                icon: 'error',
+                                title: 'Error de Conexión',
+                                text: 'No se pudo contactar con el servicio de IA. Verifique su internet.',
+                                customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                            });
                         });
                 });
             }

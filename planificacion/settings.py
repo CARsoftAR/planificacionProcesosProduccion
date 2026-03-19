@@ -116,5 +116,8 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# OpenAI Configuration
+# OpenAI Configurations
 OPENAI_API_KEY = "sk-yS7ILi6rPssss1tKySVkjcsDhU1InAvw0CrM97JIgWrcFR0GTuALLQQdKvrRCPGU"
+
+# Google AI Studio Configuration
+GOOGLE_API_KEY = "AIzaSyDLQd9D9h4nmMGdDMMBCfmoxyGt4j31VEI"

@@ -108,8 +108,23 @@ def reset_planning(request):
 
         print(f"DEBUG: reset_planning called for Scenario: {active_scenario.nombre} (ID: {active_scenario.id}) with {len(ids)} IDs")
         
+        # If no IDs on screen, try to find them by project filter
+        proyectos = body.get('proyectos')
+        if not ids and proyectos:
+             if isinstance(proyectos, str):
+                  proj_list = [p.strip() for p in proyectos.split(',') if p.strip()]
+             else:
+                  proj_list = proyectos
+             
+             if proj_list:
+                  # Use the same data fetching logic to find all OPs for these projects
+                  from .services import get_planificacion_data
+                  erp_data = get_planificacion_data({'proyectos': proj_list})
+                  ids = [int(d['Idorden']) for d in erp_data if d.get('Idorden')]
+                  print(f"DEBUG: reset_planning - Expanded to {len(ids)} tasks via Project lookup: {proj_list}")
+
         if not ids:
-             return JsonResponse({'status': 'ignored', 'message': 'No IDs provided'})
+             return JsonResponse({'status': 'ignored', 'message': 'No IDs provided and no projects found to reset'})
         
         # 1. Clear Priorities and Virtual Moves FOR THIS SCENARIO ONLY
         deleted_prio, _ = PrioridadManual.objects.using('default').filter(id_orden__in=ids, scenario=active_scenario).delete()
@@ -328,6 +343,17 @@ def planificacion_list(request):
         
         # --- FILTER HIDDEN TASKS ---
         hidden_ids = set(HiddenTask.objects.using('default').values_list('id_orden', flat=True))
+        
+        # EXPLICIT SEARCH UNHIDE: If the user is filtering for specific projects/IDs, 
+        # we automatically unhide those tasks because the search expresses an intent to see them.
+        if search_active and data:
+            ids_in_result = [d.get('Idorden') for d in data if d.get('Idorden')]
+            # Remove from hidden_task if they were there
+            if ids_in_result:
+                HiddenTask.objects.using('default').filter(id_orden__in=ids_in_result).delete()
+                # Refresh hidden_ids set
+                hidden_ids = set(HiddenTask.objects.using('default').values_list('id_orden', flat=True))
+
         if hidden_ids:
             data = [d for d in data if d.get('Idorden') not in hidden_ids]
 
@@ -463,30 +489,19 @@ def planificacion_list(request):
         # 2. Initialize Grouping using MACHINE NAMES
         grouped_data = {m['nombre']: [] for m in all_machines_list}
         if 'SIN ASIGNAR' not in grouped_data:
-             grouped_data['SIN ASIGNAR'] = []
-
-        # Populate with data
+             grouped_data['SIN ASIGNAR'] = []        # Populate with data
         for item in data:
             m_name = item.get('MAQUINAD', 'SIN ASIGNAR')
             if m_name in grouped_data:
                 grouped_data[m_name].append(item)
             else:
-                # If using local config, strictly IGNORE machines not in the list (or put in SIN ASIGNAR if you want)
-                # But user asked for Strict filtering. The SQL query filtered by ID, so data shouldn't have other IDs.
-                # However, if 'maquina_map' mapped it, it should be fine.
                 if using_local_config:
-                     # If it's SIN ASIGNAR, add it? Or ignore?
-                     # Let's add to SIN ASIGNAR if it falls through, but not create new tabs.
                      if 'SIN ASIGNAR' in grouped_data:
-                         grouped_data['SIN ASIGNAR'].append(item)
+                          grouped_data['SIN ASIGNAR'].append(item)
                 else:
-                    # Legacy behavior for ERP mode
-                    if m_name == 'SIN ASIGNAR':
-                        grouped_data['SIN ASIGNAR'].append(item)
-                    else:
-                        grouped_data.setdefault(m_name, []).append(item)
-                        if m_name not in all_machines_list:
-                            all_machines_list.append(m_name)
+                    grouped_data.setdefault(m_name, []).append(item)
+                    if m_name not in all_machines_list:
+                        all_machines_list.append(m_name)
         
         # Sort items within each machine and re-assign visual IDs
         for m_name in grouped_data:
@@ -614,8 +629,11 @@ def move_task(request):
         
         # Harmonize machine
         from .models import MaquinaConfig
+        print(f"DEBUG: move_task - ID: {id_orden}, TargetRaw: {target_machine_raw}, Prio: {new_priority}")
         m_conf = MaquinaConfig.objects.using("default").filter(nombre=target_machine_raw).first()
         target_machine_id = m_conf.id_maquina if m_conf else target_machine_raw
+        print(f"DEBUG: move_task - Resolved Machine ID: {target_machine_id}")
+
 
         from django.db import transaction
         with transaction.atomic(using="default"):
@@ -686,8 +704,11 @@ def set_priority(request, id_orden):
 
         # Harmonize machine
         from .models import MaquinaConfig
+        print(f"DEBUG: set_priority - ID: {id_orden}, TargetRaw: {maquina}, Prio: {new_priority}, Scenario: {active_scenario.id if active_scenario else 'None'}")
         m_conf = MaquinaConfig.objects.using('default').filter(nombre=maquina).first()
         maquina_id = m_conf.id_maquina if m_conf else maquina
+        print(f"DEBUG: set_priority - Resolved Machine ID: {maquina_id}")
+
 
         from django.db import transaction
         with transaction.atomic(using='default'):
@@ -1780,6 +1801,7 @@ def export_planificacion_excel(request):
     ws.title = "Gantt Visual"
     
     # helper for positioning
+    COLS_PER_HOUR = 6 # Sub-resolution: 1 col = 10 minutes
     hours_per_day = (global_max_h - global_min_h)
     unique_dates = []
     for dt in time_columns:
@@ -1913,7 +1935,6 @@ def export_planificacion_excel(request):
         
         ws.column_dimensions[get_column_letter(col_idx)].width = 3.5
     # We use 6 columns per hour (10 min each)
-    COLS_PER_HOUR = 6
     
     for h_idx, hour in enumerate(time_columns):
         hour_base_col = 2 + (h_idx * COLS_PER_HOUR)
@@ -2537,6 +2558,57 @@ def ai_planning_suggest_api(request):
     try:
         suggestions = get_ai_planning_suggestion(request)
         return JsonResponse(suggestions)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
+@csrf_exempt
+@require_POST
+def apply_ai_suggestions(request):
+    """
+    API endpoint que aplica las sugerencias de la IA a la base de datos de prioridades.
+    """
+    try:
+        body = json.loads(request.body)
+        suggestions = body.get('suggestions', [])
+        active_scenario = get_active_scenario(request)
+
+        from .models import PrioridadManual, VTman
+        
+        for s in suggestions:
+            id_orden = s.get('id_orden')
+            nueva_prio = s.get('nueva_prioridad')
+            nueva_maquina = s.get('nueva_maquina_id')
+
+            if id_orden is None or nueva_prio is None:
+                continue
+
+            # Buscar si ya existe una prioridad manual para esta orden en este escenario
+            existing = PrioridadManual.objects.filter(id_orden=id_orden, scenario=active_scenario).first()
+            
+            # Determinar la máquina: usamos la nueva si viene de la IA, o la actual si ya tenía override, o la del ERP
+            maquina_final = nueva_maquina
+            if maquina_final is None and existing:
+                maquina_final = existing.maquina
+            
+            if maquina_final is None:
+                vt = VTman.objects.using('production').filter(idorden=id_orden).first()
+                if vt:
+                    maquina_final = vt.idmaquina
+            
+                # SIEMPRE borramos CUALQUIER registro previo de esta OP en este escenario
+                # para evitar duplicados en diferentes máquinas que causen inconsistencias en el Gantt
+                PrioridadManual.objects.using("default").filter(id_orden=id_orden, scenario=active_scenario).delete()
+
+                # Creamos el nuevo registro con la máquina final (IA o ERP o Override previo)
+                PrioridadManual.objects.using("default").create(
+                    id_orden=id_orden,
+                    maquina=maquina_final,
+                    scenario=active_scenario,
+                    prioridad=float(nueva_prio)
+                )
+
+
+        return JsonResponse({'status': 'ok'})
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 

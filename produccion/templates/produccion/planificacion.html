@@ -47,14 +47,21 @@
         }
         .swal2-icon {
             border: none !important;
-            width: 100px !important;
-            height: 100px !important;
-            margin: 0 auto 1.5rem !important;
+            width: 5em !important;
+            height: 5em !important;
+            margin: 1.25em auto 1.875em !important;
             border-radius: 50% !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
             background: #f8fafc !important;
+            transition: all 0.3s ease;
+            box-sizing: content-box;
+        }
+        /* Soften the inner marks */
+        .swal2-icon .swal2-icon-content {
+            font-size: 2rem !important;
+        }
+        .swal2-x-mark, .swal2-success-fix, .swal2-success-ring {
+            /* Scale down SWAL internal SVG/elements slightly for a cleaner look */
+            transform: scale(0.75);
         }
         .swal2-icon.swal2-warning {
             background: rgba(245, 158, 11, 0.1) !important;
@@ -976,7 +983,7 @@
                     
                     if (result.isConfirmed) {
                         try {
-                            const resp = await fetch(`/api/scenarios/publish/${id}/`, { 
+                            const resp = await fetch(`/api/scenarios/${id}/publish/`, { 
                                 method: 'POST',
                                 headers: { 'X-CSRFToken': '{{ csrf_token }}' }
                             });
@@ -1003,7 +1010,7 @@
                     const result = await Swal.fire({
                         title: '¿Eliminar Escenario?',
                         text: "Esta acción no se puede deshacer.",
-                        icon: 'error',
+                        icon: 'warning',
                         showCancelButton: true,
                         confirmButtonText: 'Sí, eliminar',
                         confirmButtonColor: '#d33',
@@ -1012,7 +1019,7 @@
                     
                     if (result.isConfirmed) {
                         try {
-                            const resp = await fetch(`/api/scenarios/delete/${id}/`, { 
+                            const resp = await fetch(`/api/scenarios/${id}/delete/`, { 
                                 method: 'POST',
                                 headers: { 'X-CSRFToken': '{{ csrf_token }}' }
                             });
