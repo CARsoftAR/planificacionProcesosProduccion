@@ -14,6 +14,12 @@ urlpatterns = [
     path('config/maquinas/<maquina_id>/horario/crear/', views.horario_maquina_create, name='horario_maquina_create'),
     path('config/horario/<pk>/borrar/', views.horario_maquina_delete, name='horario_maquina_delete'),
 
+    # Mantenimientos
+    path('config/mantenimientos/', views.mantenimiento_list, name='mantenimiento_list'),
+    path('config/mantenimientos/crear/', views.mantenimiento_create_update, name='mantenimiento_create'),
+    path('config/mantenimientos/<pk>/editar/', views.mantenimiento_create_update, name='mantenimiento_update'),
+    path('config/mantenimientos/<pk>/borrar/', views.mantenimiento_delete, name='mantenimiento_delete'),
+
     # Feriados
     path('feriados/', views.feriado_list, name='feriado_list'),
     path('feriados/crear/', views.feriado_create, name='feriado_create'),

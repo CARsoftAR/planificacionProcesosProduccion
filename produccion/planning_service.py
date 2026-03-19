@@ -1,6 +1,21 @@
 from datetime import timedelta, datetime
 from .models import HorarioMaquina, Feriado
 
+def get_active_maintenances(maquina):
+    from .models import MantenimientoMaquina
+    try:
+        mants = MantenimientoMaquina.objects.filter(maquina=maquina).exclude(estado='FINALIZADO')
+        res = []
+        for m in mants:
+            # Naive time mapping
+            s = m.fecha_inicio.replace(tzinfo=None) if m.fecha_inicio.tzinfo else m.fecha_inicio
+            e = m.fecha_fin.replace(tzinfo=None) if m.fecha_fin.tzinfo else m.fecha_fin
+            res.append({'start': s, 'end': e, 'motivo': m.motivo})
+        return res
+    except:
+        return []
+
+
 def is_non_working_holiday(date_obj, non_working_days=None):
     """
     Verifica si una fecha es un feriado que NO se trabaja.
@@ -49,6 +64,12 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
         # Let's assume a default standard 07-16 LV for safety to avoid infinite loops
         schedules['LV'] = {'start': datetime.strptime("07:00", "%H:%M").time(), 'end': datetime.strptime("16:00", "%H:%M").time()}
         
+    active_maints = []
+    if not isinstance(maquina, dict):
+        m_name_check = getattr(maquina, 'nombre', '').upper()
+        if 'MAC00' not in m_name_check and 'SIN ASIGNAR' not in m_name_check:
+            active_maints = get_active_maintenances(maquina)
+            
     current_time = start_date
     calculated_tasks = []
 
@@ -218,6 +239,41 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
                 print(f"    Saltando a: {current_time}")
                 continue
             
+            # --- MAINTENANCE CHECK ---
+            is_in_maint = False
+            maint_end_time = None
+            for maint in active_maints:
+                if maint['start'] <= current_time < maint['end']:
+                    is_in_maint = True
+                    maint_end_time = maint['end']
+                    break
+                    
+            if is_in_maint:
+                if segment_start is not None:
+                     segment_end = current_time
+                     is_new_day = False
+                     if len(task_segments) > 0:
+                         if segment_start.date() != task_segments[-1]['end_date'].date():
+                             is_new_day = True
+                     segment = task.copy()
+                     segment['start_date'] = segment_start
+                     segment['end_date'] = segment_end
+                     segment['duration_real'] = (segment_end - segment_start).total_seconds() / 3600.0
+                     segment['duration_task'] = duration_hours 
+                     segment['debug_info'] = f"Mantenimiento"
+                     segment['is_new_day'] = is_new_day
+                     if qty > 0:
+                         segment['progress_percent'] = min(100.0, (produced / qty) * 100.0)
+                     else:
+                         segment['progress_percent'] = 0.0
+                     task_segments.append(segment)
+                     segment_start = None
+                
+                # Jump to end of maintenance
+                current_time = maint_end_time
+                print(f"    MANTENIMIENTO: Saltando a {current_time}")
+                continue
+
             # Ensure current_time is Naive
             if current_time.tzinfo is not None:
                 current_time = current_time.replace(tzinfo=None)
@@ -292,6 +348,13 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
                         available_seconds = (shift_end_datetime - current_time).total_seconds()
                 
                 available_hours = available_seconds / 3600.0
+                
+                # RESTRICCIÓN POR MANTENIMIENTOS FUTUROS
+                for maint in active_maints:
+                     if current_time <= maint['start'] < (current_time + timedelta(hours=available_hours)):
+                          time_until_maint = (maint['start'] - current_time).total_seconds() / 3600.0
+                          if time_until_maint < available_hours:
+                               available_hours = time_until_maint
                 
                 if available_hours <= 0:
                      current_time += timedelta(hours=1)

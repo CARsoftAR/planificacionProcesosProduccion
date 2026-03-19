@@ -1,6 +1,18 @@
-﻿from django import forms
-from .models import Feriado
+from django import forms
+from .models import Feriado, MantenimientoMaquina
 
+class MantenimientoMaquinaForm(forms.ModelForm):
+    class Meta:
+        model = MantenimientoMaquina
+        fields = ['maquina', 'motivo', 'fecha_inicio', 'fecha_fin', 'estado', 'notas']
+        widgets = {
+            'maquina': forms.Select(attrs={'class': 'form-select'}),
+            'motivo': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Ej: Cambio de rodamientos'}),
+            'fecha_inicio': forms.DateTimeInput(attrs={'class': 'form-control', 'type': 'datetime-local'}),
+            'fecha_fin': forms.DateTimeInput(attrs={'class': 'form-control', 'type': 'datetime-local'}),
+            'estado': forms.Select(attrs={'class': 'form-select'}),
+            'notas': forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
+        }
 
 class FeriadoForm(forms.ModelForm):
     """

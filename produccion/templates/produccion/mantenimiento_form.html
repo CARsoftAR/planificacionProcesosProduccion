@@ -1,0 +1,72 @@
+{% extends 'produccion/base.html' %}
+{% block title %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center mt-5">
+    <div class="col-md-8 col-lg-6">
+        <div class="card shadow">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0"><i class="fas fa-tools me-2"></i>{{ title }}</h4>
+            </div>
+            <div class="card-body">
+                <form method="post">
+                    {% csrf_token %}
+                    
+                    {% if form.errors %}
+                        <div class="alert alert-danger">
+                            Por favor corrija los errores abajo.
+                        </div>
+                    {% endif %}
+                    
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">{{ form.maquina.label }}</label>
+                        {{ form.maquina }}
+                        {% if form.maquina.errors %}<div class="text-danger small mt-1">{{ form.maquina.errors }}</div>{% endif %}
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">{{ form.motivo.label }}</label>
+                        {{ form.motivo }}
+                        {% if form.motivo.errors %}<div class="text-danger small mt-1">{{ form.motivo.errors }}</div>{% endif %}
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-bold">{{ form.fecha_inicio.label }}</label>
+                            {{ form.fecha_inicio }}
+                            {% if form.fecha_inicio.errors %}<div class="text-danger small mt-1">{{ form.fecha_inicio.errors }}</div>{% endif %}
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label fw-bold">{{ form.fecha_fin.label }}</label>
+                            {{ form.fecha_fin }}
+                            {% if form.fecha_fin.errors %}<div class="text-danger small mt-1">{{ form.fecha_fin.errors }}</div>{% endif %}
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">{{ form.estado.label }}</label>
+                        {{ form.estado }}
+                        {% if form.estado.errors %}<div class="text-danger small mt-1">{{ form.estado.errors }}</div>{% endif %}
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label class="form-label fw-bold">{{ form.notas.label }}</label>
+                        {{ form.notas }}
+                        {% if form.notas.errors %}<div class="text-danger small mt-1">{{ form.notas.errors }}</div>{% endif %}
+                    </div>
+                    
+                    <div class="d-flex justify-content-between">
+                        <a href="{% url 'mantenimiento_list' %}" class="btn btn-outline-secondary">Cancelar</a>
+                        <button type="submit" class="btn btn-primary"><i class="fas fa-save me-1"></i> Guardar</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Si estamos creando (no hay máquina preseleccionada inicialmente) o editando pero queremos asegurar un formato amigable para horas.
+    // HTML5 datetime-local funciona bien con el widget de django
+</script>
+{% endblock %}

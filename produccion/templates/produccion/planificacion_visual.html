@@ -83,18 +83,37 @@
             color: #3b82f6 !important;
         }
         :root {
-            --bg-deep: #f8f9fa;
+            /* Basic variables (Light) */
+            --bg-deep: #f8fafc;
             --bg-card: #ffffff;
             --bg-row: #ffffff;
-            --bg-header: #e9ecef;
-            --text-main: #212529;
-            --text-muted: #6c757d;
-            --accent: #0d6efd;
-            --border: #dee2e6;
-            --glass-border: rgba(0, 0, 0, 0.1);
-            --neon-blue: #0dcaf0;
-            --neon-purple: #6f42c1;
-            --neon-green: #198754;
+            --bg-header: #f1f5f9;
+            --text-main: #1e293b;
+            --text-muted: #64748b;
+            --accent: #3b82f6;
+            --border: #e2e8f0;
+            --glass-border: rgba(0, 0, 0, 0.05);
+            --neon-blue: #0ea5e9;
+            --neon-purple: #8b5cf6;
+            --neon-green: #10b981;
+            --bg-glass: rgba(255, 255, 255, 0.7);
+        }
+
+        [data-theme="dark"] {
+            /* Premium Dark Variables */
+            --bg-deep: #0b0e14;
+            --bg-card: #111827;
+            --bg-row: #111827;
+            --bg-header: #1f2937;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent: #60a5fa;
+            --border: #374151;
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --neon-blue: #38bdf8;
+            --neon-purple: #a78bfa;
+            --neon-green: #34d399;
+            --bg-glass: rgba(17, 24, 39, 0.8);
         }
 
         /* Dropdown custom */
@@ -148,11 +167,11 @@
 
         /* Glassmorphism utility */
         .glass {
-            background: var(--bg-card);
+            background: var(--bg-glass);
             backdrop-filter: blur(12px);
             -webkit-backdrop-filter: blur(12px);
             border: 1px solid var(--glass-border);
-            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.1);
         }
 
         .gantt-container {
@@ -751,10 +770,15 @@
                     </button>
                   </div>
 
-                  <!-- 5. Back -->
-                 <a href="{% url 'planificacion_view' %}?{{ request.GET.urlencode }}" class="btn-modern bg-white rounded-pill border shadow-sm px-3" style="height: 34px; color: #64748b;" title="Volver">
-                    <i class="fas fa-chevron-left"></i>
-                 </a>
+                   <!-- 5. Dark Mode Toggle -->
+                   <button id="btn-theme-toggle" class="btn-modern glass rounded-pill px-2" style="height: 34px; border-color: #e2e8f0; color: #475569;" title="Cambiar Tema">
+                       <i class="fas fa-moon"></i>
+                   </button>
+
+                   <!-- 6. Back -->
+                  <a href="{% url 'planificacion_view' %}?{{ request.GET.urlencode }}" class="btn-modern bg-white rounded-pill border shadow-sm px-3" style="height: 34px; color: #64748b;" title="Volver">
+                     <i class="fas fa-chevron-left"></i>
+                  </a>
             </div>
         </div>
 
@@ -2384,12 +2408,33 @@
             const bodyScroll = document.getElementById('gantt-body-scroll');
             const headerScroll = document.getElementById('header-container');
             
-            if (bodyScroll && headerScroll) {
-                bodyScroll.addEventListener('scroll', function() {
-                    headerScroll.scrollLeft = bodyScroll.scrollLeft;
-                });
-            }
+            // Final Initialization for Theme
+            initTheme();
         });
+        
+        function initTheme() {
+            const savedTheme = localStorage.getItem('theme') || 'light';
+            document.documentElement.setAttribute('data-theme', savedTheme);
+            updateThemeIcon(savedTheme);
+            
+            document.getElementById('btn-theme-toggle').addEventListener('click', function() {
+                const currentTheme = document.documentElement.getAttribute('data-theme');
+                const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+                
+                document.documentElement.setAttribute('data-theme', newTheme);
+                localStorage.setItem('theme', newTheme);
+                updateThemeIcon(newTheme);
+            });
+        }
+        
+        function updateThemeIcon(theme) {
+            const icon = document.querySelector('#btn-theme-toggle i');
+            if (theme === 'dark') {
+                icon.className = 'fas fa-sun text-warning';
+            } else {
+                icon.className = 'fas fa-moon';
+            }
+        }
         
         // === DEPENDENCY ARROWS - PREMIUM IMPLEMENTATION ===
         const dependenciesData = JSON.parse('{{ dependencies_json|safe }}');

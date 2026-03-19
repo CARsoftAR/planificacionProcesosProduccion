@@ -1,0 +1,35 @@
+{% extends 'produccion/base.html' %}
+
+{% block title %}Eliminar Mantenimiento{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center mt-5">
+    <div class="col-md-6 col-lg-5">
+        <div class="card shadow-sm border-danger">
+            <div class="card-header bg-danger text-white">
+                <h4 class="mb-0"><i class="fas fa-exclamation-triangle me-2"></i>Confirmar Eliminación</h4>
+            </div>
+            <div class="card-body">
+                <p class="fs-5">¿Está seguro de que desea eliminar el siguiente mantenimiento?</p>
+
+                <div class="alert alert-warning mb-4">
+                    <strong>Máquina:</strong> {{ mantenimiento.maquina.nombre }}<br>
+                    <strong>Motivo:</strong> {{ mantenimiento.motivo }}<br>
+                    <strong>Inicio:</strong> {{ mantenimiento.fecha_inicio|date:"d/m/Y H:i" }}<br>
+                    <strong>Fin:</strong> {{ mantenimiento.fecha_fin|date:"d/m/Y H:i" }}
+                </div>
+
+                <p class="text-muted"><i class="fas fa-info-circle me-1"></i>Esta acción no se puede deshacer y liberará este bloque de tiempo en el planificador.</p>
+
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="d-flex justify-content-end gap-2 mt-4">
+                        <a href="{% url 'mantenimiento_list' %}" class="btn btn-outline-secondary">Cancelar</a>
+                        <button type="submit" class="btn btn-danger"><i class="fas fa-trash-alt me-1"></i>Sí, Eliminar</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

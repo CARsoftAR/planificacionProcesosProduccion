@@ -14,19 +14,21 @@
     <style>
         /* Modern SweetAlert2 Custom Styles */
         .swal2-popup.premium-swal {
+            background-color: var(--card-bg) !important;
             border-radius: 20px;
             padding: 2.5rem;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: 'Inter', sans-serif;
             box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+            border: 1px solid var(--border-color);
         }
         .swal2-title {
             font-weight: 800;
-            color: #1e293b;
+            color: var(--text-main) !important;
             font-size: 1.6rem;
             margin-bottom: 1rem;
         }
         .swal2-html-container {
-            color: #64748b;
+            color: var(--text-muted) !important;
             font-size: 1.05rem;
             line-height: 1.6;
         }
@@ -42,8 +44,9 @@
             padding: 12px 35px !important;
             font-weight: 600 !important;
             font-size: 0.95rem !important;
-            background: #f1f5f9 !important;
-            color: #475569 !important;
+            background: var(--header-bg) !important;
+            color: var(--text-muted) !important;
+            border: 1px solid var(--border-color) !important;
         }
         .swal2-icon {
             border: none !important;
@@ -51,7 +54,7 @@
             height: 5em !important;
             margin: 1.25em auto 1.875em !important;
             border-radius: 50% !important;
-            background: #f8fafc !important;
+            background: var(--background-color) !important;
             transition: all 0.3s ease;
             box-sizing: content-box;
         }
@@ -90,6 +93,9 @@
         <div class="d-flex justify-content-between align-items-center mb-4">
             <h1 class="text-primary m-0">Planificación de Procesos Productivos</h1>
             <div class="d-flex gap-2">
+                <button id="btn-theme-toggle" class="btn btn-outline-secondary" title="Cambiar Tema">
+                    <i class="fas fa-moon"></i>
+                </button>
                 <a href="{% url 'home' %}" class="btn btn-outline-secondary">
                     <i class="fas fa-home me-1"></i> Menú
                 </a>
@@ -1154,6 +1160,40 @@
                 }
             }
         });
+        // Theme Persistence
+        function initTheme() {
+            const savedTheme = localStorage.getItem('theme') || 'light';
+            document.documentElement.setAttribute('data-theme', savedTheme);
+            updateThemeIcon(savedTheme);
+            
+            const btn = document.getElementById('btn-theme-toggle');
+            if (btn) {
+                btn.addEventListener('click', function() {
+                    const currentTheme = document.documentElement.getAttribute('data-theme');
+                    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+                    document.documentElement.setAttribute('data-theme', newTheme);
+                    localStorage.setItem('theme', newTheme);
+                    updateThemeIcon(newTheme);
+                });
+            }
+        }
+        
+        function updateThemeIcon(theme) {
+            const btn = document.getElementById('btn-theme-toggle');
+            if (!btn) return;
+            const icon = btn.querySelector('i');
+            if (theme === 'dark') {
+                icon.className = 'fas fa-sun text-warning';
+                btn.classList.add('btn-dark');
+                btn.classList.remove('btn-outline-secondary');
+            } else {
+                icon.className = 'fas fa-moon';
+                btn.classList.remove('btn-dark');
+                btn.classList.add('btn-outline-secondary');
+            }
+        }
+
+        initTheme();
     </script>
 </body>
 </html>

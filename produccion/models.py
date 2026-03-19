@@ -158,6 +158,38 @@ class HorarioMaquina(models.Model):
         verbose_name_plural = 'Horarios de Maquinas'
 
 
+class MantenimientoMaquina(models.Model):
+    maquina = models.ForeignKey(MaquinaConfig, related_name='mantenimientos', on_delete=models.CASCADE, verbose_name='Máquina')
+    motivo = models.CharField(max_length=200, verbose_name='Motivo (Ej: Reparación, Preventivo)')
+    fecha_inicio = models.DateTimeField(verbose_name='Fecha y Hora de Inicio')
+    fecha_fin = models.DateTimeField(verbose_name='Fecha y Hora de Fin Estimada')
+    estado = models.CharField(
+        max_length=20,
+        choices=[('PROGRAMADO', 'Programado'), ('EN_CURSO', 'En Curso'), ('FINALIZADO', 'Finalizado')],
+        default='PROGRAMADO',
+        verbose_name='Estado'
+    )
+    notas = models.TextField(blank=True, null=True, verbose_name='Notas de Mantenimiento')
+    fecha_creacion = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        managed = True
+        db_table = 'mantenimiento_maquina'
+        ordering = ['-fecha_inicio']
+        verbose_name = 'Mantenimiento de Máquina'
+        verbose_name_plural = 'Mantenimientos de Máquinas'
+
+    def __str__(self):
+        return f"{self.maquina.nombre} - {self.motivo} ({self.estado})"
+
+    @property
+    def is_active(self):
+        now = datetime.now()
+        # Si tiene timezone, deberíamos usar timezone.now(), pero para consistencia usamos lo actual
+        # Asumiendo fechas naive local
+        return self.fecha_inicio <= now <= self.fecha_fin and self.estado != 'FINALIZADO'
+
+
 class Feriado(models.Model):
     TIPO_JORNADA_CHOICES = [
         ('NO', 'No se trabaja'),

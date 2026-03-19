@@ -1,0 +1,90 @@
+{% extends 'produccion/base.html' %}
+{% block title %}Gestión de Mantenimientos{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3"><i class="fas fa-tools text-primary me-2"></i>Gestión de Mantenimientos</h1>
+    <div>
+        <a href="{% url 'mantenimiento_create' %}" class="btn btn-primary"><i class="fas fa-plus me-1"></i> Programar Mantenimiento</a>
+        <a href="{% url 'maquina_config_list' %}" class="btn btn-outline-secondary"><i class="fas fa-cogs me-1"></i> Configuración</a>
+    </div>
+</div>
+
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <form method="GET" class="row g-3">
+            <div class="col-md-4">
+                <label for="maquina" class="form-label">Filtrar por Máquina</label>
+                <select name="maquina" id="maquina" class="form-select" onchange="this.form.submit()">
+                    <option value="">Todas las máquinas</option>
+                    {% for maq in maquinas %}
+                        <option value="{{ maq.id }}" {% if selected_maq == maq.id|stringformat:"i" %}selected{% endif %}>{{ maq.nombre }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label for="estado" class="form-label">Filtrar por Estado</label>
+                <select name="estado" id="estado" class="form-select" onchange="this.form.submit()">
+                    <option value="">Todos</option>
+                    <option value="PROGRAMADO" {% if selected_estado == 'PROGRAMADO' %}selected{% endif %}>Programado</option>
+                    <option value="EN_CURSO" {% if selected_estado == 'EN_CURSO' %}selected{% endif %}>En Curso</option>
+                    <option value="FINALIZADO" {% if selected_estado == 'FINALIZADO' %}selected{% endif %}>Finalizado</option>
+                </select>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card shadow-sm">
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover table-bordered mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="text-center">Máquina</th>
+                        <th>Motivo</th>
+                        <th class="text-center">Inicio</th>
+                        <th class="text-center">Fin Estimado</th>
+                        <th class="text-center">Estado</th>
+                        <th class="text-center">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for m in mantenimientos %}
+                    <tr>
+                        <td class="text-center fw-bold">{{ m.maquina.nombre }}</td>
+                        <td>{{ m.motivo }}</td>
+                        <td class="text-center">{{ m.fecha_inicio|date:"d/m/y H:i" }}</td>
+                        <td class="text-center">{{ m.fecha_fin|date:"d/m/y H:i" }}</td>
+                        <td class="text-center">
+                            {% if m.estado == 'PROGRAMADO' %}
+                                <span class="badge bg-warning text-dark"><i class="fas fa-clock me-1"></i>Programado</span>
+                            {% elif m.estado == 'EN_CURSO' %}
+                                <span class="badge bg-primary"><i class="fas fa-spinner fa-spin me-1"></i>En Curso</span>
+                            {% else %}
+                                <span class="badge bg-success"><i class="fas fa-check me-1"></i>Finalizado</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            <a href="{% url 'mantenimiento_update' m.id %}" class="btn btn-sm btn-outline-primary" title="Editar">
+                                <i class="fas fa-edit"></i>
+                            </a>
+                            <a href="{% url 'mantenimiento_delete' m.id %}" class="btn btn-sm btn-outline-danger" title="Eliminar">
+                                <i class="fas fa-trash"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="6" class="text-center text-muted py-4">
+                            <i class="fas fa-box-open fa-2x mb-2"></i><br>
+                            No hay mantenimientos registrados
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

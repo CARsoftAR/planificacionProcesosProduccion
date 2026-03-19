@@ -1487,8 +1487,70 @@ from datetime import timedelta
 # --- Feriados Views ---
 
 from .models import Feriado
-from .forms import FeriadoForm
+from .forms import FeriadoForm, MantenimientoMaquinaForm
 from django.db.models import Q
+from .models import MantenimientoMaquina
+
+# ==========================================
+# GESTIÓN DE MANTENIMIENTOS
+# ==========================================
+
+def mantenimiento_list(request):
+    mantenimientos = MantenimientoMaquina.objects.all().order_by('-fecha_inicio')
+    
+    # Optional filtering
+    maq_id = request.GET.get('maquina')
+    if maq_id:
+        mantenimientos = mantenimientos.filter(maquina_id=maq_id)
+        
+    estado = request.GET.get('estado')
+    if estado:
+        mantenimientos = mantenimientos.filter(estado=estado)
+        
+    context = {
+        'mantenimientos': mantenimientos,
+        'maquinas': MaquinaConfig.objects.all(),
+        'selected_maq': maq_id,
+        'selected_estado': estado
+    }
+    return render(request, 'produccion/mantenimiento_list.html', context)
+
+def mantenimiento_create_update(request, pk=None):
+    if pk:
+        mantenimiento = get_object_or_404(MantenimientoMaquina, pk=pk)
+        title = "Editar Mantenimiento"
+    else:
+        mantenimiento = None
+        title = "Programar Mantenimiento"
+        
+    if request.method == 'POST':
+        form = MantenimientoMaquinaForm(request.POST, instance=mantenimiento)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f'Mantenimiento {"actualizado" if pk else "programado"} exitosamente.')
+            return redirect('mantenimiento_list')
+    else:
+        form = MantenimientoMaquinaForm(instance=mantenimiento)
+        
+    context = {
+        'form': form,
+        'title': title,
+        'is_edit': bool(pk)
+    }
+    return render(request, 'produccion/mantenimiento_form.html', context)
+
+def mantenimiento_delete(request, pk):
+    mantenimiento = get_object_or_404(MantenimientoMaquina, pk=pk)
+    if request.method == 'POST':
+        mantenimiento.delete()
+        messages.success(request, 'Mantenimiento eliminado correctamente.')
+        return redirect('mantenimiento_list')
+    return render(request, 'produccion/mantenimiento_confirm_delete.html', {'mantenimiento': mantenimiento})
+
+
+# ==========================================
+# GESTIÓN DE FERIADOS
+# ==========================================
 
 def feriado_list(request):
     """
