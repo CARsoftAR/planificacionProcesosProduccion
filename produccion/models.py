@@ -160,12 +160,17 @@ class HorarioMaquina(models.Model):
 
 class MantenimientoMaquina(models.Model):
     maquina = models.ForeignKey(MaquinaConfig, related_name='mantenimientos', on_delete=models.CASCADE, verbose_name='Máquina')
-    motivo = models.CharField(max_length=200, verbose_name='Motivo (Ej: Reparación, Preventivo)')
+    motivo = models.CharField(max_length=200, verbose_name='Motivo (Ej: Reparación, Preventivo, Falla)')
     fecha_inicio = models.DateTimeField(verbose_name='Fecha y Hora de Inicio')
     fecha_fin = models.DateTimeField(verbose_name='Fecha y Hora de Fin Estimada')
     estado = models.CharField(
         max_length=20,
-        choices=[('PROGRAMADO', 'Programado'), ('EN_CURSO', 'En Curso'), ('FINALIZADO', 'Finalizado')],
+        choices=[
+            ('PROGRAMADO', 'Programado'),
+            ('EN_CURSO', 'En Curso'),
+            ('FALLA', 'Falla No Planificada'),
+            ('FINALIZADO', 'Finalizado')
+        ],
         default='PROGRAMADO',
         verbose_name='Estado'
     )

@@ -1,5 +1,7 @@
 from django.urls import path
 from . import views
+from . import ai_chat
+from . import ai_chat
 
 urlpatterns = [
     path('api/planificacion/', views.planificacion_list, name='planificacion_list'),
@@ -32,6 +34,7 @@ urlpatterns = [
     # Navigation
     path('planificacion/', views.planificacion_list, name='planificacion_view'),
     path('planificacion/visual/', views.planificacion_visual, name='planificacion_visual'),
+    path('planificacion/visual/ai-chat/', ai_chat.ai_chat_command, name='ai_chat_command'),
     path('planificacion/visual/ai-suggest/', views.ai_planning_suggest_api, name='ai_planning_suggest_api'),
     path('planificacion/visual/ai-apply/', views.apply_ai_suggestions, name='apply_ai_suggestions'),
     path('proyectos/prioridades/', views.proyectos_prioridades, name='proyectos_prioridades'),
@@ -44,6 +47,7 @@ urlpatterns = [
     path('api/link_tasks/', views.link_tasks, name='link_tasks'),
     path('api/unlink_tasks/', views.unlink_tasks, name='unlink_tasks'),
     path('api/export_excel/', views.export_planificacion_excel, name='export_planificacion_excel'),
+    path('api/redistribute_tasks/', views.redistribute_tasks, name='redistribute_tasks'),
     path('api/hide_task/', views.hide_task, name='hide_task'),
     path('api/reset_planning/', views.reset_planning, name='reset_planning'),
     

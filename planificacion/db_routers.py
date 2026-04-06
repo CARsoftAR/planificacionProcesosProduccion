@@ -13,7 +13,8 @@ class ProductionRouter:
         'Feriado', 
         'TaskDependency', 
         'HiddenTask', 
-        'Scenario'
+        'Scenario',
+        'MantenimientoMaquina'
     }
 
     def db_for_read(self, model, **hints):

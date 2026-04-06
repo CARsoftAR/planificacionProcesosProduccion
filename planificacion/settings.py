@@ -120,4 +120,4 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 OPENAI_API_KEY = "sk-yS7ILi6rPssss1tKySVkjcsDhU1InAvw0CrM97JIgWrcFR0GTuALLQQdKvrRCPGU"
 
 # Google AI Studio Configuration
-GOOGLE_API_KEY = "AIzaSyDLQd9D9h4nmMGdDMMBCfmoxyGt4j31VEI"
+GOOGLE_API_KEY = "AIzaSyCULho2Owbti5yJcgaoc__OtvIX3DVBD4Y"

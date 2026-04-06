@@ -122,7 +122,7 @@
                         <label for="proyectos" class="form-label">Proyectos (separados por coma):</label>
                         <div class="input-group">
                             <input type="text" name="proyectos" id="proyectos" class="form-control" value="{{ proyectos_value|default:'' }}" placeholder="Ej: 25-001, 23-145">
-                            <button type="submit" class="btn btn-primary">Filtrar</button>
+                            <button type="submit" class="btn btn-primary" onclick="document.getElementById('plan-mode-selector').value='original'">Filtrar</button>
                         </div>
                     </div>
                     <div class="col-md-3">
@@ -506,6 +506,15 @@
                     localStorage.setItem('activePlanificacionTab', event.target.id);
                 });
             });
+
+            // --- Horizontal Scroll with Mouse Wheel ---
+            const tabList = document.getElementById('myTab');
+            if (tabList) {
+                tabList.addEventListener('wheel', (evt) => {
+                    evt.preventDefault();
+                    tabList.scrollLeft += evt.deltaY;
+                });
+            }
 
             // --- Manual Time Edit Logic ---
             // Listener for editable cells

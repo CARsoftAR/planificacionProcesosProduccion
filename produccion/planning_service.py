@@ -6,14 +6,21 @@ def get_active_maintenances(maquina):
     try:
         mants = MantenimientoMaquina.objects.filter(maquina=maquina).exclude(estado='FINALIZADO')
         res = []
+        from django.utils import timezone
         for m in mants:
-            # Naive time mapping
-            s = m.fecha_inicio.replace(tzinfo=None) if m.fecha_inicio.tzinfo else m.fecha_inicio
-            e = m.fecha_fin.replace(tzinfo=None) if m.fecha_fin.tzinfo else m.fecha_fin
+            s, e = m.fecha_inicio, m.fecha_fin
+            # Always convert to local time for consistency with TimeFields
+            if s:
+                if timezone.is_naive(s): s = timezone.make_aware(s)
+                else: s = timezone.localtime(s)
+            if e:
+                if timezone.is_naive(e): e = timezone.make_aware(e)
+                else: e = timezone.localtime(e)
             res.append({'start': s, 'end': e, 'motivo': m.motivo})
         return res
     except:
         return []
+
 
 
 def is_non_working_holiday(date_obj, non_working_days=None):
@@ -46,23 +53,31 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
     Calculates the start and end datetime for a list of tasks for a specific machine,
     respecting the machine's configured schedule (LV, SA) and non-working holidays.
     """
+    from django.utils import timezone
     if start_date is None:
-        start_date = datetime.now()
+        start_date = timezone.localtime(timezone.now())
         # Round to next hour
         if start_date.minute > 0 or start_date.second > 0:
             start_date = (start_date + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
+    else:
+        # Always work in local time for comparison with HorarioMaquina (TimeFields)
+        if timezone.is_aware(start_date):
+            start_date = timezone.localtime(start_date)
+        else:
+            start_date = timezone.make_aware(start_date)
+
 
     # 1. Load Schedule into a usable format
-    # format: {'LV': {'start': time, 'end': time}, 'SA': {'start': time, 'end': time}}
-    schedules = {}
-    for h in maquina.horarios.all():
-        schedules[h.dia] = {'start': h.hora_inicio, 'end': h.hora_fin}
+    # format: {'LV': [{'start': time, 'end': time}, ...], 'SA': [...]}
+    from collections import defaultdict
+    schedules = defaultdict(list)
+    for h in maquina.horarios.all().order_by('hora_inicio'):
+        schedules[h.dia].append({'start': h.hora_inicio, 'end': h.hora_fin})
 
     if not schedules:
-        # Fallback: If no schedule, assume 24/7 or 08-17? 
-        # For safety, let's assume 07:00 - 16:00 Mon-Fri if nothing defined, or better, return user error?
-        # Let's assume a default standard 07-16 LV for safety to avoid infinite loops
-        schedules['LV'] = {'start': datetime.strptime("07:00", "%H:%M").time(), 'end': datetime.strptime("16:00", "%H:%M").time()}
+        # Fallback 07:00 - 16:00 LV
+        schedules['LV'] = [{'start': datetime.strptime("07:00", "%H:%M").time(), 'end': datetime.strptime("16:00", "%H:%M").time()}]
+
         
     active_maints = []
     if not isinstance(maquina, dict):
@@ -123,14 +138,18 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
                     break
         
         if forced_time:
-             # NORMALIZE to naive local before comparisons
-             if forced_time.tzinfo is not None:
-                 from django.utils import timezone as django_tz
-                 forced_time = forced_time.astimezone(django_tz.get_current_timezone()).replace(tzinfo=None)
-             
-             if current_time and current_time.tzinfo is not None:
-                 from django.utils import timezone as django_tz
-                 current_time = current_time.astimezone(django_tz.get_current_timezone()).replace(tzinfo=None)
+             from django.utils import timezone
+             # Always convert to local time for consistency
+             if timezone.is_aware(forced_time):
+                 forced_time = timezone.localtime(forced_time)
+             else:
+                 forced_time = timezone.make_aware(forced_time)
+                 
+             if current_time and timezone.is_aware(current_time):
+                 current_time = timezone.localtime(current_time)
+             elif current_time:
+                 current_time = timezone.make_aware(current_time)
+
 
              # En la fila SIN ASIGNAR, forzamos que sea secuencial 
              if is_unassigned_row:
@@ -274,9 +293,13 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
                 print(f"    MANTENIMIENTO: Saltando a {current_time}")
                 continue
 
-            # Ensure current_time is Naive
-            if current_time.tzinfo is not None:
-                current_time = current_time.replace(tzinfo=None)
+            # Ensure current_time is Aware and strictly Local for comparison with TimeFields
+            from django.utils import timezone
+            if timezone.is_naive(current_time):
+                current_time = timezone.make_aware(current_time)
+            else:
+                current_time = timezone.localtime(current_time)
+
 
             # Check if current_time is within working hours
             is_working_time = False
@@ -288,55 +311,55 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
                 day_type = 'LV'
             elif weekday == 5:
                 day_type = 'SA'
+            elif weekday == 6:
+                day_type = 'DO'
+
             
             if day_type in schedules:
-                sch = schedules[day_type]
+                matches = schedules[day_type]
                 current_time_time = current_time.time()
-                
-                s = sch['start']
-                e = sch['end']
-                
-                # CHEQUEO DE MEDIO DIA
                 is_half = is_half_day_holiday(current_time, half_day_holidays)
-                if is_half:
-                     # Forzamos fin a las 12:00. 
-                     e = datetime.strptime("12:00", "%H:%M").time()
                 
-                if s <e:
-                    if s <= current_time_time < e:
-                        is_working_time = True
-                else: 
-                     # Wrap around midnight
-                    if current_time_time >= s or current_time_time < e:
-                        is_working_time = True
+                active_shift = None
+                for sch in matches:
+                    s = sch['start']
+                    e = sch['end']
+                    
+                    if is_half: e = datetime.strptime("12:00", "%H:%M").time()
+                    
+                    if s < e:
+                        if s <= current_time_time < e:
+                            is_working_time = True
+                            active_shift = {'start': s, 'end': e}
+                            break
+                    else: # Wrap midnight
+                        if current_time_time >= s or current_time_time < e:
+                            is_working_time = True
+                            active_shift = {'start': s, 'end': e}
+                            break
                 
-                # HARD OVERRIDE: If Half Day and time >= 12:00, INVALID.
                 if is_half and is_working_time:
-                    limit_time = datetime.strptime("12:00", "%H:%M").time()
-                    if current_time_time >= limit_time:
+                    if current_time_time >= datetime.strptime("12:00", "%H:%M").time():
                         is_working_time = False
+                        active_shift = None
             else:
-                 # No schedule for this day (e.g. Sunday if not in schedules)
                  is_working_time = False
+
             
-            if is_working_time:
+            if is_working_time and active_shift:
                 if task_start is None:
                     task_start = current_time
                 
                 if segment_start is None:
                     segment_start = current_time
                     
-                sch = schedules[day_type]
-                s = sch['start']
-                e = sch['end']
-                
-                # RE-CHECK FOR HALF DAY (needed again for calculation of available time)
-                if is_half_day_holiday(current_time, half_day_holidays):
-                     e = datetime.strptime("12:00", "%H:%M").time()
+                s = active_shift['start']
+                e = active_shift['end']
+
                 
                 available_seconds = 0
                 if s < e:
-                    shift_end_datetime = datetime.combine(current_time.date(), e)
+                    shift_end_datetime = datetime.combine(current_time.date(), e, tzinfo=current_time.tzinfo)
                     available_seconds = (shift_end_datetime - current_time).total_seconds()
                 else:
                     current_time_time = current_time.time()
@@ -344,7 +367,7 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
                         next_day = (current_time + timedelta(days=1)).replace(hour=0, minute=0, second=0)
                         available_seconds = (next_day - current_time).total_seconds()
                     elif current_time_time < e:
-                        shift_end_datetime = datetime.combine(current_time.date(), e)
+                        shift_end_datetime = datetime.combine(current_time.date(), e, tzinfo=current_time.tzinfo)
                         available_seconds = (shift_end_datetime - current_time).total_seconds()
                 
                 available_hours = available_seconds / 3600.0
@@ -362,17 +385,40 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
                 
                 time_to_consume = min(remaining_hours, available_hours)
                 segment_will_end_at_shift_boundary = (time_to_consume >= available_hours - 0.001)
+
+                # ===================================================================
+                # ROBUST SHIFT BOUNDARY: Always compute exact shift_end_dt and snap.
+                # This prevents floating-point drift from pushing tasks past the 
+                # schedule limit (e.g., past 13:00 on Saturdays).
+                # ===================================================================
+                _e_now = active_shift['end'] if active_shift else None
+                if _e_now and is_half_day_holiday(current_time, half_day_holidays):
+                    _e_now = datetime.strptime("12:00", "%H:%M").time()
+                shift_end_dt = datetime.combine(current_time.date(), _e_now, tzinfo=current_time.tzinfo) if _e_now else None
+
+
+                if segment_will_end_at_shift_boundary and shift_end_dt:
+                    # SNAP directly to shift boundary — eliminates all floating-point drift.
+                    # Recalculate time_to_consume based on actual elapsed time since segment start.
+                    if segment_start:
+                        time_to_consume = max(0.0, (shift_end_dt - segment_start).total_seconds() / 3600.0)
+                    current_time = shift_end_dt
+                else:
+                    current_time = current_time + timedelta(hours=time_to_consume)
+                    # Extra safety: hard cap to shift end even for partial consumption
+                    if shift_end_dt and current_time > shift_end_dt:
+                        current_time = shift_end_dt
                 
-                # print(f"    Working: avail={available_hours:.2f}h, consume={time_to_consume:.2f}h, remaining={remaining_hours:.2f}h, at_boundary={segment_will_end_at_shift_boundary}")
-                
-                current_time += timedelta(hours=time_to_consume)
                 remaining_hours -= time_to_consume
                 
                 # Create a segment if:
                 # 1. Task is complete (no more hours remaining), OR
                 # 2. We've reached the end of this shift
                 if remaining_hours <= 0.001 or segment_will_end_at_shift_boundary:
+                    # TRIPLE DEFENSE: hard-cap segment_end to shift boundary
                     segment_end = current_time
+                    if shift_end_dt and segment_end > shift_end_dt:
+                        segment_end = shift_end_dt
                     
                     # print(f"    -> Creating segment: {segment_start} to {segment_end}")
                     
@@ -450,9 +496,12 @@ def _jump_to_next_start(current_time, schedules, non_working_days=None, half_day
     """
     next_check = current_time
     
-    # Ensure next_check is naive for comparison with naive schedules
-    if next_check.tzinfo is not None:
-        next_check = next_check.replace(tzinfo=None)
+    from django.utils import timezone
+    if timezone.is_aware(next_check):
+        next_check = timezone.localtime(next_check)
+    else:
+        next_check = timezone.make_aware(next_check)
+
     
     # Limit lookahead
     for _ in range(14): 
@@ -463,37 +512,31 @@ def _jump_to_next_start(current_time, schedules, non_working_days=None, half_day
             continue
         
         weekday = next_check.weekday()
-        day_type = 'LV' if 0 <= weekday <= 4 else ('SA' if weekday == 5 else None)
+        day_type = 'LV' if 0 <= weekday <= 4 else ('SA' if weekday == 5 else ('DO' if weekday == 6 else None))
         
         if day_type and day_type in schedules:
-            sch = schedules[day_type]
-            s = sch['start']
-            e = sch['end']
+            matches = schedules[day_type]
+            is_half = is_half_day_holiday(next_check, half_day_holidays)
             
-            # CHECK FOR HALF DAY
-            if is_half_day_holiday(next_check, half_day_holidays):
-                 e = datetime.strptime("12:00", "%H:%M").time()
-            
-            sch_start = datetime.combine(next_check.date(), s)
-            
-            if s < e:
-                sch_end = datetime.combine(next_check.date(), e)
-                if next_check < sch_start:
-                    return sch_start
-                if sch_start <= next_check < sch_end:
-                     return next_check
-            else:
-                # Wrapped schedule
-                sch_end_morning = datetime.combine(next_check.date(), e)
-                # 00:00 - End
-                if next_check < sch_end_morning:
-                    return next_check
-                # Gap (End - Start)
-                if sch_end_morning <= next_check < sch_start:
-                    return sch_start
-                # Start - 24:00
-                if next_check >= sch_start:
-                    return next_check
+            for sch in matches:
+                s = sch['start']
+                e = sch['end']
+                if is_half: e = datetime.strptime("12:00", "%H:%M").time()
+                
+                sch_start = datetime.combine(next_check.date(), s, tzinfo=next_check.tzinfo)
+                sch_end = datetime.combine(next_check.date(), e, tzinfo=next_check.tzinfo)
+                
+                if s < e:
+                    if next_check < sch_start:
+                        return sch_start
+                    if sch_start <= next_check < sch_end:
+                         return next_check
+                else: # Wrap around
+                    sch_end_morning = datetime.combine(next_check.date(), e, tzinfo=next_check.tzinfo)
+                    if next_check < sch_end_morning: return next_check
+                    if sch_end_morning <= next_check < sch_start: return sch_start
+                    if next_check >= sch_start: return next_check
+
             
         # Move to next day start
         next_check = (next_check + timedelta(days=1)).replace(hour=0, minute=0, second=0)
@@ -505,13 +548,15 @@ def get_machine_capacity(maquina, start_date, end_date, non_working_days=None, h
     """
     Calculates total working hours for a machine between two dates.
     """
-    schedules = {}
-    for h in maquina.horarios.all():
-        schedules[h.dia] = {'start': h.hora_inicio, 'end': h.hora_fin}
+    from collections import defaultdict
+    schedules = defaultdict(list)
+    for h in maquina.horarios.all().order_by('hora_inicio'):
+        schedules[h.dia].append({'start': h.hora_inicio, 'end': h.hora_fin})
 
     if not schedules:
         # Fallback 07-16 LV
-        schedules['LV'] = {'start': datetime.strptime("07:00", "%H:%M").time(), 'end': datetime.strptime("16:00", "%H:%M").time()}
+        schedules['LV'] = [{'start': datetime.strptime("07:00", "%H:%M").time(), 'end': datetime.strptime("16:00", "%H:%M").time()}]
+
 
     total_hours = 0.0
     # Clean dates to start of day
@@ -521,25 +566,27 @@ def get_machine_capacity(maquina, start_date, end_date, non_working_days=None, h
     while current <= limit:
         if not is_non_working_holiday(current, non_working_days):
             weekday = current.weekday()
-            day_type = 'LV' if 0 <= weekday <= 4 else ('SA' if weekday == 5 else None)
+            day_type = 'LV' if 0 <= weekday <= 4 else ('SA' if weekday == 5 else ('DO' if weekday == 6 else None))
             
             if day_type in schedules:
-                sch = schedules[day_type]
-                s = sch['start']
-                e = sch['end']
+                matches = schedules[day_type]
+
+                is_half = is_half_day_holiday(current, half_day_holidays)
                 
-                if is_half_day_holiday(current, half_day_holidays):
-                    # Half day limit is 12:00
-                    limit_time = datetime.strptime("12:00", "%H:%M").time()
-                    if e > limit_time:
-                         e = limit_time
-                
-                if s < e:
-                    day_h = (datetime.combine(current.date(), e) - datetime.combine(current.date(), s)).total_seconds() / 3600.0
-                    total_hours += max(0, day_h)
-                else:
-                    # Wrap around midnight
-                    total_hours += (24.0 - (s.hour + s.minute/60.0)) + (e.hour + e.minute/60.0)
+                for sch in matches:
+                    s = sch['start']
+                    e = sch['end']
+                    
+                    if is_half:
+                        limit_time = datetime.strptime("12:00", "%H:%M").time()
+                        if e > limit_time: e = limit_time
+                    
+                    if s < e:
+                        day_h = (datetime.combine(current.date(), e, tzinfo=current.tzinfo) - datetime.combine(current.date(), s, tzinfo=current.tzinfo)).total_seconds() / 3600.0
+                        total_hours += max(0, day_h)
+                    else: # Wrap midnight
+                        total_hours += (24.0 - (s.hour + s.minute/60.0)) + (e.hour + e.minute/60.0)
+
                     
         current += timedelta(days=1)
     
