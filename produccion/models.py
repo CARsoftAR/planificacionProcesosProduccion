@@ -285,3 +285,19 @@ class ProyectoPrioridad(models.Model):
     def __str__(self):
         return f"{self.proyecto} (Prioridad {self.prioridad})"
 
+
+class MaquinaEquivalencia(models.Model):
+    maquina_origen = models.ForeignKey(MaquinaConfig, related_name='equivalencias_origen', on_delete=models.CASCADE)
+    maquina_destino = models.ForeignKey(MaquinaConfig, related_name='equivalencias_destino', on_delete=models.CASCADE)
+    factor_eficiencia = models.FloatField(default=1.0, help_text="Multiplicador de tiempo (Ej: 1.2 = 20% más lento)")
+
+    class Meta:
+        managed = True
+        db_table = 'maquina_equivalencia'
+        unique_together = ('maquina_origen', 'maquina_destino')
+        verbose_name = 'Equivalencia de Máquina'
+        verbose_name_plural = 'Equivalencias de Máquinas'
+
+    def __str__(self):
+        return f"{self.maquina_origen.id_maquina} -> {self.maquina_destino.id_maquina} (x{self.factor_eficiencia})"
+

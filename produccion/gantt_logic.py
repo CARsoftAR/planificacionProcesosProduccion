@@ -15,8 +15,19 @@ def find_compatible_machines(failed_machine, all_machines):
     Currently uses heuristic: same sector or similar machine name keywords.
     Returns list of (machine, compatibility_score).
     """
-    compatible = []
+    # 1. Try to find explicit equivalencies in the new table
+    from .models import MaquinaEquivalencia
+    equivs = MaquinaEquivalencia.objects.using('default').filter(maquina_origen=failed_machine).select_related('maquina_destino')
+    
+    if equivs.exists():
+        compatible = []
+        for eq in equivs:
+            # We assign a base score of 100 for explicit matches.
+            # Efficiency can be used to rank them if needed, but for now 100 is the standard.
+            compatible.append((eq.maquina_destino, 100))
+        return compatible
 
+    # 2. Fallback to keyword-based heuristic
     # Keywords that indicate similar capability
     tornos_keywords = ['torno', 'cnc', 'tsugami', 'tm1', 'nlx', 'haas', 'dmg']
     fresadoras_keywords = ['fresa', 'fresadora', 'vf', 'mac']
@@ -34,6 +45,7 @@ def find_compatible_machines(failed_machine, all_machines):
         return 'general'
 
     failed_type = get_machine_type(failed_machine)
+    compatible = []
 
     for m in all_machines:
         if m.id_maquina == failed_machine.id_maquina:
@@ -134,34 +146,50 @@ def get_adaptive_capacity_alerts(timeline_data, maquinas):
 
     alerts = []
     now = timezone.now()
+    
+    # DEBUG: Get all active maintenance to see what's in the DB
+    all_f = MantenimientoMaquina.objects.using('default').filter(estado__in=['FALLA', 'EN_CURSO', 'PROGRAMADO'])
+    print(f"DEBUG: [AdaptiveAlerts] Total active Maintenance records (FALLA/CURSO/PROG) in DB: {all_f.count()}")
+    for f in all_f:
+        print(f"   - Falla ID {f.id}: Machine {f.maquina.id_maquina} ({f.maquina.nombre}), Start: {f.fecha_inicio}, End: {f.fecha_fin}, Status: {f.estado}")
 
-    # Find machines with active failures
+    # Find machines with active maintenance (FALLA, EN_CURSO, PROGRAMADO)
     active_failures = MantenimientoMaquina.objects.using('default').filter(
-        estado='FALLA',
-        fecha_inicio__lte=now,
+        estado__in=['FALLA', 'EN_CURSO', 'PROGRAMADO'],
+        fecha_inicio__lte=now + timedelta(days=14), # Lookahead 2 weeks
         fecha_fin__gte=now
     ).select_related('maquina')
+
+    print(f"DEBUG: [AdaptiveAlerts] Active failures found for NOW ({now}): {active_failures.count()}")
 
     for failure in active_failures:
         failed_machine = failure.maquina
         affected_tasks = []
+        
+        f_id_check = str(failed_machine.id_maquina).strip().upper()
+        print(f"DEBUG: [AdaptiveAlerts] Checking machine: {f_id_check}")
 
         # Find tasks scheduled during the failure period
         for row in timeline_data:
-            if row['machine'].id_maquina == failed_machine.id_maquina:
+            row_m_id = str(row['machine'].id_maquina).strip().upper()
+            
+            if row_m_id == f_id_check:
+                print(f"   - Match found for machine {row_m_id}. Checking {len(row['tasks'])} tasks.")
                 for task in row['tasks']:
                     task_start = task.get('start_date')
                     task_end = task.get('end_date')
                     if task_start and task_end:
-                        # Ensure both are aware for comparison
-                        if task_start.tzinfo is None:
-                            task_start = timezone.make_aware(task_start)
-                        if task_end.tzinfo is None:
-                            task_end = timezone.make_aware(task_end)
-                             
-                        # Task overlaps with failure period
-                        if task_start <= failure.fecha_fin and task_end >= failure.fecha_inicio:
+                        # NUEVA LOGICA: Cola de Producción
+                        # Cualquier tarea que empiece DESPUÉS de que inicie la falla
+                        f_start = failure.fecha_inicio
+                        
+                        if task_start >= f_start:
                             affected_tasks.append(task)
+                
+                print(f"   - Affected tasks count: {len(affected_tasks)}")
+                if affected_tasks:
+                    for at in affected_tasks[:2]:
+                         print(f"     * Potential Task: {at.get('Idorden')} (Starts {at.get('start_date')})")
 
         if affected_tasks:
             # Find compatible machines
@@ -180,7 +208,10 @@ def get_adaptive_capacity_alerts(timeline_data, maquinas):
                     for m, s in compatible[:3]
                 ]
             })
+        else:
+            print(f"   - No affected tasks found in current timeline for failure {failure.id}")
 
+    print(f"DEBUG: [AdaptiveAlerts] Final alerts count: {len(alerts)}")
     return alerts
 
 

@@ -1267,10 +1267,9 @@
                         CARGAS
                     </button>
                 </li>
-                <!-- Hidden for now: Adaptive Capacity / Failures -->
-                <li class="nav-item" style="display: none;">
+                <li class="nav-item">
                     <button class="nav-link smaller fw-bold py-3" id="notif-adaptive-tab" data-bs-toggle="tab" data-bs-target="#notif-adaptive" type="button" role="tab">
-                        FALLAS
+                        REDISTRIBUIR
                     </button>
                 </li>
 
@@ -1373,8 +1372,8 @@
                     </div>
                 </div>
 
-                <!-- Adaptive Capacity / Failures Alerts (Hidden) -->
-                <div class="tab-pane fade p-3" id="notif-adaptive" role="tabpanel" style="display: none;">
+                <!-- Adaptive Capacity / Redistribution -->
+                <div class="tab-pane fade p-3" id="notif-adaptive" role="tabpanel">
 
                     {% for alert in analysis.adaptive_alerts %}
                     <div class="p-3 mb-3 rounded-4 shadow-sm border-start border-4 border-danger bg-white">
@@ -1417,16 +1416,19 @@
                     </div>
                     {% empty %}
                     <div class="text-center py-5 text-muted">
-                        <i class="fas fa-check-circle fa-2x mb-3 text-success opacity-25"></i>
-                        <p>No hay fallas activas.</p>
-                        <small>Registrá una falla en Mantenimiento para activar la Redistribución Automática.</small>
+                        <i class="fas fa-search-plus fa-2x mb-3 text-primary opacity-25"></i>
+                        <p>No se detectaron fallas en el plan actual.</p>
+                        <div class="mt-4 p-3 bg-white border border-dashed rounded-3 shadow-sm mx-2">
+                            <small class="d-block mb-2 text-dark opacity-75 fw-bold">Modo de Debug:</small>
+                            <p class="smaller mb-3">Si registraste una falla y no aparece, asegúrate que las fechas se solapen con las tareas planificadas.</p>
+                            <button class="btn btn-sm btn-primary-modern rounded-pill px-4 shadow-sm" onclick="this.innerHTML='<i class=\'fas fa-spinner fa-spin me-1\'></i> Buscando...'; const url=new URL(window.location.href); url.searchParams.set('run','1'); url.searchParams.set('plan_mode','manual'); setTimeout(()=> window.location.href=url.toString(), 100);">
+                                <i class="fas fa-sync-alt me-1"></i> Forzar Detección
+                            </button>
+                        </div>
                     </div>
                     {% endfor %}
                 </div>
             </div>
-        </div>
-        <div class="offcanvas-footer p-3 bg-light border-top text-center">
-            <small class="text-muted">Desarrollado por Antigravity AI</small>
         </div>
     </div>
 

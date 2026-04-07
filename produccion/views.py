@@ -774,18 +774,62 @@ from django.core.paginator import Paginator
 
 def maquina_config_list(request):
     """
-    List all locally configured machines and their schedules.
+    List all locally configured machines and their schedules + Equivalencies.
     """
+    from .models import MaquinaEquivalencia
+    
     # Order by ID to ensure consistent pagination
     maquinas_list = MaquinaConfig.objects.using('default').prefetch_related('horarios').all().order_by('id_maquina')
+    all_maquinas = MaquinaConfig.objects.using('default').all().order_by('id_maquina')
     
-    paginator = Paginator(maquinas_list, 5) # 5 items per page
+    paginator = Paginator(maquinas_list, 10) # Increased to 10
     page_number = request.GET.get('page')
     page_obj = paginator.get_page(page_number)
     
-    # Pass page_obj as 'maquinas' (it acts as an iterable like the queryset)
-    # But we also need it for pagination controls
-    return render(request, 'produccion/maquina_config_list.html', {'maquinas': page_obj})
+    # Equivalencies for the management section
+    equivalencias = MaquinaEquivalencia.objects.using('default').select_related('maquina_origen', 'maquina_destino').all()
+    
+    return render(request, 'produccion/maquina_config_list.html', {
+        'maquinas': page_obj,
+        'all_maquinas': all_maquinas,
+        'equivalencias': equivalencias
+    })
+
+@csrf_exempt
+def maquina_equivalencia_save(request):
+    """
+    Save or delete a machine equivalency.
+    """
+    from .models import MaquinaEquivalencia, MaquinaConfig
+    from django.shortcuts import redirect
+    from django.contrib import messages
+    
+    if request.method == 'POST':
+        action = request.POST.get('action', 'save')
+        
+        if action == 'delete':
+            eq_id = request.POST.get('id')
+            MaquinaEquivalencia.objects.using('default').filter(pk=eq_id).delete()
+            messages.success(request, "Equivalencia eliminada correctamente.")
+        else:
+            origen_id = request.POST.get('origen')
+            destino_id = request.POST.get('destino')
+            eficiencia = float(request.POST.get('eficiencia', 1.0))
+            
+            if origen_id == destino_id:
+                messages.error(request, "La máquina origen y destino no pueden ser la misma.")
+            else:
+                origen = MaquinaConfig.objects.using('default').get(id_maquina=origen_id)
+                destino = MaquinaConfig.objects.using('default').get(id_maquina=destino_id)
+                
+                MaquinaEquivalencia.objects.using('default').update_or_create(
+                    maquina_origen=origen,
+                    maquina_destino=destino,
+                    defaults={'factor_eficiencia': eficiencia}
+                )
+                messages.success(request, f"Equivalencia {origen_id} -> {destino_id} guardada.")
+                
+    return redirect('maquina_config_list')
 
 def planificacion_visual_OLD(request):
     """
@@ -1866,8 +1910,13 @@ def planificacion_visual(request):
         'system_alerts': data.get('system_alerts', []),
         'analysis': data.get('analysis', {'machines': [], 'project_alerts': []}),
         'all_scenarios': all_scenarios,
-        'active_scenario': data.get('active_scenario'),
+        'active_scenario': data.get('active_scenario', None),
     }
+
+    # DEBUG: Log results for redistribution checking
+    adaptive_alerts_count = len(data.get('analysis', {}).get('adaptive_alerts', []))
+    print(f"DEBUG: [View] Fallas encontradas en adaptive_alerts: {adaptive_alerts_count}")
+
     return render(request, 'produccion/planificacion_visual.html', context)
 
 
@@ -2723,9 +2772,10 @@ def redistribute_tasks(request):
     de la máquina hacia otra máquina compatible.
     """
     from django.http import JsonResponse
-    from .models import PrioridadManual, Scenario, MantenimientoMaquina, HiddenTask
+    from .models import PrioridadManual, Scenario, MaquinaEquivalencia, HiddenTask
     from .services import get_planificacion_data
     from django.utils import timezone
+    from django.db.models import Max
 
     try:
         from_machine_id = request.GET.get('from')
@@ -2736,163 +2786,130 @@ def redistribute_tasks(request):
         if not from_machine_id or not to_machine_id:
             return JsonResponse({'success': False, 'error': 'Parámetros incompletos'}, status=400)
 
-        scenario = None
-        # Find active scenario
-        if scenario_id:
-            scenario = Scenario.objects.using('default').filter(pk=scenario_id).first()
-        
-        # Fallback to Principal Scenario if not provided or not found
+        # 1. Resolver Escenario
+        scenario = Scenario.objects.using('default').filter(pk=scenario_id).first() if scenario_id else None
         if not scenario:
             scenario = Scenario.objects.using('default').filter(es_principal=True).first()
-            
         if not scenario:
-            return JsonResponse({'success': False, 'error': 'No hay escenario activo configurarado (debe haber un Plan Oficial)'}, status=400)
+            return JsonResponse({'success': False, 'error': 'No hay escenario activo'}, status=400)
 
-        # Find the active failure for this machine
-        now = timezone.now()
-        failure = MantenimientoMaquina.objects.using('default').filter(
-            maquina_id=from_machine_id,
-            estado='FALLA',
-            fecha_inicio__lte=now,
-            fecha_fin__gte=now
+        # 2. Buscar Factor de Eficiencia por Equivalencia
+        equivalencia = MaquinaEquivalencia.objects.using('default').filter(
+            maquina_origen_id=from_machine_id,
+            maquina_destino_id=to_machine_id
         ).first()
+        factor = equivalencia.factor_eficiencia if equivalencia else 1.0
 
-        if not failure:
-            return JsonResponse({'success': False, 'error': 'No se encontró falla activa para esta máquina'}, status=404)
-
-        # Fetch tasks currently planned on the failed machine
-        filtros = {}
-        if proyectos_p:
-            filtros['proyectos'] = [p.strip() for p in proyectos_p.split(',') if p.strip()]
-
-        all_tasks = get_planificacion_data(filtros, exclude_completed=True)
-        hidden_ids = set(HiddenTask.objects.using('default').values_list('id_orden', flat=True))
-
-        from_machine_id_upper = str(from_machine_id).strip().upper()
-
-        # Now run the Gantt only for the failed machine to get actual scheduled start/end dates
+        # 3. Obtener Tareas del Origen (usando el Gantt actual para ver qué está realmente allí)
+        print(f"DEBUG: [Redistribute] From: {from_machine_id}, To: {to_machine_id}, Proyectos: {proyectos_p}")
+        
         from .gantt_logic import get_gantt_data
-
+        from datetime import timedelta
+        
         class MockRequest:
             def __init__(self, projects, s_id):
                 self.GET = {
                     'run': '1',
-                    'fecha_desde': failure.fecha_inicio.strftime('%Y-%m-%d'),
                     'proyectos': projects or '',
                     'scenario_id': str(s_id) if s_id else '',
                     'plan_mode': 'manual'
                 }
                 self.session = {}
-
+        
         mock_req = MockRequest(proyectos_p, scenario.id)
         gantt_data = get_gantt_data(mock_req, force_run=True)
-        # Find ALL tasks across ALL machines that are currently occupying the failed machine in the manual plan
-        affected_tasks_info = []
+        
+        # Obtener rango de la falla para filtrar (Solo Inicio)
+        from .models import MantenimientoMaquina, MaquinaConfig
+        now = timezone.now()
+        failure = MantenimientoMaquina.objects.using('default').filter(
+            maquina_id=from_machine_id,
+            estado__in=['FALLA', 'EN_CURSO', 'PROGRAMADO'],
+            fecha_fin__gte=now
+        ).order_by('fecha_inicio').first()
+        
+        # Si no hay falla activa, el filtro de inicio es hoy (Redistribución por carga)
+        f_start = failure.fecha_inicio if failure else now
+        
+        if failure:
+            print(f"DEBUG: [Redistribute] Queue Start: {f_start}")
+
+        affected_tasks = []
+        from_m_upper = str(from_machine_id).strip().upper()
+        
+        all_machine_tasks = []
+
         for row in gantt_data.get('timeline_data', []):
-            # We identify the machine of the CURRENT Gantt row
-            row_machine_id = str(row['machine'].id_maquina).strip().upper()
-            row_machine_name = str(row['machine'].nombre).strip().upper()
-            
-            # Check if this row corresponds to the failed machine (either by ID or name as fallback)
-            if row_machine_id == from_machine_id_upper or row_machine_name == from_machine_id_upper:
-                for task in row.get('tasks', []):
-                    task_start = task.get('start_date')
-                    task_end = task.get('end_date')
-                    if not task_start or not task_end:
-                        continue
+            m_id = str(row['machine'].id_maquina).strip().upper()
+            if m_id == from_m_upper:
+                for t in row.get('tasks', []):
+                    all_machine_tasks.append(str(t.get('Idorden')))
+                    
+                    task_start = t.get('start_date')
+                    if task_start:
+                        # Ensure comparison in same timezone reference
+                        if timezone.is_naive(task_start): task_start = timezone.make_aware(task_start)
                         
-                    # Make timezone-aware for comparisons
-                    if task_start.tzinfo is None:
-                        task_start = timezone.make_aware(task_start)
-                    if task_end.tzinfo is None:
-                        task_end = timezone.make_aware(task_end)
-                        
-                    # Check overlap with failure window
-                    if task_start <= failure.fecha_fin and task_end >= failure.fecha_inicio:
-                        oid = str(task.get('Idorden'))
-                        if oid not in hidden_ids:
-                            affected_tasks_info.append({
-                                'id': oid,
-                                'planned_start': task_start,
-                                'level': task.get('Nivel_Planificacion', 0),
-                            })
+                        # NUEVA LOGICA: Cola de Producción
+                        # Cualquier tarea que empiece DESPUÉS de que inicie la falla (Bloqueo Total)
+                        if task_start >= f_start:
+                            affected_tasks.append(t)
+        
+        print(f"DEBUG: [Redistribute] Total Tasks on {from_machine_id}: {len(all_machine_tasks)}")
+        print(f"DEBUG: [Redistribute] Affected in Queue: {len(affected_tasks)}")
 
-        if not affected_tasks_info:
+        if not affected_tasks:
             return JsonResponse({
-                'success': True,
-                'moved_count': 0,
-                'message': 'No hay tareas que se solapen con el período de falla en el rango planificado'
-            })
+                'success': False, 
+                'error': 'No se encontraron tareas afectadas por la falla en este horario.'
+            }, status=200) # Use 200 so UI can show the message instead of alert box crash
 
-        # --- NIVEL DE PLANIFICACIÓN DINÁMICO GLOBAL ---
-        # Buscamos el nivel más bajo que existe actualmente en la máquina destino,
-        # considerando tanto lo que viene del ERP como lo que ya se movió manualmente.
-        
-        # 1. Niveles de tareas ya movidas manualmente a esta máquina en este escenario
-        current_levels = list(PrioridadManual.objects.using('default').filter(
+        # 4. Agrupar por Proyecto para mantener cohesión
+        # Ordenamos primero por ProyectoCode para el agrupamiento
+        affected_tasks.sort(key=lambda x: (x.get('ProyectoCode', 'ZZZ'), x.get('OrdenVisual', 0)))
+
+        # 5. Calcular Punto de Inserción (Max Prioridad + 100)
+        max_prio = PrioridadManual.objects.using('default').filter(
             scenario=scenario, maquina=to_machine_id
-        ).values_list('nivel_manual', flat=True))
+        ).aggregate(Max('prioridad'))['prioridad__max'] or 1000000.0
         
-        # 2. Niveles de tareas nativas del ERP que siguen en esta máquina
-        # Buscamos todas las tareas del ERP asignadas a esta máquina...
-        native_tasks = get_planificacion_data({'machine_ids': [to_machine_id]})
-        # ...pero quitamos las que tienen un override a OTRA máquina (porque ya no están aquí)
-        overridden_elsewhere = set(PrioridadManual.objects.using('default').filter(
-            scenario=scenario
-        ).exclude(maquina=to_machine_id).values_list('id_orden', flat=True))
-        
-        for t in native_tasks:
-            oid = int(t.get('Idorden', 0))
-            if oid not in overridden_elsewhere:
-                lvl = float(t.get('Nivel_Planificacion') or t.get('Nivel') or 0.0)
-                current_levels.append(lvl)
-        
-        # Determinamos el nivel base: el mínimo encontrado - 1 (mínimo 0)
-        base_min_level = min(current_levels) if current_levels else 10.0
-        target_level = max(0, base_min_level - 1)
-    
+        next_prio = max_prio + 100.0
 
-        # Find the highest priority already assigned to MAC08 in this scenario
-        from django.db.models import Max
-        max_prio_result = PrioridadManual.objects.using('default').filter(
-            scenario=scenario,
-            maquina=to_machine_id
-        ).aggregate(max_p=Max('prioridad'))
-        highest_haas_prio = float(max_prio_result['max_p'] or 0)
-        base_priority = max(highest_haas_prio + 1000, 1000000)
-    
-
-
-        # Move ONLY the affected tasks to the target machine, at end of queue
+        # 6. Ejecutar Movimiento
         moved_count = 0
         from django.db import transaction
         with transaction.atomic(using='default'):
-            for i, task_info in enumerate(affected_tasks_info):
-                task_id = task_info['id']
-                try:
-                    # CLEANUP: Remove any previous assignment for this task in the target scenario
-                    # This is CRITICAL because the machine table view might get confused by duplicates
-                    PrioridadManual.objects.using('default').filter(id_orden=task_id, scenario=scenario).delete()
-                    
-                    # CREATE: Fresh assignment
-                    PrioridadManual.objects.using('default').create(
-                        id_orden=task_id,
-                        scenario=scenario,
-                        maquina=to_machine_id,
-                        prioridad=base_priority + ((i + 1) * 1000), # Discrete steps like 1000, 2000...
-                        nivel_manual=target_level,
-                        fecha_inicio_manual=None,
-                    )
-                    moved_count += 1
-                except Exception as e:
-                    print(f"Error moving task {task_id}: {str(e)}")
-                    continue
-        
+            for task in affected_tasks:
+                task_id = task.get('Idorden')
+                # Tiempo original de pieza (Tiempo_Proceso / Cantidad Pendiente)
+                # O mejor: El sistema ya calculó el `Tiempo_Proceso` en el Gantt original
+                original_total_time = float(task.get('Tiempo_Proceso', 0) or 0)
+                if original_total_time <= 0: continue
+                
+                # RE-CALCULAR TIEMPO POR EFICIENCIA
+                new_total_time = original_total_time * factor
+                
+                # Borrar asignación previa en este escenario
+                PrioridadManual.objects.using('default').filter(id_orden=task_id, scenario=scenario).delete()
+                
+                # Crear nueva asignación
+                PrioridadManual.objects.using('default').create(
+                    id_orden=task_id,
+                    scenario=scenario,
+                    maquina=to_machine_id,
+                    prioridad=next_prio,
+                    tiempo_manual=new_total_time, # Sobrescribir tiempo por equivalencia
+                    porcentaje_solapamiento=task.get('porcentaje_solapamiento', 0.0),
+                    nivel_manual=None # Limpiar niveles antiguos para usar solo prioridad
+                )
+                
+                next_prio += 100.0 # Siguiente paso
+                moved_count += 1
+
         return JsonResponse({
             'success': True,
-            'action': 'refresh',
             'moved_count': moved_count,
-            'message': f'La inteligencia artificial redistribuyó exitosamente {moved_count} tareas desde {from_machine_id} hacia {to_machine_id} en el escenario \"{scenario.nombre}\". (Se actualizará el Gantt).'
+            'message': f'Se redistribuyeron {moved_count} tareas de {from_machine_id} a {to_machine_id} aplicando un factor de eficiencia x{factor}.'
         })
 
 

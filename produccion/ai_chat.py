@@ -45,7 +45,7 @@ REGLAS CRÍTICAS:
 3. NO generes Markdown, solo texto JSON puro.
 
 Intenciones (intent) disponibles en este momento:
-1. "REDISTRIBUIR_FALLA": El operario quiere mover las órdenes de producción de una máquina origen (generalmente rota/en falla) hacia una máquina destino, al final de su lista.
+1. "REDISTRIBUIR_FALLA": El operario quiere mover las órdenes de producción de una máquina origen hacia una máquina destino compatible. Ya NO es necesario que haya una falla activa; puede usarse para balancear carga de trabajo.
 2. "UNKNOWN": Si la orden del usuario no se parece a nada que sepas hacer, o hace una pregunta general.
 
 Si la intención es "REDISTRIBUIR_FALLA", el JSON DEBE tener esta estructura:
@@ -53,13 +53,13 @@ Si la intención es "REDISTRIBUIR_FALLA", el JSON DEBE tener esta estructura:
   "intent": "REDISTRIBUIR_FALLA",
   "from_machine_id": "<ID exacto de la máquina origen según la lista>",
   "to_machine_id": "<ID exacto de la máquina destino según la lista>",
-  "message": "He detectado tu orden de mover las tareas desde [Nombre Origen] hacia [Nombre Destino], procesando..."
+  "message": "He detectado tu orden de redistribuir tareas desde [Nombre Origen] hacia [Nombre Destino], aplicando factores de eficiencia si existen..."
 }}
 
 Si la intención es "UNKNOWN", el JSON DEBE tener:
 {{
   "intent": "UNKNOWN",
-  "message": "Lo siento, por ahora solo puedo ayudarte a redistribuir tareas por falla de máquina hacia otra disponible. ¿Qué máquina falló?"
+  "message": "Lo siento, por ahora solo puedo ayudarte a redistribuir tareas entre máquinas para balancear carga o por falla técnica. ¿Qué máquina quieres descargar?"
 }}
 
 ---

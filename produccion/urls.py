@@ -12,7 +12,7 @@ urlpatterns = [
     path('config/maquinas/', views.maquina_config_list, name='maquina_config_list'),
     path('config/maquinas/crear/', views.maquina_config_create_update, name='maquina_config_create'),
     path('config/maquinas/<pk>/editar/', views.maquina_config_create_update, name='maquina_config_update'),
-    path('config/maquinas/<pk>/borrar/', views.maquina_config_delete, name='maquina_config_delete'),
+    path('config/maquinas/equivalencias/guardar/', views.maquina_equivalencia_save, name='maquina_equivalencia_save'),
     path('config/maquinas/<maquina_id>/horario/crear/', views.horario_maquina_create, name='horario_maquina_create'),
     path('config/horario/<pk>/borrar/', views.horario_maquina_delete, name='horario_maquina_delete'),
 
