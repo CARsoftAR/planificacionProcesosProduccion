@@ -468,12 +468,6 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
                     segment['debug_info'] = f"TP: {duration_hours:.2f}h (U:{unit_time:.2f}*P:{pending_qty:.2f})"
                     segment['is_new_day'] = is_new_day
                     
-                    # Add progress percentage
-                    if qty > 0:
-                        segment['progress_percent'] = min(100.0, (produced / qty) * 100.0)
-                    else:
-                        segment['progress_percent'] = 0.0
-                        
                     task_segments.append(segment)
                     segment_start = None
                 
@@ -484,6 +478,23 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
                 if current_time <= original_curr:
                      current_time += timedelta(minutes=30)
         
+        # Distribuir el porcentaje de progreso visualmente a través de todos los segmentos (de izquierda a derecha)
+        if task_segments:
+            global_progress_fraction = min(1.0, produced / qty) if qty > 0 else 0.0
+            total_duration = sum(seg.get('duration_real', 0) for seg in task_segments)
+            hours_to_paint = total_duration * global_progress_fraction
+            
+            for seg in task_segments:
+                seg_dur = seg.get('duration_real', 0)
+                if hours_to_paint >= seg_dur and seg_dur > 0:
+                    seg['progress_percent'] = 100.0
+                    hours_to_paint -= seg_dur
+                elif hours_to_paint > 0 and seg_dur > 0:
+                    seg['progress_percent'] = (hours_to_paint / seg_dur) * 100.0
+                    hours_to_paint = 0
+                else:
+                    seg['progress_percent'] = 0.0
+                    
         # Add all segments to calculated_tasks
         calculated_tasks.extend(task_segments)
         

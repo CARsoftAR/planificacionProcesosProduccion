@@ -1559,8 +1559,10 @@ def horario_maquina_delete(request, pk):
     return redirect('maquina_config_list')
 
 import openpyxl
-from openpyxl.styles import PatternFill, Border, Side, Alignment, Font, Color
+from openpyxl.styles import PatternFill, Border, Side, Alignment, Font, Color, NamedStyle
 from openpyxl.utils import get_column_letter
+from openpyxl.cell.text import InlineFont
+from openpyxl.cell.rich_text import CellRichText, TextBlock
 from datetime import timedelta
 
 
@@ -1942,7 +1944,8 @@ def export_planificacion_excel(request):
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "Gantt Visual"
-    
+    ws.sheet_view.showGridLines = False  # Fondo limpio para que las Cards resalten
+
     # helper for positioning
     COLS_PER_HOUR = 6 # Sub-resolution: 1 col = 10 minutes
     hours_per_day = (global_max_h - global_min_h)
@@ -1969,12 +1972,9 @@ def export_planificacion_excel(request):
         bottom=Side(style='thin', color="CCCCCC")
     )
     
-    BORDER_TASK_CARD = Border(
-        left=Side(style='medium', color="FFFFFF"), 
-        right=Side(style='medium', color="FFFFFF"), 
-        top=Side(style='medium', color="FFFFFF"), 
-        bottom=Side(style='medium', color="FFFFFF")
-    )
+    # Common Sides for Task Cards
+    SIDE_GRAY_LIGHT = Side(style='thin', color="D3D3D3")
+    FILL_TASK_CARD  = PatternFill("solid", fgColor="FBFCFD") # Soft background (almost white)
                          
     BORDER_DOTTED_VERT = Border(
         left=Side(style='hair', color="E0E0E0"), 
@@ -1983,9 +1983,99 @@ def export_planificacion_excel(request):
         bottom=Side(style='hair', color="E0E0E0")
     )
 
-    ALIGN_CENTER = Alignment(horizontal='center', vertical='center')
-    ALIGN_WRAP   = Alignment(horizontal='center', vertical='center', wrap_text=True)
-    ALIGN_LEFT_WRAP = Alignment(horizontal='left', vertical='center', wrap_text=True)
+    ALIGN_CENTER = Alignment(horizontal='center', vertical='center', wrap_text=True)
+
+    # =========================================================
+    # DRAW_CARD PREMIUM — "Toque Magnífico"
+    # Diseño de dos zonas:
+    #   Zona 1 (izq): Banda sólida del color del proyecto
+    #   Zona 2 (rest): Fondo tintado muy suave + texto jerarquizado
+    # ORDEN CRÍTICO: Estilar → Merge → Valor
+    # =========================================================
+    def draw_card(ws, row, start_col, end_col, color_hex, proj, op, is_critical=False):
+        # --- Color Setup ---
+        rgb = color_hex.lstrip('#')[:6].upper() if color_hex else '333333'
+        r_int = int(rgb[0:2], 16)
+        g_int = int(rgb[2:4], 16)
+        b_int = int(rgb[4:6], 16)
+
+        # Tinte suave: 10% color del proyecto + 90% blanco
+        tr = int(r_int * 0.10 + 255 * 0.90)
+        tg = int(g_int * 0.10 + 255 * 0.90)
+        tb = int(b_int * 0.10 + 255 * 0.90)
+        tint_hex = f"{tr:02X}{tg:02X}{tb:02X}"
+
+        fill_accent  = PatternFill("solid", fgColor=rgb)       # Banda sólida
+        fill_content = PatternFill("solid", fgColor=tint_hex)  # Tinte suave
+
+        side_none   = Side(style=None)
+        frame_color = "FF0000" if is_critical else "CCCCCC"
+        side_frame  = Side(style='medium' if is_critical else 'thin', color=frame_color)
+        side_accent_left = Side(style='thin', color=frame_color)  # exterior izquierdo
+
+        span = end_col - start_col + 1  # total de columnas
+
+        if span == 1:
+            # Celda única: color sólido, OP en blanco
+            cell = ws.cell(row=row, column=start_col)
+            cell.fill = fill_accent
+            cell.border = Border(
+                left=Side(style='thick', color=rgb),
+                right=side_frame, top=side_frame, bottom=side_frame
+            )
+            cell.value     = f"OP {op}"
+            cell.font      = Font(bold=True, size=9, color="FFFFFF")
+            cell.alignment = ALIGN_CENTER
+            return
+
+        # --- ZONA 1: Banda de Identidad (1 columna sólida) ---
+        acc = ws.cell(row=row, column=start_col)
+        acc.fill = fill_accent
+        acc.border = Border(
+            left=side_accent_left, right=side_none,
+            top=side_frame, bottom=side_frame
+        )
+        # Texto del proyecto rotado/centrado en la banda (pequeño, blanco)
+        acc.value     = proj
+        acc.font      = Font(bold=True, size=7, color="FFFFFF")
+        acc.alignment = Alignment(horizontal='center', vertical='center',
+                                   text_rotation=90, wrap_text=False)
+
+        # --- ZONA 2: Contenido (columnas restantes) ---
+        content_start = start_col + 1
+        content_end   = end_col
+
+        for c in range(content_start, content_end + 1):
+            cell = ws.cell(row=row, column=c)
+            cell.fill = fill_content
+            cell.border = Border(
+                left   = side_none,
+                right  = side_frame if c == content_end else side_none,
+                top    = side_frame,
+                bottom = side_frame,
+            )
+
+        # Merge zona de contenido
+        if content_end > content_start:
+            ws.merge_cells(
+                start_row=row, start_column=content_start,
+                end_row=row,   end_column=content_end
+            )
+
+        # Rich Text: PROJECT pequeño arriba + OP grande abajo
+        master = ws.cell(row=row, column=content_start)
+        try:
+            master.value = CellRichText(
+                TextBlock(InlineFont(bold=True, sz=700,  color=rgb),        f"PROJECT {proj}"),
+                "\n",
+                TextBlock(InlineFont(bold=True, sz=1100, color="1A1A2E"),   f"OP {op}"),
+            )
+        except Exception:
+            master.value = f"PROJECT {proj}\nOP {op}"
+            master.font  = Font(bold=True, size=9, color="1A1A2E")
+
+        master.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+
     
     # Task Colors - Assign by ProyectoCode using Hash Algorithm (Same as Visual View)
     def string_to_rgb_hex(value):
@@ -2141,7 +2231,7 @@ def export_planificacion_excel(request):
         c_name.fill = FILL_MACHINE_ROW
         c_name.border = BORDER_THIN
         
-        ws.row_dimensions[current_row].height = 75
+        ws.row_dimensions[current_row].height = 95
         
         # Grid Background
         grid_width = len(time_columns) * COLS_PER_HOUR
@@ -2189,37 +2279,30 @@ def export_planificacion_excel(request):
                 from openpyxl.cell.cell import MergedCell
                 
                 try:
-                    # Content: Proyecto (OP)
-                    proj = t.get('ProyectoCode', 'S/P')
-                    op = t.get('Idorden', '')
-                    # Use a very compact format but always identifiable
-                    task_text = f"{proj}\n#{op}"
-                    
-                    # Formatting
-                    color = proyecto_color_map.get(proj, default_color)
-                    
-                    # Merge cells for the task duration if spans multiple 10-min blocks
-                    if end_col > start_col + 1:
-                        ws.merge_cells(start_row=current_row, start_column=start_col, end_row=current_row, end_column=end_col-1)
-                    
-                    c_task = ws.cell(row=current_row, column=start_col)
-                    if not isinstance(c_task, MergedCell):
-                        c_task.value = task_text
-                        c_task.fill = PatternFill("solid", fgColor=color)
-                        c_task.font = Font(size=8, color="FFFFFF", bold=True)
-                        c_task.alignment = ALIGN_WRAP
-                        # IMPORTANT: Apply white border to separate task blocks clearly
-                        c_task.border = BORDER_TASK_CARD
-                except Exception:
-                    # Fallback write to start cell if NOT merged
-                    c_err = ws.cell(row=current_row, column=start_col)
-                    if not isinstance(c_err, MergedCell):
-                        if not c_err.value:
-                            c_err.value = f"{t.get('Idorden')}"
-                            c_err.font = Font(size=6)
+                    proj       = t.get('ProyectoCode', 'S/P')
+                    op         = t.get('Idorden', '')
+                    is_crit    = t.get('is_critical', False)
+                    color_hex  = proyecto_color_map.get(proj, default_color)
+
+                    # Clamp columns: use end_col-1 as the inclusive last column
+                    last_col = end_col - 1
+                    if last_col < start_col:
+                        last_col = start_col
+
+                    draw_card(
+                        ws, current_row,
+                        start_col, last_col,
+                        color_hex, proj, op,
+                        is_critical=is_crit
+                    )
+                except Exception as e:
+                    print(f"Excel Export draw_card Error: {e}")
 
             
         current_row += 1
+
+    # Inmovilizar Paneles: encabezados (filas 1-3) y máquinas (cols A-B)
+    ws.freeze_panes = 'C4'
 
     response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     response['Content-Disposition'] = f'attachment; filename=PlanificacionVisual_{datetime.now().strftime("%Y%m%d_%H%M")}.xlsx'

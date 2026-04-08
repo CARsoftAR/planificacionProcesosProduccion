@@ -1580,7 +1580,7 @@
                                             {% if task.is_critical %}
                                                 <span class="badge" style="background: linear-gradient(135deg,#ef4444,#f97316); font-size:0.65rem;"><i class="fas fa-fire me-1"></i>RUTA CRÍTICA</span>
                                             {% endif %}
-                                            <span class="badge bg-primary text-white border-0 px-2 shadow-sm" style="font-size: 0.65rem;">OP: {{ task.Idorden }}</span>
+                                            <span class="badge bg-primary bg-opacity-25 text-primary border border-primary border-opacity-25 px-2">OP: {{ task.Idorden }}</span>
                                         </div>
                                     </div>
 
@@ -3430,65 +3430,6 @@
                 appendMsg(`<i class="fas fa-wifi text-danger me-1"></i> Error de comunicación con el servidor (vía IA).`);
             });
 
-        });
-
-        // ==========================================
-        // CONNECTOR VISUAL DE TAREAS CONTINUADAS
-        // Dibuja una línea de fondo que "amarra" los bloques 
-        // de una misma OP cuando está fragmentada
-        // ==========================================
-        document.querySelectorAll('.task-row').forEach(row => {
-            const tasks = Array.from(row.querySelectorAll('.task-block'));
-            const ops = {};
-            
-            // Agrupar por data-task-id
-            tasks.forEach(t => {
-                const op = t.getAttribute('data-task-id');
-                if(!op) return;
-                if(!ops[op]) ops[op] = [];
-                ops[op].push(t);
-            });
-            
-            // Dibujar conectores y bordes de corte transversales
-            Object.keys(ops).forEach(op => {
-                const segments = ops[op];
-                if(segments.length > 1) {
-                    segments.sort((a,b) => parseFloat(a.style.left) - parseFloat(b.style.left));
-                    
-                    const first = segments[0];
-                    const last = segments[segments.length - 1];
-                    const color = first.getAttribute('data-color') || '#cccccc';
-
-                    // 1. Bordes derechos punteados para segmentos interrumpidos (todos menos el último)
-                    segments.forEach((seg, index) => {
-                        if (index < segments.length - 1) {
-                            seg.style.setProperty('border-right-style', 'dashed', 'important');
-                            seg.style.setProperty('border-right-width', '6px', 'important');
-                            seg.style.setProperty('border-right-color', color, 'important');
-                        }
-                    });
-                    
-                    // 2. Conector visual de fondo ("hilo conductor")
-                    const startLeft = parseFloat(first.style.left);
-                    const endLeft = parseFloat(last.style.left) + parseFloat(last.style.width);
-                    const totalWidth = endLeft - startLeft;
-                    
-                    const connector = document.createElement('div');
-                    connector.className = 'task-connector-thread';
-                    connector.style.position = 'absolute';
-                    connector.style.left = startLeft + 'px';
-                    connector.style.width = totalWidth + 'px';
-                    connector.style.height = '14px';  // Grosor del hilo conductor
-                    connector.style.top = '35px';     // Centrado en la card
-                    connector.style.backgroundColor = color;
-                    connector.style.opacity = '0.15'; // Muy suave
-                    connector.style.borderRadius = '10px';
-                    connector.style.zIndex = '1';     // Detrás de las cards
-                    connector.style.pointerEvents = 'none';
-                    
-                    row.insertBefore(connector, row.firstChild);
-                }
-            });
         });
     });
 </script>

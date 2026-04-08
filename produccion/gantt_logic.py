@@ -668,11 +668,14 @@ def get_gantt_data(request, force_run=False):
     for pcode, p_tasks in project_tasks_final.items():
         vts = [t for t in p_tasks if t.get('end_date')]
         if not vts: continue
+        
+        critical_ids = set()
         curr = max(vts, key=lambda x: x['end_date'])
         tlookup = {str(t['Idorden']): t for t in vts}
+        
         while curr:
             cid = str(curr['Idorden'])
-            tlookup[cid]['is_critical'] = True
+            critical_ids.add(cid)
             latest_p = None
             max_p_e = None
             for pid in dependency_map.get(cid, []):
@@ -682,6 +685,10 @@ def get_gantt_data(request, force_run=False):
                         max_p_e = pe; latest_p = tlookup[pid]
             if latest_p == curr: break
             curr = latest_p
+            
+        for t in vts:
+            if str(t['Idorden']) in critical_ids:
+                t['is_critical'] = True
 
     # --- GRID & COLUMNS ---
     g_min_h, g_max_h = 24, 0
