@@ -15,6 +15,11 @@ import json
 from django.contrib import messages
 from .planning_service import calculate_timeline
 from datetime import datetime, timedelta
+import openpyxl
+from openpyxl.styles import PatternFill, Border, Side, Alignment, Font
+from openpyxl.utils import get_column_letter
+from openpyxl.comments import Comment
+from openpyxl.worksheet.datavalidation import DataValidation
 
 ...
 
@@ -1561,8 +1566,6 @@ def horario_maquina_delete(request, pk):
 import openpyxl
 from openpyxl.styles import PatternFill, Border, Side, Alignment, Font, Color, NamedStyle
 from openpyxl.utils import get_column_letter
-from openpyxl.cell.text import InlineFont
-from openpyxl.cell.rich_text import CellRichText, TextBlock
 from datetime import timedelta
 
 
@@ -1923,391 +1926,297 @@ def planificacion_visual(request):
 
 
 def export_planificacion_excel(request):
-    """
-    Generate a Visual Gantt Chart in Excel.
-    Uses shared logic from gantt_logic.py to equate with Visual View.
-    """
-    # 1. Get Data (Force run to ensure we get tasks)
-    data = get_gantt_data(request, force_run=True)
-    
-    timeline_data = data['timeline_data']
-    time_columns = data['time_columns']
-    global_min_h = data['global_min_h']
-    global_max_h = data['global_max_h']
-    start_simulation = data['start_simulation']
-    active_scenario = data.get('active_scenario')
-    
-    if not time_columns:
-         return HttpResponse("No hay datos calculados para exportar. Ejecute la planificación visual primero.")
-
-    # 2. EXCEL GENERATION
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "Gantt Visual"
-    ws.sheet_view.showGridLines = False  # Fondo limpio para que las Cards resalten
-
-    # helper for positioning
-    COLS_PER_HOUR = 6 # Sub-resolution: 1 col = 10 minutes
-    hours_per_day = (global_max_h - global_min_h)
-    unique_dates = []
-    for dt in time_columns:
-        if dt.date() not in unique_dates:
-            unique_dates.append(dt.date())
-    date_to_index = {d: i for i, d in enumerate(unique_dates)}
-    
-    # --- STYLES ---
-    FILL_HEADER_MACHINE = PatternFill("solid", fgColor="4472C4") # Blue header
-    FILL_HEADER_DAY     = PatternFill("solid", fgColor="4472C4") # Blue
-    FILL_HEADER_HOUR    = PatternFill("solid", fgColor="CFD8DC") # Grey/Blue for hour headers
-    FILL_MACHINE_ROW    = PatternFill("solid", fgColor="000000") # BLACK for machine names
-    
-    FONT_BOLD_WHITE = Font(bold=True, color="FFFFFF")
-    FONT_BOLD_BLACK = Font(bold=True, color="000000")
-    
-    # Thin borders for headers
-    BORDER_THIN = Border(
-        left=Side(style='thin', color="CCCCCC"), 
-        right=Side(style='thin', color="CCCCCC"), 
-        top=Side(style='thin', color="CCCCCC"), 
-        bottom=Side(style='thin', color="CCCCCC")
-    )
-    
-    # Common Sides for Task Cards
-    SIDE_GRAY_LIGHT = Side(style='thin', color="D3D3D3")
-    FILL_TASK_CARD  = PatternFill("solid", fgColor="FBFCFD") # Soft background (almost white)
-                         
-    BORDER_DOTTED_VERT = Border(
-        left=Side(style='hair', color="E0E0E0"), 
-        right=Side(style='hair', color="E0E0E0"), 
-        top=Side(style='hair', color="E0E0E0"), 
-        bottom=Side(style='hair', color="E0E0E0")
-    )
-
-    ALIGN_CENTER = Alignment(horizontal='center', vertical='center', wrap_text=True)
-
-    # =========================================================
-    # DRAW_CARD PREMIUM — "Toque Magnífico"
-    # Diseño de dos zonas:
-    #   Zona 1 (izq): Banda sólida del color del proyecto
-    #   Zona 2 (rest): Fondo tintado muy suave + texto jerarquizado
-    # ORDEN CRÍTICO: Estilar → Merge → Valor
-    # =========================================================
-    def draw_card(ws, row, start_col, end_col, color_hex, proj, op, is_critical=False):
-        # --- Color Setup ---
-        rgb = color_hex.lstrip('#')[:6].upper() if color_hex else '333333'
-        r_int = int(rgb[0:2], 16)
-        g_int = int(rgb[2:4], 16)
-        b_int = int(rgb[4:6], 16)
-
-        # Tinte suave: 10% color del proyecto + 90% blanco
-        tr = int(r_int * 0.10 + 255 * 0.90)
-        tg = int(g_int * 0.10 + 255 * 0.90)
-        tb = int(b_int * 0.10 + 255 * 0.90)
-        tint_hex = f"{tr:02X}{tg:02X}{tb:02X}"
-
-        fill_accent  = PatternFill("solid", fgColor=rgb)       # Banda sólida
-        fill_content = PatternFill("solid", fgColor=tint_hex)  # Tinte suave
-
-        side_none   = Side(style=None)
-        frame_color = "FF0000" if is_critical else "CCCCCC"
-        side_frame  = Side(style='medium' if is_critical else 'thin', color=frame_color)
-        side_accent_left = Side(style='thin', color=frame_color)  # exterior izquierdo
-
-        span = end_col - start_col + 1  # total de columnas
-
-        if span == 1:
-            # Celda única: color sólido, OP en blanco
-            cell = ws.cell(row=row, column=start_col)
-            cell.fill = fill_accent
-            cell.border = Border(
-                left=Side(style='thick', color=rgb),
-                right=side_frame, top=side_frame, bottom=side_frame
-            )
-            cell.value     = f"OP {op}"
-            cell.font      = Font(bold=True, size=9, color="FFFFFF")
-            cell.alignment = ALIGN_CENTER
-            return
-
-        # --- ZONA 1: Banda de Identidad (1 columna sólida) ---
-        acc = ws.cell(row=row, column=start_col)
-        acc.fill = fill_accent
-        acc.border = Border(
-            left=side_accent_left, right=side_none,
-            top=side_frame, bottom=side_frame
-        )
-        # Texto del proyecto rotado/centrado en la banda (pequeño, blanco)
-        acc.value     = proj
-        acc.font      = Font(bold=True, size=7, color="FFFFFF")
-        acc.alignment = Alignment(horizontal='center', vertical='center',
-                                   text_rotation=90, wrap_text=False)
-
-        # --- ZONA 2: Contenido (columnas restantes) ---
-        content_start = start_col + 1
-        content_end   = end_col
-
-        for c in range(content_start, content_end + 1):
-            cell = ws.cell(row=row, column=c)
-            cell.fill = fill_content
-            cell.border = Border(
-                left   = side_none,
-                right  = side_frame if c == content_end else side_none,
-                top    = side_frame,
-                bottom = side_frame,
-            )
-
-        # Merge zona de contenido
-        if content_end > content_start:
-            ws.merge_cells(
-                start_row=row, start_column=content_start,
-                end_row=row,   end_column=content_end
-            )
-
-        # Rich Text: PROJECT pequeño arriba + OP grande abajo
-        master = ws.cell(row=row, column=content_start)
-        try:
-            master.value = CellRichText(
-                TextBlock(InlineFont(bold=True, sz=700,  color=rgb),        f"PROJECT {proj}"),
-                "\n",
-                TextBlock(InlineFont(bold=True, sz=1100, color="1A1A2E"),   f"OP {op}"),
-            )
-        except Exception:
-            master.value = f"PROJECT {proj}\nOP {op}"
-            master.font  = Font(bold=True, size=9, color="1A1A2E")
-
-        master.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
-
-    
-    # Task Colors - Assign by ProyectoCode using Hash Algorithm (Same as Visual View)
-    def string_to_rgb_hex(value):
-        """Replicates the Visual View color generation logic"""
-        if not value: return "0D6EFD"
-        hash_val = 0
-        for char in str(value):
-            hash_val = ord(char) + ((hash_val << 5) - hash_val)
+    try:
+        # 1. Obtener Datos
+        data = get_gantt_data(request, force_run=True)
+        timeline_data = data['timeline_data']
+        time_columns = data['time_columns']
+        global_min_h = data['global_min_h']
+        global_max_h = data['global_max_h']
+        active_scenario = data.get('active_scenario')
         
-        hue = abs(hash_val) % 360
-        saturation = 70 + (abs(hash_val >> 8) % 30)
-        lightness = 40 + (abs(hash_val >> 16) % 15)
+        if not time_columns:
+             return HttpResponse("No hay datos calculados. Ejecute la planificacion visual primero.")
+
+        # 2. GENERACION EXCEL
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Gantt Visual"
+        ws.sheet_view.showGridLines = False 
+
+        COLS_PER_HOUR = 6 
+        hours_per_day = (global_max_h - global_min_h)
+        unique_dates = []
+        for dt in time_columns:
+            if dt.date() not in unique_dates:
+                unique_dates.append(dt.date())
+        date_to_index = {d: i for i, d in enumerate(unique_dates)}
         
-        h, s, l = hue/360.0, saturation/100.0, lightness/100.0
+        # --- ESTILOS CORPORATIVOS ---
+        CORP_DARK      = "27323E" # Carbon Slate
+        CORP_BLUE      = "0078D4" # Microsoft Blue
+        CORP_RED       = "E81123" # Microsoft Red
+        CORP_BORDER    = "D2D2D2" # Light Grey
+        ALIGN_CENTER   = Alignment(horizontal='center', vertical='center', wrap_text=True)
+        BORDER_THIN    = Border(left=Side(style='thin', color="CCCCCC"), right=Side(style='thin', color="CCCCCC"), top=Side(style='thin', color="CCCCCC"), bottom=Side(style='thin', color="CCCCCC"))
         
-        def hue_to_rgb(p, q, t):
-            if t < 0: t += 1
-            if t > 1: t -= 1
-            if t < 1/6: return p + (q - p) * 6 * t
-            if t < 1/2: return q
-            if t < 2/3: return p + (q - p) * (2/3 - t) * 6
-            return p
-            
-        if s == 0: r = g = b = l
-        else:
-            q = l * (1 + s) if l < 0.5 else l + s - l * s
-            p = 2 * l - q
-            r = hue_to_rgb(p, q, h + 1/3)
-            g = hue_to_rgb(p, q, h)
-            b = hue_to_rgb(p, q, h - 1/3)
-            
-        return f"{int(r*255):02X}{int(g*255):02X}{int(b*255):02X}"
-
-    # Build a map of ProyectoCode -> Color
-    # First, collect all unique ProyectoCodes from all tasks
-    all_proyecto_codes = set()
-    for row_data in timeline_data:
-        for t in row_data['tasks']:
-            proyecto_code = t.get('ProyectoCode', '')
-            if proyecto_code:
-                all_proyecto_codes.add(proyecto_code)
-    
-    # Assign colors dynamically
-    proyecto_color_map = {}
-    for p_code in all_proyecto_codes:
-        proyecto_color_map[p_code] = string_to_rgb_hex(p_code)
-    
-    default_color = "0D6EFD"
-    
-    # --- HEADER CONSTRUCTION ---
-    
-    # Grid Total Width
-    grid_cols_total = (len(time_columns) * COLS_PER_HOUR)
-
-    # Title Row (Row 1)
-    ws.row_dimensions[1].height = 35
-    ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=1 + grid_cols_total)
-    c_title = ws.cell(row=1, column=1)
-    scenario_name = active_scenario.nombre.upper() if active_scenario else "PRINCIPAL"
-    c_title.value = f"PLANIFICACIÓN DE PRODUCCIÓN - ESCENARIO: {scenario_name}"
-    c_title.font = Font(bold=True, size=16, color="4472C4")
-    c_title.alignment = ALIGN_CENTER
-
-    # "MAQUINA" Label
-    ws.merge_cells("A2:A3")
-    c_maquina = ws["A2"]
-    c_maquina.value = "MAQUINA"
-    c_maquina.fill = FILL_HEADER_MACHINE
-    c_maquina.font = FONT_BOLD_BLACK
-    c_maquina.alignment = ALIGN_CENTER
-    c_maquina.border = BORDER_THIN
-    ws["A3"].border = BORDER_THIN
-
-    # Map time_columns to Excel Columns (Start at B=2)
-    # time_columns is a list of datetimes (hourly)
-    
-    # We need to assume the LIST is contiguous hours, skipping nights/weekends as defined.
-    # The get_gantt_data returns a specific list of *valid* hours.
-    # So we can just map index -> Excel Col
-    
-    time_cols_map = {} 
-    
-    # Headers
-    current_day = None
-    start_merge = -1
-    
-    for i, dt in enumerate(time_columns):
-        col_idx = i + 2
-        time_cols_map[dt] = col_idx
+        # --- IDENTIFICACION DE PROYECTOS ---
+        all_projs = set()
+        for r in timeline_data:
+            for t in r['tasks']:
+                if t.get('ProyectoCode'): all_projs.add(t['ProyectoCode'])
         
-        ws.column_dimensions[get_column_letter(col_idx)].width = 3.5
-    # We use 6 columns per hour (10 min each)
-    
-    for h_idx, hour in enumerate(time_columns):
-        hour_base_col = 2 + (h_idx * COLS_PER_HOUR)
-        
-        ws.merge_cells(start_row=3, start_column=hour_base_col, end_row=3, end_column=hour_base_col + COLS_PER_HOUR - 1)
-        c_h = ws.cell(row=3, column=hour_base_col)
-        c_h.value = hour.strftime("%H:%M")
-        c_h.alignment = ALIGN_CENTER
-        c_h.fill = FILL_HEADER_HOUR
-        c_h.font = Font(size=9, bold=True, color="263238")
-        c_h.border = BORDER_THIN
+        # Paleta Curada y Utilidades de Color
+        PALETTE = ["0078D4", "107C10", "D83B01", "5C2D91", "008272", "A4262C", "004E8C", "498205"]
+        def get_corp_color(v):
+            idx = sum(ord(c) for c in str(v)) % len(PALETTE)
+            return PALETTE[idx]
 
-        # Set Column Widths for the tiny columns
-        for sub_c in range(COLS_PER_HOUR):
-            ws.column_dimensions[get_column_letter(hour_base_col + sub_c)].width = 2.5
+        def tint_color(hex_color, factor=0.85):
+            """Genera una versión clara (tintada) de un color hex."""
+            hex_color = hex_color.lstrip('#')
+            r = int(hex_color[0:2], 16)
+            g = int(hex_color[2:4], 16)
+            b = int(hex_color[4:6], 16)
+            tr = int((1 - 0.15) * 255 + 0.15 * r)
+            tg = int((1 - 0.15) * 255 + 0.15 * g)
+            tb = int((1 - 0.15) * 255 + 0.15 * b)
+            return f"{tr:02X}{tg:02X}{tb:02X}"
 
-        # Day Header Logic
-        day_str = hour.strftime("%A %d/%m").upper()
-        if day_str != current_day:
-            if current_day is not None:
-                ws.merge_cells(start_row=2, start_column=start_merge, end_row=2, end_column=hour_base_col - 1)
-                c_day = ws.cell(row=2, column=start_merge)
-                c_day.value = current_day
-                c_day.alignment = ALIGN_CENTER
-                c_day.fill = FILL_HEADER_DAY
-                c_day.font = FONT_BOLD_WHITE
-                c_day.border = BORDER_THIN
-            
-            current_day = day_str
-            start_merge = hour_base_col
-            
-    # Close last day
-    if current_day is not None and start_merge != -1:
-        last_col = 2 + (len(time_columns) * COLS_PER_HOUR) - 1
-        ws.merge_cells(start_row=2, start_column=start_merge, end_row=2, end_column=last_col)
-        c_day = ws.cell(row=2, column=start_merge)
-        c_day.value = current_day
-        c_day.alignment = ALIGN_CENTER
-        c_day.fill = FILL_HEADER_DAY
-        c_day.font = FONT_BOLD_WHITE
-        c_day.border = BORDER_THIN
+        def darken_color(hex_color, factor=0.7):
+            """Genera una versión más oscura de un color hex."""
+            hex_color = hex_color.lstrip('#')
+            r = int(hex_color[0:2], 16)
+            g = int(hex_color[2:4], 16)
+            b = int(hex_color[4:6], 16)
+            dr = int(r * factor); dg = int(g * factor); db = int(b * factor)
+            return f"{dr:02X}{dg:02X}{db:02X}"
 
-    ws.column_dimensions['A'].width = 32
-    
-    # --- RENDER DATA ---
-    current_row = 4
-    
-    for row_data in timeline_data:
-        maquina = row_data['machine']
-        tasks = row_data['tasks']
-        
-        # Omit 'SIN ASIGNAR' machine if it has no tasks, as requested by user
-        if maquina.nombre.upper() == 'SIN ASIGNAR' and not tasks:
-            continue
+        proyecto_color_map = {p: get_corp_color(p) for p in all_projs}
 
-        # Machine Name
-        c_name = ws.cell(row=current_row, column=1)
-        c_name.value = maquina.nombre.upper()
-        c_name.alignment = ALIGN_CENTER
-        c_name.font = FONT_BOLD_WHITE  # White text on black background
-        c_name.fill = FILL_MACHINE_ROW
-        c_name.border = BORDER_THIN
-        
-        ws.row_dimensions[current_row].height = 95
-        
-        # Grid Background
-        grid_width = len(time_columns) * COLS_PER_HOUR
-        for col_idx in range(2, 2 + grid_width):
-            c_bg = ws.cell(row=current_row, column=col_idx)
-            # Use dotted for 10-min marks, thin for hourly marks
-            if (col_idx - 2) % COLS_PER_HOUR == 0:
-                c_bg.border = BORDER_THIN
+        # Helper para bordes precisos en rangos combinados
+        def set_border(ws, start_row, end_row, start_col, end_col, border):
+            for r in range(start_row, end_row + 1):
+                for c in range(start_col, end_col + 1):
+                    ws.cell(row=r, column=c).border = border
+
+        from openpyxl.cell.cell import MergedCell
+
+        # =========================================================
+        # ESTÁNDAR CÁPSULA ENVOLVENTE (REGLA DE ORO: VALOR -> MERGE -> ESTILO)
+        # =========================================================
+        def draw_floating_card(ws, label_row, task_row, start_col, end_col, color_hex, proj, op, is_critical=False, is_delayed=False, delay_days=0, is_continuation=False):
+            # 1. DETERMINAR VALORES Y COLORES
+            task_text = f"PROJECT {proj}\nOP {op}" if proj != "---" else "..."
+            if is_delayed and delay_days > 0:
+                label_text = f"[ {delay_days}D ATRASO ]"
+                label_color = "EF4444"
+            elif is_critical:
+                label_text = "[ RUTA CRÍTICA ]"
+                label_color = "F97316"
             else:
-                c_bg.border = BORDER_DOTTED_VERT
-            
-        for t in tasks:
-            start_date = t.get('start_date')
-            t_duration = t.get('duration_real', 0)
-            
-            if not start_date: continue
-            
-            # --- ROBUST MATHEMATICAL POSITIONING (10-min precision) ---
-            t_date = start_date.date()
-            day_idx = date_to_index.get(t_date)
-            if day_idx is None: continue
-            
-            # Base column for the day and starting hour
-            hour_offset = start_date.hour - global_min_h
-            minute_offset = start_date.minute / 10.0
-            
-            task_col_start_float = 2 + (day_idx * hours_per_day * COLS_PER_HOUR) + (hour_offset * COLS_PER_HOUR) + minute_offset
-            
-            start_col = int(task_col_start_float)
-            cols_to_span = t_duration * COLS_PER_HOUR
-            task_col_end_float = task_col_start_float + cols_to_span
-            
-            end_col = int(task_col_end_float)
-            # If it spills more than 2 minutes into the next 10-min block, round up
-            if (task_col_end_float - end_col) > 0.2:
-                 end_col += 1
+                label_text = f"PROJECT {proj}"
+                label_color = "1E3A8A"
 
-            # Limit to the grid width
-            max_grid_col = 2 + (len(time_columns) * COLS_PER_HOUR) - 1
-            if start_col > max_grid_col: continue
-            if end_col > max_grid_col + 1: end_col = max_grid_col + 1
-            if start_col < 2: start_col = 2
+            # Colores del proyecto
+            proj_rgb = color_hex.upper()
+            bg_tint = tint_color(proj_rgb) # Fondo suave del color del proyecto
+
+            # 2. DEFINICIÓN DE BORDES (Perímetro Envolvente)
+            side_identity = Side(style='thick', color=proj_rgb)
+            side_outline  = Side(style='thin', color=proj_rgb)
             
-            if start_col < end_col:
-                from openpyxl.cell.cell import MergedCell
+            # 3. RENDERIZADO CELDA POR CELDA (Seguro para border/fill, NO para value)
+            for c in range(start_col, end_col + 1):
+                # Cuerpo de Tarea
+                cell_t = ws.cell(row=task_row, column=c)
+                cell_t.fill = PatternFill("solid", fgColor=bg_tint)
                 
-                try:
-                    proj       = t.get('ProyectoCode', 'S/P')
-                    op         = t.get('Idorden', '')
-                    is_crit    = t.get('is_critical', False)
-                    color_hex  = proyecto_color_map.get(proj, default_color)
+                # Construir borde dinámico según posición
+                l = side_identity if c == start_col else None
+                r = side_outline if c == end_col else None
+                cell_t.border = Border(left=l, right=r, top=side_outline, bottom=side_outline)
+                
+                if c == start_col:
+                    if not isinstance(cell_t, MergedCell):
+                        cell_t.value = task_text
+                    cell_t.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+                    cell_t.font = Font(name='Segoe UI', bold=True, size=8, color="1E293B")
 
-                    # Clamp columns: use end_col-1 as the inclusive last column
-                    last_col = end_col - 1
-                    if last_col < start_col:
-                        last_col = start_col
+                # Sticker Superior
+                cell_l = ws.cell(row=label_row, column=c)
+                cell_l.fill = PatternFill("solid", fgColor=label_color)
+                cell_l.border = Border(left=side_outline if c == start_col else None, 
+                                       right=side_outline if c == end_col else None, 
+                                       top=side_outline, bottom=side_outline)
+                
+                if c == start_col:
+                    if not isinstance(cell_l, MergedCell):
+                        cell_l.value = label_text
+                    cell_l.font = Font(name='Segoe UI', bold=True, size=7, color="FFFFFF")
+                    cell_l.alignment = Alignment(horizontal='center', vertical='center')
 
-                    draw_card(
-                        ws, current_row,
-                        start_col, last_col,
-                        color_hex, proj, op,
-                        is_critical=is_crit
-                    )
-                except Exception as e:
-                    print(f"Excel Export draw_card Error: {e}")
+            # 4. MERGE FINAL (Para asegurar coherencia en Excel)
+            if end_col > start_col:
+                try: ws.merge_cells(start_row=task_row, start_column=start_col, end_row=task_row, end_column=end_col)
+                except: pass
+                try: ws.merge_cells(start_row=label_row, start_column=start_col, end_row=label_row, end_column=end_col)
+                except: pass
 
+        # --- CONFIGURACIÓN DE PÁGINA Y ENCABEZADOS (Fidelity Style) ---
+        ws.sheet_view.showGridLines = False
+        grid_width = (len(time_columns) * COLS_PER_HOUR)
+        
+        from openpyxl.cell.rich_text import CellRichText, TextBlock
+        from openpyxl.cell.text import InlineFont
+        from openpyxl.styles import Color
+
+        # --- CABECERA PREMIUM (Rows 1-2) ---
+        header_bg = PatternFill("solid", fgColor="F8FAFC")
+        for r in range(1, 4):
+            for c in range(1, 2 + grid_width):
+                ws.cell(row=r, column=c).fill = header_bg
+
+        ws.row_dimensions[1].height = 30
+        ws.row_dimensions[2].height = 20
+        
+        # TÍTULO: VALOR -> MERGE
+        c_title = ws.cell(row=1, column=1)
+        font_black = InlineFont(); font_black.rFont = 'Segoe UI'; font_black.b = True; font_black.sz = 16.0; font_black.color = Color(rgb="0F172A")
+        font_blue = InlineFont(); font_blue.rFont = 'Segoe UI'; font_blue.b = True; font_blue.sz = 16.0; font_blue.color = Color(rgb="2563EB")
+        c_title.value = CellRichText([TextBlock(font_black, "Planificación "), TextBlock(font_blue, "Visual")])
+        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=15)
+        c_title.alignment = Alignment(horizontal='left', vertical='center', indent=1)
+
+        # SUBTÍTULO: VALOR -> MERGE
+        c_sub = ws.cell(row=2, column=1)
+        c_sub.value = "Control de línea ABBAMAT"
+        ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=15)
+        c_sub.font = Font(name='Segoe UI', size=9, color="64748B")
+        c_sub.alignment = Alignment(horizontal='left', vertical='top', indent=1)
+
+        ws.column_dimensions['A'].width = 25
+
+        # Render Timeline (Días en fila 3, Horas en fila 4)
+        # El header premium ocupa filas 1-2 y NO colisiona con el timeline
+        # porque el timeline empieza en columna 2+
+        current_day, start_m = None, -1
+        header_fill = PatternFill("solid", fgColor="F1F5F9")
+        header_border = Border(
+            left=Side(style='thin', color="E2E8F0"), right=Side(style='thin', color="E2E8F0"),
+            top=Side(style='thin', color="E2E8F0"), bottom=Side(style='thin', color="E2E8F0")
+        )
+        ROW_DAY = 3   # Fila de encabezados de día
+        ROW_HOUR = 4  # Fila de encabezados de hora
+        DATA_START = 5  # Primera fila de datos
+
+        # Encabezado MÁQUINA en A3:A4
+        c_maq = ws.cell(row=ROW_DAY, column=1)
+        if not isinstance(c_maq, MergedCell):
+            c_maq.value = "MÁQUINA"
+        ws.merge_cells(start_row=ROW_DAY, start_column=1, end_row=ROW_HOUR, end_column=1)
+        c_maq.fill = PatternFill("solid", fgColor="F8F9FA")
+        c_maq.font = Font(name='Segoe UI', bold=True, size=10, color="64748B")
+        c_maq.alignment = Alignment(horizontal='center', vertical='center')
+        c_maq.border = Border(bottom=Side(style='thin', color="E2E8F0"), right=Side(style='thin', color="E2E8F0"), top=Side(style='thin', color="E2E8F0"))
+
+        for h_idx, hour in enumerate(time_columns):
+            h_col = 2 + (h_idx * COLS_PER_HOUR)
+
+            # HORAS — REGLA DE ORO: valor -> merge -> estilo
+            c_h = ws.cell(row=ROW_HOUR, column=h_col)
+            if not isinstance(c_h, MergedCell):
+                c_h.value = hour.strftime("%H")
+            ws.merge_cells(start_row=ROW_HOUR, start_column=h_col, end_row=ROW_HOUR, end_column=h_col + COLS_PER_HOUR - 1)
+            c_h.alignment = Alignment(horizontal='center', vertical='center')
+            c_h.fill = header_fill
+            c_h.border = header_border
+            c_h.font = Font(name='Segoe UI', size=8, color="64748B")
+
+            # DÍAS — REGLA DE ORO: valor -> merge -> estilo
+            d_str = hour.strftime("%d %b - %a").upper()
+            if d_str != current_day:
+                if current_day:
+                    c_d = ws.cell(row=ROW_DAY, column=start_m)
+                    if not isinstance(c_d, MergedCell):
+                        c_d.value = current_day
+                    ws.merge_cells(start_row=ROW_DAY, start_column=start_m, end_row=ROW_DAY, end_column=h_col - 1)
+                    c_d.fill = header_fill
+                    c_d.font = Font(name='Segoe UI', bold=True, size=8, color="2563EB")
+                    c_d.alignment = Alignment(horizontal='left', vertical='center', indent=1)
+                    c_d.border = header_border
+                current_day, start_m = d_str, h_col
+
+        if current_day:
+            c_d = ws.cell(row=ROW_DAY, column=start_m)
+            if not isinstance(c_d, MergedCell):
+                c_d.value = current_day
+            ws.merge_cells(start_row=ROW_DAY, start_column=start_m, end_row=ROW_DAY, end_column=1 + grid_width)
+            c_d.fill = header_fill
+            c_d.font = Font(name='Segoe UI', bold=True, size=8, color="2563EB")
+            c_d.alignment = Alignment(horizontal='left', vertical='center', indent=1)
+            c_d.border = header_border
+
+        ws.column_dimensions['A'].width = 30
+        from openpyxl.utils import get_column_letter
+        for c in range(2, 2 + grid_width):
+            ws.column_dimensions[get_column_letter(c)].width = 2.5
+        
+        # --- RENDER DE DATOS (desde DATA_START) ---
+        current_row = DATA_START
+        for row_data in timeline_data:
+            maquina = row_data['machine']
+            tasks = row_data['tasks']
+            if maquina.nombre.upper() == 'SIN ASIGNAR' and not tasks: continue
             
-        current_row += 1
+            l_row, t_row = current_row, current_row + 1
+            ws.row_dimensions[l_row].height = 11 # 50% altura para etiquetas
+            ws.row_dimensions[t_row].height = 38 # Altura para cards
+            
+            # Sidebar Maquina — REGLA DE ORO: valor -> merge -> estilo
+            c_n = ws.cell(row=l_row, column=1)
+            if not isinstance(c_n, MergedCell):
+                c_n.value = maquina.nombre.upper()
+            ws.merge_cells(start_row=l_row, start_column=1, end_row=t_row, end_column=1)
+            c_n.alignment = Alignment(horizontal='center', vertical='center')
+            c_n.font = Font(name='Segoe UI', bold=True, size=9, color="1E293B")
+            c_n.fill = PatternFill("solid", fgColor="F8F9FA")
+            c_n.border = Border(bottom=Side(style='thin', color="E2E8F0"), right=Side(style='thin', color="E2E8F0"))
+            
+            for t in tasks:
+                start_date = t.get('start_date')
+                if not start_date: continue
+                day_idx = date_to_index.get(start_date.date())
+                if day_idx is None: continue
+                
+                h_off = start_date.hour - global_min_h
+                m_off = start_date.minute / 10.0
+                s_col = int(2 + (day_idx * hours_per_day * COLS_PER_HOUR) + (h_off * COLS_PER_HOUR) + m_off)
+                e_col = int(s_col + (t.get('duration_real', 0) * COLS_PER_HOUR))
+                
+                if s_col < 2: s_col = 2
+                if e_col > 2 + grid_width: e_col = 2 + grid_width
+                
+                if s_col < e_col:
+                    draw_floating_card(ws, l_row, t_row, s_col, e_col - 1, 
+                                       proyecto_color_map.get(t.get('ProyectoCode'), '0078D4'), 
+                                       t.get('ProyectoCode', 'S/P'), t.get('Idorden', ''),
+                                       is_critical=t.get('is_critical', False), 
+                                       is_delayed=t.get('is_delayed', False), 
+                                       delay_days=t.get('delay_days', 0),
+                                       is_continuation=t.get('segment_index', 0) > 0)
+            current_row += 2
 
-    # Inmovilizar Paneles: encabezados (filas 1-3) y máquinas (cols A-B)
-    ws.freeze_panes = 'C4'
+        ws.freeze_panes = f'B{DATA_START}'
+        response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        response['Content-Disposition'] = f'attachment; filename=Gantt_Produccion.xlsx'
+        wb.save(response)
+        return response
 
-    response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-    response['Content-Disposition'] = f'attachment; filename=PlanificacionVisual_{datetime.now().strftime("%Y%m%d_%H%M")}.xlsx'
-    wb.save(response)
-    return response
+    except Exception as global_err:
+        import traceback
+        print(traceback.format_exc())
+        return HttpResponse(f"Error critico en Exportacion Excel: {str(global_err)}", status=500)
 
 
 
