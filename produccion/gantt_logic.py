@@ -249,7 +249,7 @@ def get_gantt_data(request, force_run=False):
     if plan_mode:
         request.session['last_plan_mode'] = plan_mode
     else:
-        plan_mode = request.session.get('last_plan_mode', 'manual')
+        plan_mode = request.session.get('last_plan_mode', 'original')
  
     
     # 1. Get Local Machines
@@ -309,7 +309,12 @@ def get_gantt_data(request, force_run=False):
                     'porcentaje_solapamiento': entry.porcentaje_solapamiento if entry.porcentaje_solapamiento is not None else 0.0,
                     'manual_start': entry.fecha_inicio_manual 
                 }
-                virtual_overrides[str(entry.id_orden)] = ov_data
+                # Forzar ID a string de entero para evitar problemas con .0 de SQL
+                try:
+                    clean_id = str(int(float(entry.id_orden)))
+                except:
+                    clean_id = str(entry.id_orden)
+                virtual_overrides[clean_id] = ov_data
         
     tasks_moved_in_map = {}
     for oid, override_data in virtual_overrides.items():
@@ -346,7 +351,8 @@ def get_gantt_data(request, force_run=False):
                 'machines': [],
                 'project_alerts': []
             },
-            'system_alerts': []
+            'system_alerts': [],
+            'plan_mode': plan_mode
         }
 
     # --- AUTOMATIC DEPENDENCIES ---
@@ -361,15 +367,20 @@ def get_gantt_data(request, force_run=False):
     
     # --- FIX: Asegurar que tareas con override manual (redistribuciones) se carguen aunque no coincidan con el filtro ---
     if virtual_overrides:
-        existing_ids = {str(t.get('Idorden')) for t in all_tasks_raw}
-        missing_ids = [str(oid) for oid in virtual_overrides.keys() if str(oid) not in existing_ids]
+        existing_ids = {str(int(float(t.get('Idorden')))) for t in all_tasks_raw if t.get('Idorden')}
+        missing_ids = [oid for oid in virtual_overrides.keys() if oid not in existing_ids]
         
         if missing_ids:
-            # Buscamos estas tareas específicamente para que entren al sistema de planificación
-            # y ocupen su lugar en las máquinas correspondientes.
-            extra_tasks = get_planificacion_data({'id_orden_in': missing_ids}, exclude_completed=True)
+            # Buscamos estas tareas opcionales pero RESPETANDO el filtro de proyecto si existe.
+            # Esto evita "eventos fantasma" de otros proyectos cuando el usuario está filtrando uno específico.
+            extra_filtros = {'id_orden_in': missing_ids}
+            if 'proyectos' in deps_filter:
+                extra_filtros['proyectos'] = deps_filter['proyectos']
+                
+            extra_tasks = get_planificacion_data(extra_filtros, exclude_completed=True)
             if extra_tasks:
                 all_tasks_raw.extend(extra_tasks)
+                all_tasks_for_deps.extend(extra_tasks)
     
 
     # Exclude tasks with no machine assigned from the Gantt entirely.
@@ -384,6 +395,15 @@ def get_gantt_data(request, force_run=False):
     name_to_id = {m.nombre.strip(): m.id_maquina.strip() for m in maquinas}
 
     for t in all_tasks_for_deps:
+        # Normalizar ID de orden en el objeto para consistencia global
+        try:
+             t_id_raw = t.get('Idorden')
+             if t_id_raw:
+                 # Pasamos por float primero por si viene como "47621.0" desde SQL
+                 t['Idorden'] = int(float(t_id_raw))
+        except:
+             pass
+
         mid_code = str(t.get('Idmaquina', '')).strip()
         if mid_code in name_to_id:
             mid_code = name_to_id[mid_code]
@@ -526,11 +546,19 @@ def get_gantt_data(request, force_run=False):
         
         active_tasks = []
         for t in native_tasks:
-            oid = str(t.get('Idorden'))
+            try:
+                oid = str(int(float(t.get('Idorden'))))
+            except:
+                oid = str(t.get('Idorden'))
+
             if oid in virtual_overrides:
                 ov_mid = str(virtual_overrides[oid]['maquina']).strip().upper()
+                # Filtradio ESTRICTO: Solo si la maquina del override coincide con la actual
                 if ov_mid in [machine_id.upper(), current_machine_name.upper()]:
                     if oid not in hidden_ids: active_tasks.append(t)
+                else:
+                    # EXCLUSION: Si tiene override para OTRA maquina, se ignora en esta (Native machine)
+                    pass
             else:
                  if oid not in hidden_ids: active_tasks.append(t)
                  
@@ -544,10 +572,14 @@ def get_gantt_data(request, force_run=False):
         if moved_in_ids:
             for t_id in moved_in_ids:
                 # Search in all_tasks_raw so we find tasks from any machine
-                task_found = next((tx for tx in all_tasks_raw if str(tx['Idorden']) == str(t_id)), None)
-                if task_found and str(task_found['Idorden']) not in hidden_ids:
+                try:
+                    tid_s = str(int(float(t_id)))
+                except:
+                    tid_s = str(t_id)
+
+                task_found = next((tx for tx in all_tasks_raw if str(int(float(tx['Idorden']))) == tid_s), None)
+                if task_found and str(int(float(task_found['Idorden']))) not in hidden_ids:
                      # IMPORTANT: copy the dict to avoid mutating the original object
-                     # (the same dict object is referenced by other machines' task lists)
                      task_copy = dict(task_found)
                      task_copy['is_moved'] = True
                      task_copy['original_machine_name'] = task_found.get('MAQUINAD', 'S/M')
@@ -555,7 +587,10 @@ def get_gantt_data(request, force_run=False):
         
         unique_tasks_map = {}
         for t in active_tasks:
-            tid = str(t.get('Idorden'))
+            try:
+                tid = str(int(float(t.get('Idorden'))))
+            except:
+                tid = str(t.get('Idorden'))
             if tid not in unique_tasks_map: unique_tasks_map[tid] = t
         tasks = list(unique_tasks_map.values())
         
@@ -635,9 +670,20 @@ def get_gantt_data(request, force_run=False):
             def get_sort_key(t):
                  tid = str(t.get('Idorden'))
                  ms = min_start_times.get(tid, start_simulation)
+                 
+                 # Si está pineada, su "tiempo objetivo" es el pin
+                 # Si no, es su tiempo de disponibilidad (dependencia)
+                 target_start = ms
+                 is_pinned = 0
                  if tid in force_start_times:
-                     return (0, force_start_times[tid], -get_nivel(t), t.get('OrdenVisual', 999999))
-                 return (1, -get_nivel(t), ms, t.get('OrdenVisual', 999999))
+                     target_start = force_start_times[tid]
+                     is_pinned = 1
+                 
+                 # Ordenamos por:
+                 # 1. Tiempo de inicio esperado (ms o pin)
+                 # 2. Prioridad visual (Si hay empate en tiempo)
+                 # 3. Nivel (Por seguridad)
+                 return (target_start, -get_nivel(t), t.get('OrdenVisual', 999999))
             
             tasks.sort(key=get_sort_key)
             recalc = calculate_timeline(maquina, tasks, start_date=start_simulation, 
@@ -783,5 +829,6 @@ def get_gantt_data(request, force_run=False):
         'global_min_h': g_min_h, 'global_max_h': g_max_h, 'ran_calculation': True,
         'active_scenario': active_scenario,
         'analysis': {'machines': machine_analysis, 'project_alerts': project_alerts, 'adaptive_alerts': get_adaptive_capacity_alerts(timeline_data, maquinas)},
-        'system_alerts': system_alerts, 'day_max_hours': day_max_hours, 'date_start_col': date_start_col
+        'system_alerts': system_alerts, 'day_max_hours': day_max_hours, 'date_start_col': date_start_col,
+        'plan_mode': plan_mode
     }

@@ -114,56 +114,53 @@
             </div>
         </div>
 
-        <!-- Filtros -->
-        <div class="card mb-4">
-            <div class="card-body">
-                <form method="GET" id="plan-filter-form" class="row g-3 align-items-end">
-                    <div class="col-md-4">
-                        <label for="proyectos" class="form-label">Proyectos (separados por coma):</label>
-                        <div class="input-group">
-                            <input type="text" name="proyectos" id="proyectos" class="form-control" value="{{ proyectos_value|default:'' }}" placeholder="Ej: 25-001, 23-145">
-                            <button type="submit" class="btn btn-primary" onclick="document.getElementById('plan-mode-selector').value='original'">Filtrar</button>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <label for="plan_mode" class="form-label">Modo de Plan:</label>
-                        <select name="plan_mode" id="plan-mode-selector" class="form-select" onchange="this.form.submit()">
-                            <option value="manual" {% if request.GET.plan_mode != 'original' %}selected{% endif %}>Optimizado (Manual)</option>
-                            <option value="original" {% if request.GET.plan_mode == 'original' %}selected{% endif %}>Original (ERP)</option>
-                        </select>
-                    </div>
-                    <div class="col-md-5">
-                        <label for="scenario_id" class="form-label">Escenarios Guardados:</label>
-                        <div class="input-group">
-                            <select name="scenario_id" id="scenario-selector" class="form-select">
-                                <option value="">-- Seleccionar Escenario --</option>
-                                {% for scenario in all_scenarios %}
-                                <option value="{{ scenario.id }}" 
-                                        data-proyectos="{{ scenario.proyectos|default:'' }}"
-                                        data-principal="{{ scenario.es_principal|yesno:'1,0' }}"
-                                        {% if active_scenario_id == scenario.id %}selected{% endif %}>
-                                    {{ scenario.nombre }} {% if scenario.es_principal %}(Activo){% endif %}
-                                </option>
-                                {% endfor %}
-                            </select>
-                            <button type="button" id="btnSaveScenario" class="btn btn-success" title="Guardar escenario actual">
-                                <i class="fas fa-save"></i>
-                            </button>
-                            <button type="button" id="btnPublishScenario" class="btn btn-outline-primary" title="Hacer este escenario el principal">
-                                <i class="fas fa-cloud-upload-alt"></i>
-                            </button>
-                            <button type="button" id="btnDeleteScenario" class="btn btn-outline-danger" title="Eliminar este escenario">
-                                <i class="fas fa-trash"></i>
-                            </button>
-                            {% if search_active %}
-                            <button type="button" id="btnCleanTable" class="btn btn-warning" title="Restablecer movimientos">
-                                <i class="fas fa-undo"></i>
-                            </button>
-                            {% endif %}
-                        </div>
-                    </div>
-                </form>
-            </div>
+        <!-- Toolbar de Planificación (Tabla) -->
+        <div class="px-4 py-2 mb-4 border rounded-4 bg-white shadow-sm d-flex align-items-center justify-content-between">
+            <form method="GET" id="plan-filter-form" class="d-flex align-items-center gap-3 flex-grow-1">
+                <div class="d-flex align-items-center gap-2">
+                    <label for="proyectos" class="smaller fw-bold text-muted mb-0"><i class="fas fa-search"></i> Proyectos:</label>
+                    <input type="text" name="proyectos" id="proyectos" class="form-control form-control-sm rounded-pill" style="width: 250px;" value="{{ proyectos_value|default:'' }}" placeholder="Ej: 25-001, 23-145">
+                    <button type="submit" class="btn btn-sm btn-primary rounded-pill px-3">Filtrar</button>
+                    {% if request.GET.proyectos %}
+                    <a href="{% url 'planificacion_view' %}?plan_mode={{ request.GET.plan_mode|default:'manual' }}" class="btn btn-sm btn-outline-secondary rounded-pill px-2" title="Limpiar Filtros">
+                        <i class="fas fa-times"></i>
+                    </a>
+                    {% endif %}
+                </div>
+
+                <div class="vr bg-secondary opacity-25" style="height: 25px;"></div>
+
+                <div class="d-flex align-items-center gap-2">
+                    <label for="plan_mode" class="smaller fw-bold text-muted mb-0"><i class="fas fa-cog"></i> Modo:</label>
+                    <select name="plan_mode" id="plan-mode-selector" class="form-select form-select-sm rounded-pill border-secondary border-opacity-25" style="width: 160px; font-size: 0.8rem;">
+                        <option value="manual" {% if request.GET.plan_mode != 'original' %}selected{% endif %}>Optimizado (Manual)</option>
+                        <option value="original" {% if request.GET.plan_mode == 'original' %}selected{% endif %}>Original (ERP)</option>
+                    </select>
+                </div>
+
+                <div class="d-flex align-items-center gap-2 ms-2">
+                    <label for="scenario_id" class="smaller fw-bold text-muted mb-0"><i class="fas fa-database"></i> Estado:</label>
+                    <select name="scenario_id" id="scenario-selector" class="form-select form-select-sm rounded-pill border-secondary border-opacity-25" style="width: 220px; font-size: 0.8rem;">
+                        <option value="">-- Estado Actual (Oficial) --</option>
+                        {% for scenario in all_scenarios %}
+                        <option value="{{ scenario.id }}" 
+                                data-proyectos="{{ scenario.proyectos|default:'' }}"
+                                data-principal="{{ scenario.es_principal|yesno:'1,0' }}"
+                                {% if active_scenario_id == scenario.id %}selected{% endif %}>
+                            {{ scenario.nombre }} {% if scenario.es_principal %}(Oficial){% endif %}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="ms-auto d-flex align-items-center gap-2">
+                    <button type="button" id="btnResetToERP" class="btn btn-sm btn-warning rounded-pill px-3 fw-bold shadow-sm" style="background: #fbbf24; border: none; color: #78350f;" title="Restablecer al Plan Original del ERP">
+                        <i class="fas fa-history me-1"></i> Reset ERP
+                    </button>
+                </div>
+
+                <input type="hidden" name="run" value="1">
+            </form>
         </div>
 
         <!-- Modal Guardar Escenario -->
@@ -1045,20 +1042,90 @@
                 });
             }
 
-            // --- SCENARIO SELECTOR SYNC ---
+            // Logic for mode selector - decouple scenario when moving to manual
+            const planModeSelector = document.getElementById('plan-mode-selector');
+            if (planModeSelector) {
+                planModeSelector.addEventListener('change', function() {
+                    if (this.value === 'manual') {
+                        // Clear scenario_id to load Current State when switching to manual
+                        const scenSel = document.getElementById('scenario-selector');
+                        if (scenSel) scenSel.value = "";
+                    }
+                    this.form.submit();
+                });
+            }
+
+            // Logic for scenario selector
             const scenarioSelector = document.getElementById('scenario-selector');
             if (scenarioSelector) {
                 scenarioSelector.addEventListener('change', function() {
                     const selectedOption = this.options[this.selectedIndex];
                     const proyectosInput = document.getElementById('proyectos');
+                    const modeSel = document.getElementById('plan-mode-selector');
                     
-                    // If a scenario is selected (not the placeholder), update projects input
-                    if (this.value && proyectosInput) {
-                        const scenarioProyectos = selectedOption.dataset.proyectos || '';
-                        proyectosInput.value = scenarioProyectos;
+                    // If a scenario is selected, update projects and ensure manual mode
+                    if (this.value) {
+                        if (proyectosInput) {
+                            proyectosInput.value = selectedOption.dataset.proyectos || '';
+                        }
+                        if (modeSel) modeSel.value = 'manual';
                     }
                     
                     this.form.submit();
+                });
+            }
+
+            // Reset ERP button
+            const btnResetToERP = document.getElementById('btnResetToERP');
+            if (btnResetToERP) {
+                btnResetToERP.addEventListener('click', async function() {
+                    const result = await Swal.fire({
+                        title: '¿Restablecer al Plan ERP?',
+                        text: "Se borrarán todos los ajustes manuales de este escenario y se volverá a las prioridades originales.",
+                        icon: 'warning',
+                        showCancelButton: true,
+                        confirmButtonText: 'Sí, Restablecer',
+                        cancelButtonText: 'Cancelar',
+                        confirmButtonColor: '#fbbf24',
+                        customClass: {
+                            popup: 'premium-swal',
+                            confirmButton: 'premium-confirm',
+                            cancelButton: 'premium-cancel'
+                        }
+                    });
+
+                    if (result.isConfirmed) {
+                        try {
+                            const proyectosInput = document.getElementById('proyectos');
+                            const projVal = proyectosInput ? proyectosInput.value : '';
+                            const scenarioId = document.getElementById('scenario-selector').value;
+
+                            const response = await fetch('/api/reset_planning/', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'X-CSRFToken': '{{ csrf_token }}'
+                                },
+                                body: JSON.stringify({ 
+                                    scenario_id: scenarioId,
+                                    proyectos: projVal
+                                })
+                            });
+                            
+                            if (response.ok) {
+                                Swal.fire({
+                                    title: '¡Restablecido!',
+                                    icon: 'success',
+                                    timer: 1500,
+                                    showConfirmButton: false,
+                                    customClass: { popup: 'premium-swal' }
+                                }).then(() => {
+                                    // reload with manual mode and NO scenario_id to see current clean state
+                                    window.location.href = window.location.pathname + "?plan_mode=manual&proyectos=" + encodeURIComponent(projVal);
+                                });
+                            }
+                        } catch (e) { console.error(e); }
+                    }
                 });
             }
 

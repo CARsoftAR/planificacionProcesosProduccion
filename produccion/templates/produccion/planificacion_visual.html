@@ -178,11 +178,17 @@
             display: flex;
             flex-direction: column;
             overflow: hidden;
-            height: 90vh;
+            height: 86vh;
             margin: 10px;
             border-radius: 12px;
             border: 1px solid var(--border);
             background: var(--bg-deep);
+            transition: all 0.3s ease;
+        }
+
+        .gantt-container.gantt-expanded {
+            height: 93vh;
+            margin-top: 5px;
         }
 
         .gantt-header {
@@ -263,22 +269,73 @@
             justify-content: center;
             font-size: 0.7rem;
             color: var(--text-muted);
+            transition: background-color 0.2s;
         }
 
         .time-hour.day-start {
-            border-left: 2px solid var(--accent);
-            background: rgba(59, 130, 246, 0.1);
+            background: rgba(59, 130, 246, 0.03);
         }
 
-        /* Task Bars */
+        /* Day Gap Separator Styles */
+        .day-gap-separator {
+            width: 10px;
+            flex-shrink: 0;
+            background-color: #f1f5f9; /* Slate 100 */
+            background-image: repeating-linear-gradient(
+                45deg,
+                transparent,
+                transparent 5px,
+                rgba(0, 0, 0, 0.05) 5px,
+                rgba(0, 0, 0, 0.05) 10px
+            );
+            border-left: 1px solid var(--border);
+            border-right: 1px solid var(--border);
+            height: 100%;
+        }
+
+        [data-theme="dark"] .day-gap-separator {
+            background-color: #1e293b; /* Slate 800 */
+            background-image: repeating-linear-gradient(
+                45deg,
+                transparent,
+                transparent 5px,
+                rgba(255, 255, 255, 0.05) 5px,
+                rgba(255, 255, 255, 0.05) 10px
+            );
+            border-left: 1px solid #334155;
+            border-right: 1px solid #334155;
+        }
+
+
+        /* Task Bars background and Grid */
         .task-row {
             height: 80px;
             border-bottom: 1px solid var(--border);
             position: relative;
             background-color: var(--bg-row);
-            background-image: 
-                linear-gradient(to right, var(--border) 1px, transparent 1px);
-            background-size: 40px 80px;
+            display: flex;
+        }
+
+        .grid-bg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            display: flex;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        .grid-cell {
+            width: 40px;
+            height: 100%;
+            flex-shrink: 0;
+            border-right: 1px solid var(--border);
+        }
+
+        /* Highlight current day column if needed */
+        .grid-cell.current-day-col {
+            background: rgba(59, 130, 246, 0.05);
         }
         
         /* =========================================
@@ -366,7 +423,7 @@
             }
         }
 
-        .task-block.critical-task {
+        body.show-cp .task-block.critical-task {
             border-top: 2px solid #ef4444 !important;
             border-right: 1px solid rgba(239,68,68,0.4) !important;
             border-bottom: 1px solid rgba(239,68,68,0.4) !important;
@@ -385,6 +442,7 @@
            Requiere overflow:visible en .task-block.
         ========================================= */
         .critical-badge {
+            display: none;
             position: absolute;
             top: -11px;          /* Flota 50% por encima de la card */
             right: 8px;
@@ -401,6 +459,9 @@
             text-transform: uppercase;
             line-height: 1.5;
             pointer-events: none;
+        }
+        body.show-cp .critical-badge {
+            display: flex;
         }
 
         .delay-badge {
@@ -451,7 +512,7 @@
         .cp-legend-btn {
             position: fixed;
             bottom: 24px;
-            right: 24px;
+            right: 100px; /* Movido a la izquierda para no tapar el Chat */
             z-index: 999;
             background: linear-gradient(135deg, #ef4444, #f97316);
             color: white;
@@ -833,7 +894,7 @@
         }
     </style>
 </head>
-<body>
+<body class="show-cp">
     <div class="container-fluid p-0">
         <div class="top-bar d-flex justify-content-between align-items-center">
             <div class="d-flex align-items-center">
@@ -851,13 +912,13 @@
                  <!-- 1. Mode Group -->
                  <div class="bg-light p-1 rounded-pill border d-flex me-2">
                      <a href="#" id="toggleOriginalMode"
-                        class="btn-modern rounded-pill px-3 py-1 {% if request.GET.plan_mode == 'original' %}btn-primary-modern shadow-sm{% else %}text-muted{% endif %}"
+                        class="btn-modern rounded-pill px-3 py-1 {% if plan_mode == 'original' %}btn-primary-modern shadow-sm{% else %}text-muted{% endif %}"
                         style="font-size: 0.8rem; height: 32px;"
                         title="Automático: Datos SQL">
                          <i class="fas fa-magic"></i> Auto
                      </a>
                      <a href="#" id="toggleManualMode"
-                        class="btn-modern rounded-pill px-3 py-1 {% if request.GET.plan_mode != 'original' %}btn-primary-modern shadow-sm{% else %}text-muted{% endif %}"
+                        class="btn-modern rounded-pill px-3 py-1 {% if plan_mode != 'original' %}btn-primary-modern shadow-sm{% else %}text-muted{% endif %}"
                         style="font-size: 0.8rem; height: 32px;"
                         title="Manual: Ajustes manuales">
                          <i class="fas fa-hand-pointer"></i> Manual
@@ -919,6 +980,80 @@
                   <a href="{% url 'planificacion_view' %}?{{ request.GET.urlencode }}" class="btn-modern bg-white rounded-pill border shadow-sm px-3" style="height: 34px; color: #64748b;" title="Volver">
                      <i class="fas fa-chevron-left"></i>
                   </a>
+            </div>
+        </div>
+
+        <!-- Toolbar oculta por solicitud del usuario (Se mantienen inputs para compatibilidad JS) -->
+        <div class="d-none">
+            <input type="hidden" name="proyectos" id="proyectos" value="{{ proyectos_value|default:'' }}">
+            <select id="scenario-selector" name="scenario_id" class="d-none">
+                <option value="{{ active_scenario.id|default:'' }}" selected>{{ active_scenario.nombre|default:'' }}</option>
+            </select>
+            <input type="hidden" name="plan_mode" id="plan_mode_hidden" value="{{ plan_mode|default:'manual' }}">
+        </div>
+
+
+        <!-- Modal Guardar Escenario -->
+        <div class="modal fade" id="saveScenarioModal" tabindex="-1" aria-labelledby="saveScenarioModalLabel" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content rounded-4 shadow border-0 overflow-hidden">
+                    <div class="modal-header bg-success text-white py-3 border-0">
+                        <h5 class="modal-title fw-bold" id="saveScenarioModalLabel">
+                            <i class="fas fa-save me-2"></i>Guardar Escenario
+                        </h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body p-4">
+                        <div class="mb-4">
+                            <label class="form-label fw-bold text-muted small text-uppercase mb-3">Opciones de Guardado</label>
+                            <div class="form-check p-3 mb-2 rounded-3 border transition-all hover-bg-light" id="opt-new-container" style="cursor: pointer;">
+                                <input class="form-check-input" type="radio" name="saveOption" id="radioNew" value="new" checked>
+                                <label class="form-check-label w-100" for="radioNew" style="cursor: pointer;">
+                                    <div class="fw-bold text-dark"><i class="fas fa-plus-circle me-1 text-primary"></i>Crear uno nuevo</div>
+                                    <div class="smaller text-muted">Guarda una captura de los movimientos actuales con un nuevo nombre.</div>
+                                </label>
+                            </div>
+                            <div class="form-check p-3 rounded-3 border transition-all hover-bg-light" id="opt-existing-container" style="cursor: pointer;">
+                                <input class="form-check-input" type="radio" name="saveOption" id="radioExisting" value="existing">
+                                <label class="form-check-label w-100" for="radioExisting" style="cursor: pointer;">
+                                    <div class="fw-bold text-dark"><i class="fas fa-edit me-1 text-warning"></i>Sobrescribir existente</div>
+                                    <div class="smaller text-muted">Aplica los cambios actuales sobre un escenario ya guardado.</div>
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <div id="divNewScenario">
+                            <div class="mb-3">
+                                <label for="newScenarioName" class="form-label fw-bold small">Nombre del nuevo escenario:</label>
+                                <input type="text" class="form-control rounded-3" id="newScenarioName" placeholder="Ej: Plan Alternativo B">
+                            </div>
+                        </div>
+                        
+                        <div id="divExistingScenario" style="display: none;">
+                            <div class="mb-3">
+                                <label for="existingScenarioSelect" class="form-label fw-bold small">Seleccionar escenario:</label>
+                                <select class="form-select rounded-3" id="existingScenarioSelect">
+                                    <option value="">-- Seleccionar --</option>
+                                    {% for scenario in all_scenarios %}
+                                        {% if not scenario.es_principal %}
+                                            <option value="{{ scenario.id }}">{{ scenario.nombre }}</option>
+                                        {% endif %}
+                                    {% endfor %}
+                                </select>
+                                <div class="mt-2 p-2 bg-danger bg-opacity-10 text-danger rounded-3 smaller">
+                                    <i class="fas fa-exclamation-triangle me-1"></i>
+                                    Atención: Se perderán los movimientos previos del escenario seleccionado.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer bg-light border-0 py-3">
+                        <button type="button" class="btn btn-outline-secondary rounded-pill px-4" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="button" class="btn btn-success rounded-pill px-4 fw-bold" id="btnConfirmSave">
+                            <i class="fas fa-check me-1"></i>Confirmar Guardado
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -1474,23 +1609,26 @@
         </div>
     </div>
 
-        <div class="gantt-container">
+        <div class="gantt-container {% if plan_mode == 'original' %}gantt-expanded{% endif %}">
             <!-- Header Row -->
             <div class="d-flex">
                 <div class="machine-column">
                     <div class="machine-header-cell border-end border-secondary border-opacity-25">MÁQUINA</div>
                 </div>
                 <div class="gantt-body" id="header-container" style="overflow: hidden; border-bottom: 1px solid var(--border);"> 
-                    <div class="time-header-row">
-                        {% for hour in time_columns %}
-                        <div class="time-hour {% ifchanged hour.date %}day-start{% endifchanged %}" style="position: relative;">
-                            {% ifchanged hour.date %}
-                            <div style="position: absolute; top: 4px; left: 6px; font-size: 0.6rem; font-weight: 800; color: var(--accent); white-space: nowrap; text-transform: uppercase;">
-                                {{ hour|date:"d M" }} <span class="opacity-50">• {{ hour|date:"D" }}</span>
+                    <div class="time-header-row" style="width: {{ total_width }}px;">
+                        {% for col in time_columns %}
+                            {% if col.is_day_start and not forloop.first %}
+                                <div class="day-gap-separator"></div>
+                            {% endif %}
+                            <div class="time-hour {% if col.is_day_start %}day-start{% endif %}" style="position: relative;">
+                                {% if col.is_day_start %}
+                                <div style="position: absolute; top: 4px; left: 6px; font-size: 0.6rem; font-weight: 800; color: var(--accent); white-space: nowrap; text-transform: uppercase;">
+                                    {{ col.datetime|date:"d M" }} <span class="opacity-50">• {{ col.datetime|date:"D" }}</span>
+                                </div>
+                                {% endif %}
+                                <span style="margin-top: 14px; font-weight: 500;">{{ col.datetime|date:"H" }}</span>
                             </div>
-                            {% endifchanged %}
-                            <span style="margin-top: 14px; font-weight: 500;">{{ hour|date:"H" }}</span>
-                        </div>
                         {% endfor %}
                     </div>
                 </div>
@@ -1516,8 +1654,19 @@
                     <!-- Task Rows -->
                     {% for row in timeline_data %}
                     <div class="task-row" 
-                         style="width: {{ time_columns|length|multiply:40 }}px;"
+                         style="width: {{ total_width }}px;"
                          data-machine-id="{{ row.machine.id_maquina }}">
+                        
+                        <!-- Background Grid -->
+                        <div class="grid-bg">
+                            {% for col in time_columns %}
+                                {% if col.is_day_start and not forloop.first %}
+                                    <div class="day-gap-separator"></div>
+                                {% endif %}
+                                <div class="grid-cell {% if col.is_day_start %}day-start{% endif %}"></div>
+                            {% endfor %}
+                        </div>
+
                         <!-- Task blocks -->
                         {% for task in row.tasks %}
                             {% with proj_color=task.ProyectoCode|string_to_color %}
@@ -1739,27 +1888,16 @@
 
     function toggleCriticalPath() {
         cpVisible = !cpVisible;
+        const body = document.body;
         const btn = document.getElementById('cpToggleBtn');
         const btnText = document.getElementById('cpBtnText');
-        const allTasks = document.querySelectorAll('.task-block');
-        const criticalTasks = document.querySelectorAll('.task-block.critical-task');
 
         if (!cpVisible) {
-            // Dim all non-critical tasks
-            allTasks.forEach(t => {
-                if (!t.classList.contains('critical-task')) {
-                    t.style.opacity = '0.3';
-                    t.style.filter = 'grayscale(80%)';
-                }
-            });
+            body.classList.remove('show-cp');
             btn.classList.add('dimmed');
-            btnText.textContent = 'Mostrar Todo';
+            btnText.textContent = 'Mostrar Ruta Crítica';
         } else {
-            // Restore all
-            allTasks.forEach(t => {
-                t.style.opacity = '';
-                t.style.filter = '';
-            });
+            body.classList.add('show-cp');
             btn.classList.remove('dimmed');
             btnText.textContent = 'Ruta Crítica';
         }
@@ -1870,9 +2008,18 @@
                     const mouseY = event.client.y;
                     
                     // Reset Visuals
-                    taskEl.style.transform = 'none'; 
-                    taskEl.setAttribute('data-x', 0);
-                    taskEl.setAttribute('data-y', 0);
+                    // NOTA: El reset del transform se movió al final o se maneja en ondrop 
+                    // para evitar saltos antes de calcular la posición final.
+                    
+                    // Reset Visuals Solo si NO terminó en un dropzone (el ondrop se encarga si fue exitoso)
+                    // Si el mouse se soltó fuera de los límites, reseteamos.
+                    const timelineContainer_reset = document.querySelector('.timeline-area');
+                    const tlRect = timelineContainer_reset.getBoundingClientRect();
+                    if (mouseX < tlRect.left || mouseX > tlRect.right || mouseY < tlRect.top || mouseY > tlRect.bottom) {
+                        taskEl.style.transform = 'none'; 
+                        taskEl.setAttribute('data-x', 0);
+                        taskEl.setAttribute('data-y', 0);
+                    }
 
                     // --- GEOMETRIC DROP DETECTION (MATH > DOM) ---
                     // Reliable approach: Calculate which row index we are hovering based on Y position
@@ -1989,52 +2136,50 @@
                 },
                 ondragleave: function (event) {
                     event.target.classList.remove('drop-target');
-                    event.relatedTarget.classList.remove('can-drop');
-                    console.log("<<< LEAVE DROPZONE");
+                    if (event.relatedTarget) event.relatedTarget.classList.remove('can-drop');
                 },
-            ondrop: function (event) {
-                // IMMEDIATE FEEDBACK
-                console.log("EVENTO ONDROP DISPARADO");
+                ondrop: function (event) {
+                console.log("EVENTO ONDROP DISPARADO - Iniciando persistencia...");
                 
                 try {
                     const taskEl = event.relatedTarget;
                     let rowEl = event.target;
+                    const oldRowEl = taskEl.closest('.task-row');
                     
-                    // INTENTAR RECUPERAR FILA SI EL DROP CAYO EN UN HIJO O CONTENEDOR
                     if (!rowEl.classList.contains('task-row')) {
                         rowEl = rowEl.closest('.task-row');
                     }
                     
-                    if (!taskEl) {
-                        console.error("No dragged element found"); 
-                        return;
-                    }
-
-                    if (!rowEl) {
-                        Swal.fire({
-                            title: 'Error de Destino',
-                            text: 'No se detectó la máquina destino. Intenta soltar justo en el centro de la fila.',
-                            icon: 'warning',
-                            customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
-                        });
+                    if (!taskEl || !rowEl) {
+                        console.error("Drop fallido: Elementos no encontrados");
                         return;
                     }
 
                     const targetMachineId = rowEl.dataset.machineId;
                     const taskId = taskEl.dataset.taskId;
                     
-                    if (!targetMachineId) {
-                         Swal.fire('Error Crítico', 'Fila sin ID de máquina.', 'error');
-                         return;
-                    }
-
-                    // --- Calculate Date ---
+                    // --- Cálculo de Posición y Tiempo (REFORMULADO) ---
                     const timelineContainer = document.querySelector('.timeline-area');
                     const containerRect = timelineContainer.getBoundingClientRect();
-                    const taskRect = taskEl.getBoundingClientRect();
                     
-                    // Simple pixel offset from container left
-                    const pixelsFromStart = (taskRect.left - containerRect.left) + timelineContainer.scrollLeft;
+                    // Usamos el puntero del mouse del evento de drag para mayor precisión
+                    const dragEvent = event.dragEvent;
+                    const pointerX = dragEvent.clientX;
+                    
+                    // Calculamos el offset horizontal real desde el inicio del timeline
+                    // Restamos el inicio del contenedor y sumamos el scroll
+                    let pixelsFromStart = (pointerX - containerRect.left) + timelineContainer.scrollLeft;
+                    
+                    // Ajuste: si el usuario agarró la tarea por el medio, compensamos un poco
+                    // aunque lo ideal es que el inicio de la tarea sea lo que mande.
+                    // Para simplificar, usamos una estimación o el offset relativo si existiera.
+                    
+                    // Snapping (Magnetic Mode)
+                    if (typeof magneticMode !== 'undefined' && magneticMode) {
+                        const step = 40; // 1 hora = 40px
+                        pixelsFromStart = Math.round(pixelsFromStart / step) * step;
+                    }
+                    
                     let hoursOffset = pixelsFromStart / 40.0;
                     if (hoursOffset < 0) hoursOffset = 0;
                     
@@ -2045,19 +2190,28 @@
                     const localDate = new Date(baseDate.getTime() - offsetMs);
                     const manualStartStr = localDate.toISOString().replace('T', ' ').substring(0, 19);
                     
-                    // --- Priority Logic ---
                     const newPriority = 5000 + (hoursOffset * 10); 
 
-                    // Show Activity Indicator
+                    // --- FEEDBACK VISUAL INMEDIATO (Estado Traslúcido) ---
                     taskEl.style.opacity = '0.5';
                     taskEl.style.cursor = 'wait';
-                    
+                    taskEl.classList.add('moving-persist'); // Clase para indicar proceso
+
+                    // Mover el elemento físicamente al nuevo contenedor de fila para que no "vuelva" al origen visualmente
+                    if (rowEl !== oldRowEl) {
+                        // Conservamos el offset relativo al contenedor para que no de un salto
+                        const relativeLeft = taskRect.left - containerRect.left + timelineContainer.scrollLeft;
+                        rowEl.appendChild(taskEl);
+                        taskEl.style.left = relativeLeft + 'px';
+                        console.log(`Movido físicamente a máquina: ${targetMachineId}`);
+                    }
+
                     const payload = {
                         maquina: targetMachineId,
                         new_priority: newPriority,
-                        manual_start: manualStartStr
+                        manual_start: manualStartStr,
+                        scenario_id: ACTIVE_SCENARIO_ID
                     };
-                    console.log("PAYLOAD:", payload);
                     
                     fetch(`/api/set_priority/${taskId}/`, {
                         method: 'POST',
@@ -2065,49 +2219,78 @@
                             'Content-Type': 'application/json',
                             'X-CSRFToken': '{{ csrf_token }}'
                         },
-                        body: JSON.stringify({
-                            ...payload,
-                            scenario_id: ACTIVE_SCENARIO_ID
-                        })
+                        body: JSON.stringify(payload)
                     })
                     .then(response => {
-                        if (!response.ok) throw new Error("Server Error: " + response.statusText);
+                        if (!response.ok) throw new Error("Error del servidor: " + response.statusText);
                         return response.json();
                     })
                     .then(data => {
-                        taskEl.style.opacity = '1';
-                        taskEl.style.cursor = 'pointer';
-                        
                         if (data.status === 'ok') {
-                            // Visual Success Feedback
-                            taskEl.style.border = "3px solid #00ff00";
-                            taskEl.style.boxShadow = "0 0 15px #00ff00";
+                            // --- ÉXITO: RECUPERAR OPACIDAD Y FIJAR ---
+                            taskEl.style.opacity = '1';
+                            taskEl.style.cursor = 'pointer';
+                            taskEl.style.transform = 'none'; // Importante resetear transform tras mover físicamente
+                            taskEl.setAttribute('data-x', 0);
+                            taskEl.setAttribute('data-y', 0);
                             
-                            // FORCE RELOAD
+                            taskEl.style.border = "2px solid #10b981"; // Verde éxito temporal
+                            taskEl.style.boxShadow = "0 0 10px rgba(16, 185, 129, 0.4)";
+                            taskEl.classList.remove('moving-persist');
+                            
+                            // Si el servidor devolvió metadatos útiles podrías actualizarlos aquí
+                            console.log(`Persistencia exitosa para OP ${taskId}`);
+                            
+                            // Mostrar un pequeño toast no intrusivo si se prefiere
+                            const Toast = Swal.mixin({
+                                toast: true,
+                                position: 'top-end',
+                                showConfirmButton: false,
+                                timer: 2000,
+                                timerProgressBar: true
+                            });
+                            Toast.fire({
+                                icon: 'success',
+                                title: 'Reprogramación guardada'
+                            });
+                            
+                            // Quitamos el borde de éxito tras 2 segundos
                             setTimeout(() => {
-                                console.log("RELOADING...");
-                                window.location.reload(); 
-                            }, 200);
+                                taskEl.style.border = "";
+                                taskEl.style.boxShadow = "";
+                            }, 2000);
+
                         } else {
-                            alert('⚠️ SERVER ERROR: ' + (data.error || 'Unknown'));
+                            throw new Error(data.error || "Error desconocido");
                         }
                     })
                     .catch(err => {
+                        // --- ERROR: VOLVER AL ORIGEN ---
+                        console.error("Falla en persistencia:", err);
+                        
+                        Swal.fire({
+                            title: 'Error al reprogramar',
+                            text: 'No se pudo guardar el cambio en el servidor. La tarea volverá a su posición original.',
+                            icon: 'error',
+                            confirmButtonText: 'Entendido',
+                            customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                        }).then(() => {
+                            // Recarga forzosa para limpiar estado inconsistente si falla
+                            window.location.reload();
+                        });
+                        
                         taskEl.style.opacity = '1';
-                        alert('❌ ERROR RED/GUARDADO: ' + err.message);
+                        taskEl.style.cursor = 'pointer';
                     });
                     
                 } catch (e) {
-                    alert("CLIENT ERROR EXCEPTION: " + e.message);
-                    console.error(e);
+                    console.error("Excepción en ondrop:", e);
+                    window.location.reload();
                 }
                 
-                // Cleanup classes
-                try {
-                    event.target.classList.remove('drop-active');
-                    event.target.classList.remove('drop-target');
-                    if (event.relatedTarget) event.relatedTarget.classList.remove('can-drop');
-                } catch(e) {}
+                // Limpieza de clases de interact
+                event.target.classList.remove('drop-active', 'drop-target');
+                if (event.relatedTarget) event.relatedTarget.classList.remove('can-drop');
             },
 
             ondropdeactivate: function (event) {
@@ -2115,6 +2298,7 @@
                 event.target.classList.remove('drop-target');
             }
         });
+        
         
         // --- DEPENDENCY VISUALIZATION & LINKING ---
         // Dependency Data injected from View
@@ -2502,10 +2686,13 @@
             });
         });
         
-        // --- Lógica de Portal Tooltip Global ---
-        const globalTooltip = document.createElement('div');
-        globalTooltip.id = 'global-tooltip';
-        document.body.appendChild(globalTooltip);
+        // --- Lógica de Portal Tooltip Global (Delegada para máxima robustez) ---
+        if (!document.getElementById('global-tooltip')) {
+            const gt = document.createElement('div');
+            gt.id = 'global-tooltip';
+            document.body.appendChild(gt);
+        }
+        const globalTooltip = document.getElementById('global-tooltip');
 
         function showGlobalTooltip(taskBlock, e) {
             const template = taskBlock.querySelector('.task-tooltip');
@@ -2551,10 +2738,35 @@
             globalTooltip.style.opacity = '0';
         }
 
-        document.querySelectorAll('.task-block').forEach(block => {
-            block.addEventListener('mouseenter', (e) => showGlobalTooltip(block, e));
-            block.addEventListener('mousemove', (e) => positionGlobalTooltip(e));
-            block.addEventListener('mouseleave', () => hideGlobalTooltip());
+        // Delegación Global de Eventos para Tooltip
+        document.addEventListener('mouseover', function(e) {
+            const block = e.target.closest('.task-block');
+            if (block) {
+                // Lógica de Flip (Smart Positioning)
+                const rect = block.getBoundingClientRect();
+                const tooltipWidth = 350;
+                const spaceRight = window.innerWidth - rect.right;
+                if (spaceRight < tooltipWidth) {
+                    block.classList.add('tooltip-flip');
+                } else {
+                    block.classList.remove('tooltip-flip');
+                }
+                
+                showGlobalTooltip(block, e);
+            }
+        });
+
+        document.addEventListener('mousemove', function(e) {
+            if (globalTooltip.style.display === 'block') {
+                positionGlobalTooltip(e);
+            }
+        });
+
+        document.addEventListener('mouseout', function(e) {
+            const block = e.target.closest('.task-block');
+            if (block && (!e.relatedTarget || !block.contains(e.relatedTarget))) {
+                hideGlobalTooltip();
+            }
         });
     });
     
@@ -3180,7 +3392,12 @@
             // Url updating functionality for the new layout buttons
             function updateUrlParam(key, value) {
                 const url = new URL(window.location.href);
-                if (value === null) {
+                if (key === 'plan_mode' && value === 'manual') {
+                    url.searchParams.set('plan_mode', 'manual');
+                    // When explicitly switching to manual, the user wants "Current State", 
+                    // so we clear scenario_id to avoid "auto-loading" an old saved one.
+                    url.searchParams.delete('scenario_id');
+                } else if (value === null) {
                     url.searchParams.delete(key);
                 } else {
                     url.searchParams.set(key, value);
@@ -3194,6 +3411,213 @@
 
             const toggleManualMode = document.getElementById('toggleManualMode');
             if (toggleManualMode) toggleManualMode.addEventListener('click', (e) => { e.preventDefault(); updateUrlParam('plan_mode', 'manual'); });
+
+            // --- SCENARIO MANAGEMENT LOGIC ---
+            const scenarioSelector = document.getElementById('scenario-selector');
+            if (scenarioSelector) {
+                scenarioSelector.addEventListener('change', function() {
+                    const selectedOption = this.options[this.selectedIndex];
+                    const proyectosInput = document.getElementById('proyectos');
+                    
+                    // If a scenario is selected (not the placeholder), update projects input
+                    if (this.value && proyectosInput) {
+                        const scenarioProyectos = selectedOption.dataset.proyectos || '';
+                        proyectosInput.value = scenarioProyectos;
+                    }
+                    
+                    // this.form.submit(); // Fix: Form is removed
+                });
+            }
+
+            // Publish Scenario
+            const btnPublishScenario = document.getElementById('btnPublishScenario');
+            if (btnPublishScenario) {
+                btnPublishScenario.addEventListener('click', async () => {
+                    const sel = document.getElementById('scenario-selector');
+                    const id = sel.value;
+                    if (!id) return alert("Seleccione un escenario primero.");
+                    
+                    const result = await Swal.fire({
+                        title: '¿Publicar Escenario?',
+                        text: "Este escenario se convertirá en el Plan Oficial.",
+                        icon: 'question',
+                        showCancelButton: true,
+                        confirmButtonText: 'Sí, Publicar',
+                        customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                    });
+                    
+                    if (result.isConfirmed) {
+                        try {
+                            const resp = await fetch(`/api/scenarios/${id}/publish/`, { 
+                                method: 'POST',
+                                headers: { 'X-CSRFToken': '{{ csrf_token }}' }
+                            });
+                            if (resp.ok) window.location.reload();
+                            else alert("Error al publicar");
+                        } catch(e) { console.error(e); }
+                    }
+                });
+            }
+
+            // Delete Scenario
+            const btnDeleteScenario = document.getElementById('btnDeleteScenario');
+            if (btnDeleteScenario) {
+                btnDeleteScenario.addEventListener('click', async () => {
+                    const sel = document.getElementById('scenario-selector');
+                    const id = sel.value;
+                    if (!id) return alert("Seleccione un escenario primero.");
+                    
+                    const opt = sel.options[sel.selectedIndex];
+                    if (opt.dataset.principal === '1') {
+                        return alert("No se puede eliminar el escenario principal.");
+                    }
+
+                    const result = await Swal.fire({
+                        title: '¿Eliminar Escenario?',
+                        text: "Esta acción no se puede deshacer.",
+                        icon: 'warning',
+                        showCancelButton: true,
+                        confirmButtonText: 'Sí, eliminar',
+                        confirmButtonColor: '#d33',
+                        customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                    });
+                    
+                    if (result.isConfirmed) {
+                        try {
+                            const resp = await fetch(`/api/scenarios/${id}/delete/`, { 
+                                method: 'POST',
+                                headers: { 'X-CSRFToken': '{{ csrf_token }}' }
+                            });
+                            if (resp.ok) window.location.href = window.location.pathname;
+                            else alert("Error al eliminar");
+                        } catch(e) { console.error(e); }
+                    }
+                });
+            }
+
+            // Reset ERP button
+            const btnResetToERP = document.getElementById('btnResetToERP');
+            if (btnResetToERP) {
+                btnResetToERP.addEventListener('click', async function() {
+                    const result = await Swal.fire({
+                        title: '¿Restablecer al Plan ERP?',
+                        text: "Se borrarán todos los ajustes manuales de este escenario y se volverá a las prioridades originales.",
+                        icon: 'warning',
+                        showCancelButton: true,
+                        confirmButtonText: 'Sí, Restablecer',
+                        cancelButtonText: 'Cancelar',
+                        confirmButtonColor: '#fbbf24',
+                        customClass: {
+                            popup: 'premium-swal',
+                            confirmButton: 'premium-confirm',
+                            cancelButton: 'premium-cancel'
+                        }
+                    });
+
+                    if (result.isConfirmed) {
+                        try {
+                            const proyectosInput = document.getElementById('proyectos');
+                            const projVal = proyectosInput ? proyectosInput.value : '';
+                            const scenarioId = document.getElementById('scenario-selector').value;
+
+                            const response = await fetch('/api/reset_planning/', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'X-CSRFToken': '{{ csrf_token }}'
+                                },
+                                body: JSON.stringify({ 
+                                    scenario_id: scenarioId,
+                                    proyectos: projVal
+                                })
+                            });
+                            
+                            if (response.ok) {
+                                Swal.fire({
+                                    title: '¡Restablecido!',
+                                    icon: 'success',
+                                    timer: 1500,
+                                    showConfirmButton: false,
+                                    customClass: { popup: 'premium-swal' }
+                                }).then(() => window.location.reload());
+                            }
+                        } catch (e) { console.error(e); }
+                    }
+                });
+            }
+
+            // Save Scenario Modal
+            const saveScenarioModalEl = document.getElementById('saveScenarioModal');
+            if (saveScenarioModalEl) {
+                const saveScenarioModal = new bootstrap.Modal(saveScenarioModalEl);
+                const radioNew = document.getElementById('radioNew');
+                const radioExisting = document.getElementById('radioExisting');
+                const divNewScenario = document.getElementById('divNewScenario');
+                const divExistingScenario = document.getElementById('divExistingScenario');
+                const btnConfirmSave = document.getElementById('btnConfirmSave');
+
+                if (radioNew && radioExisting) {
+                    radioNew.addEventListener('change', () => {
+                        divNewScenario.style.display = 'block';
+                        divExistingScenario.style.display = 'none';
+                    });
+                    document.getElementById('opt-new-container').onclick = () => { radioNew.click(); };
+                    
+                    radioExisting.addEventListener('change', () => {
+                        divNewScenario.style.display = 'none';
+                        divExistingScenario.style.display = 'block';
+                    });
+                    document.getElementById('opt-existing-container').onclick = () => { radioExisting.click(); };
+                }
+
+                const btnSaveScenarioMain = document.getElementById('btnSaveScenario');
+                if (btnSaveScenarioMain) {
+                    btnSaveScenarioMain.addEventListener('click', () => {
+                        saveScenarioModal.show();
+                    });
+                }
+
+                if (btnConfirmSave) {
+                    btnConfirmSave.addEventListener('click', async function() {
+                        const isNew = radioNew.checked;
+                        const activeScenarioId = ACTIVE_SCENARIO_ID;
+                        const proyectosInput = document.getElementById('proyectos');
+                        const proyectosList = proyectosInput ? proyectosInput.value.trim() : '';
+
+                        let payload = {
+                            proyectos: proyectosList,
+                            is_new: isNew,
+                            base_scenario_id: activeScenarioId
+                        };
+
+                        if (isNew) {
+                            payload.nombre = document.getElementById('newScenarioName').value.trim();
+                            if (!payload.nombre) return alert("Ingrese un nombre para el escenario");
+                        } else {
+                            payload.existing_id = document.getElementById('existingScenarioSelect').value;
+                            if (!payload.existing_id) return alert("Seleccione el escenario a sobrescribir");
+                        }
+
+                        try {
+                            const resp = await fetch('/api/save_scenario/', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'X-CSRFToken': '{{ csrf_token }}'
+                                },
+                                body: JSON.stringify(payload)
+                            });
+                            if (resp.ok) {
+                                const data = await resp.json();
+                                window.location.href = window.location.pathname + "?scenario_id=" + data.scenario.id + "&plan_mode=manual&run=1";
+                            } else {
+                                const data = await resp.json();
+                                alert("Error: " + data.error);
+                            }
+                        } catch (e) { console.error(e); }
+                    });
+                }
+            }
 
             // AI SUGGESTION LOGIC
             const btnRequestAi = document.getElementById('btn-request-ai');
@@ -3309,21 +3733,7 @@
         
         window.addEventListener('resize', window.drawDependencies);
 
-        // --- TOOLTIP SMART POSITIONING ---
-        document.addEventListener('mouseover', function(e) {
-            const block = e.target.closest('.task-block');
-            if (block) {
-                const rect = block.getBoundingClientRect();
-                const tooltipWidth = 350; // Margen para el tooltip de 330px
-                const spaceRight = window.innerWidth - rect.right;
-                
-                if (spaceRight < tooltipWidth) {
-                    block.classList.add('tooltip-flip');
-                } else {
-                    block.classList.remove('tooltip-flip');
-                }
-            }
-        });
+        // --- Tooltip logic migrated to main initialization block ---
     </script>
 
 </html>

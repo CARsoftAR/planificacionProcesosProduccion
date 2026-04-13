@@ -73,9 +73,23 @@ def get_active_scenario(request, scenario_id=None):
     """
     Helper to resolve the active scenario from URL, session, or POST body.
     """
-    if not scenario_id:
-        scenario_id = request.GET.get('scenario_id')
+    url_scenario_id = request.GET.get('scenario_id')
     
+    # If explicitly empty in URL, it means the user selected "Current State"
+    if url_scenario_id == "":
+        request.session['last_scenario_id'] = None
+        scenario_id = None
+    elif url_scenario_id:
+        scenario_id = url_scenario_id
+    
+    # Check if we are switching to manual mode without a scenario in URL
+    plan_mode = request.GET.get('plan_mode')
+    if plan_mode == 'manual' and url_scenario_id is None:
+        # If the user goes to manual but doesn't specify a scenario, 
+        # assume they want to "leave" the current simulation scenario and see the Official state.
+        request.session['last_scenario_id'] = None
+        scenario_id = None
+
     if not scenario_id and request.method == 'POST':
         try:
             body = json.loads(request.body)
@@ -91,10 +105,13 @@ def get_active_scenario(request, scenario_id=None):
         active_scenario = Scenario.objects.using('default').filter(id=scenario_id).first()
         
     if not active_scenario:
+        # Fallback to Principal (Official)
         active_scenario = Scenario.objects.using('default').filter(es_principal=True).first()
         
     if active_scenario:
         request.session['last_scenario_id'] = str(active_scenario.id)
+    else:
+        request.session['last_scenario_id'] = None
         
     return active_scenario
 
@@ -382,7 +399,7 @@ def planificacion_list(request):
         if plan_mode:
             request.session['last_plan_mode'] = plan_mode
         else:
-            plan_mode = request.session.get('last_plan_mode', 'manual')
+            plan_mode = request.session.get('last_plan_mode', 'original')
 
 
         # Fetch Local Priorities filtered by Scenario
@@ -421,6 +438,13 @@ def planificacion_list(request):
         # We start with a BASELINE PROIRITY based on the initial SQL sort order (Index).
         # This prevents "unmoved" items (Priority 0) from being jumped over by a moved item (Priority 1500).
         for idx, item in enumerate(data):
+            # Normalizar ID de orden para que coincida con overrides
+            try:
+                t_id_val = int(float(item.get('Idorden')))
+                item['Idorden'] = t_id_val # Actualizar en el item
+            except:
+                t_id_val = 0
+
             # Update Machine Name based on Local Config if active
             native_code = str(item.get('Idmaquina', '')).strip()
             
@@ -657,7 +681,14 @@ def move_task(request):
 
         from django.db import transaction
         with transaction.atomic(using="default"):
-            old_entry = PrioridadManual.objects.using("default").filter(id_orden=id_orden, scenario=active_scenario).first()
+            # Normalizar ID (SQL vs Django)
+            try:
+                id_orden_clean = int(float(id_orden))
+            except:
+                id_orden_clean = id_orden
+
+            # Fetch existing to preserve attributes
+            old_entry = PrioridadManual.objects.using("default").filter(id_orden=id_orden_clean, scenario=active_scenario).first()
             
             existing_data = {
                 "tiempo_manual": old_entry.tiempo_manual if old_entry else None,
@@ -666,15 +697,19 @@ def move_task(request):
                 "porcentaje_solapamiento": old_entry.porcentaje_solapamiento if old_entry else 0.0
             }
             
-            PrioridadManual.objects.using("default").filter(id_orden=id_orden, scenario=active_scenario).delete()
+            # Clean up all assignments for this OP in this scenario
+            PrioridadManual.objects.using("default").filter(id_orden=id_orden_clean, scenario=active_scenario).delete()
             
             PrioridadManual.objects.using("default").create(
-                id_orden=id_orden,
+                id_orden=id_orden_clean,
                 maquina=target_machine_id,
                 prioridad=new_priority,
                 scenario=active_scenario,
                 **existing_data
             )
+            
+            # CRITICAL UX: Force manual mode in session so the user SEES the change
+            request.session['last_plan_mode'] = 'manual'
             
         return JsonResponse({"status": "ok"})
     except Exception as e:
@@ -732,9 +767,14 @@ def set_priority(request, id_orden):
 
         from django.db import transaction
         with transaction.atomic(using='default'):
+            # Normalizar ID para asegurar match con DB (SQL vs Django types)
+            try:
+                id_orden_clean = int(float(id_orden))
+            except:
+                id_orden_clean = id_orden
+                
             # Fetch existing to preserve ALL other manual overrides
-            # Use filter to get whatever entry exists for this OP in this scenario, regardless of machine ID/Name mismatch
-            old_entry = PrioridadManual.objects.using('default').filter(id_orden=id_orden, scenario=active_scenario).first()
+            old_entry = PrioridadManual.objects.using('default').filter(id_orden=id_orden_clean, scenario=active_scenario).first()
             
             # Default values if no entry exists
             existing_data = {
@@ -745,14 +785,14 @@ def set_priority(request, id_orden):
                 'prioridad': old_entry.prioridad if old_entry else (new_priority if new_priority is not None else 0.0)
             }
             
-            # Clean up before re-creating (task/scenario combo should be unique globally for the move)
-            PrioridadManual.objects.using('default').filter(id_orden=id_orden, scenario=active_scenario).delete()
+            # Clean up before re-creating
+            PrioridadManual.objects.using('default').filter(id_orden=id_orden_clean, scenario=active_scenario).delete()
             
             final_start_date = manual_start_dt if manual_start_dt is not None else existing_data['fecha_inicio_manual']
             final_priority = new_priority if new_priority is not None else existing_data['prioridad']
             
             PrioridadManual.objects.using('default').create(
-                id_orden=id_orden,
+                id_orden=id_orden_clean,
                 maquina=maquina_id, 
                 prioridad=final_priority,
                 fecha_inicio_manual=final_start_date,
@@ -761,7 +801,10 @@ def set_priority(request, id_orden):
                 nivel_manual=existing_data['nivel_manual'],
                 porcentaje_solapamiento=existing_data['porcentaje_solapamiento']
             )
-        
+
+            # CRITICAL UX: Force manual mode in session so the user SEES the change
+            request.session['last_plan_mode'] = 'manual'
+            
         return JsonResponse({'status': 'ok'})
     except Exception as e:
         print(f"❌ ERROR set_priority DB: {e}")
@@ -1870,6 +1913,10 @@ def planificacion_visual(request):
 
     # 5. Pre-calculate Task Positions (Pixels) for HTML View
     COL_WIDTH = 40
+    DAY_GAP = 10
+    
+    # Map each date to its visual day index
+    date_to_day_idx = {d: i for i, d in enumerate(valid_dates)}
     
     for row in timeline_data:
         for t in row['tasks']:
@@ -1881,6 +1928,7 @@ def planificacion_visual(request):
 
             # Calculate CSS Left using day-specific hour counts
             t_date = t_start.date()
+            day_idx = date_to_day_idx.get(t_date, 0)
             
             # Get the starting column index for this date
             day_col_start = date_start_col.get(t_date, 0)
@@ -1892,8 +1940,26 @@ def planificacion_visual(request):
             
             col_index = day_col_start + hour_diff
             
-            t['visual_left'] = col_index * COL_WIDTH
+            # Add DAY_GAP for each visual day transition
+            t['visual_left'] = (col_index * COL_WIDTH) + (day_idx * DAY_GAP)
             t['visual_width'] = t_duration * COL_WIDTH
+
+
+    # Build time columns with gap info
+    time_columns_data = []
+    last_date = None
+    total_gaps = 0
+    for dt in time_columns:
+        curr_date = dt.date()
+        is_day_start = (curr_date != last_date)
+        if is_day_start and last_date is not None:
+            total_gaps += 1
+        
+        time_columns_data.append({
+            'datetime': dt,
+            'is_day_start': is_day_start
+        })
+        last_date = curr_date
 
     # Build dependencies list for JSON
     dependencies_list = []
@@ -1905,18 +1971,23 @@ def planificacion_visual(request):
     from .models import Scenario
     all_scenarios = Scenario.objects.using('default').all().order_by('-es_principal', 'nombre')
 
+    # Calculate actual total width in pixels
+    calculated_total_width = (len(time_columns) * COL_WIDTH) + (total_gaps * DAY_GAP)
+
     context = {
         'timeline_data': timeline_data,
-        'time_columns': time_columns,
+        'time_columns': time_columns_data, # Use the new data structure
         'start_date': start_simulation,
         'dependencies_json': json.dumps(dependencies_list),
         'today': start_simulation,
-        'total_width': len(time_columns) * 40 if time_columns else 15*40,
+        'total_width': calculated_total_width,
         'system_alerts': data.get('system_alerts', []),
         'analysis': data.get('analysis', {'machines': [], 'project_alerts': []}),
         'all_scenarios': all_scenarios,
         'active_scenario': data.get('active_scenario', None),
+        'plan_mode': data.get('plan_mode', 'manual'),
     }
+
 
     # DEBUG: Log results for redistribution checking
     adaptive_alerts_count = len(data.get('analysis', {}).get('adaptive_alerts', []))
@@ -2633,22 +2704,31 @@ def planillas_diarias(request):
             
             processed_qty_map[t_id] += segment_qty
             
+            # Standard Time Unit per piece
+            std_t = float(segment.get('Tiempo') or 0.0)
+            
+            # Total Standard Time for this day's quantity
+            # User requirement: Horas Totales = Tiempo STD * Cantidad
+            # NO USAR segment_duration para el campo 'Horas Totales' de la planilla
+            total_std_time = std_t * segment_qty
+
             if segment_qty > 0 or segment_duration > 0:
-                h_tot = int(segment_duration)
-                m_tot = int(round((segment_duration - h_tot) * 60))
+                # Format Horas Totales (Standard Total) - Redondear a lo más cercano para evitar desvíos decimales
+                h_tot = int(total_std_time)
+                m_tot = int(round((total_std_time - h_tot) * 60))
                 if m_tot >= 60:
                     h_tot += 1
                     m_tot = 0
                 tiempo_dia_hm = f"{h_tot}:{m_tot:02d}h"
 
-                # Standard Time Unit
-                std_t = float(segment.get('Tiempo') or 0.0)
-                h_std = int(std_t)
-                m_std = int(round((std_t - h_std) * 60))
-                if m_std >= 60:
-                    h_std += 1
-                    m_std = 0
-                tiempo_standard_hm = f"{h_std}:{m_std:02d}h"
+                # Standard Time Unit (Formatted for display)
+                h_standard = int(std_t)
+                m_standard = int(round((std_t - h_standard) * 60))
+                if m_standard >= 60:
+                    h_standard += 1
+                    m_standard = 0
+                tiempo_standard_hm = f"{h_standard}:{m_standard:02d}h"
+
 
                 daily_plan[m_id]['dates'][d_str].append({
                     'orden': t_id,
