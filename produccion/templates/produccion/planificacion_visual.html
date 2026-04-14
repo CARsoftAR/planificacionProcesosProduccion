@@ -735,19 +735,19 @@
             color: #f8fafc;
         }
 
-        /* Dependency Arrows */
+        /* Dependency Arrows SVG layer - always in layout tree but invisible until toggled */
         #dependency-layer {
-            display: none;
-            filter: drop-shadow(0 0 2px rgba(0, 242, 255, 0.3));
+            opacity: 0;
+            transition: opacity 0.2s ease;
+            pointer-events: none !important;
         }
 
         #dependency-layer.visible {
-            display: block !important;
+            opacity: 1 !important;
         }
 
         .dependency-path {
             stroke-dasharray: none;
-            /* Animation removed as requested */
         }
 
         /* Scrollbar styling */
@@ -1012,7 +1012,7 @@
                       <button id="btn-toggle-arrows" 
                               class="btn-modern glass rounded-pill px-2" 
                               style="height: 34px; border-color: #e2e8f0; color: #475569;" 
-                              onclick="this.classList.toggle('active-glass'); document.getElementById('dependency-layer').classList.toggle('visible'); if(typeof window.drawDependencies === 'function') window.drawDependencies();"
+                              onclick="this.classList.toggle('active-glass'); document.getElementById('dependency-layer').classList.toggle('visible'); requestAnimationFrame(function(){ requestAnimationFrame(function(){ if(typeof window.drawDependencies==='function') window.drawDependencies(); }); });"
                               title="Ver Dependencias">
                           <i class="fas fa-project-diagram"></i>
                       </button>
@@ -1724,7 +1724,11 @@
 
                     
                     <!-- SVG Layer for Dependencies - Master Universal Overlay -->
+                    <!-- NEVER use display:none here - it breaks getBoundingClientRect -->
                     <svg id="dependency-layer" style="position: absolute; top:0; left:0; width: 100%; height: 100%; pointer-events: none; z-index: 90;"></svg>
+                    
+                    <!-- Diagnostic for Dependencies (Hidden by default, used for verification) -->
+                    <div id="diag-deps" data-count="{{ dependencies_json|length }}" style="display:none;"></div>
 
                         {% for row in timeline_data %}
                         <div class="d-flex task-row-wrapper" style="width: 100%;">
@@ -1756,7 +1760,7 @@
                                 <!-- Task blocks -->
                                 {% for task in row.tasks %}
                                 {% with proj_color=task.ProyectoCode|string_to_color %}
-                                <div id="task-{{ task.Idorden }}" class="task-block {% if task.segment_index > 0 %}task-continuation{% endif %}{% if task.is_critical %} critical-task{% endif %}"
+                                <div id="op-{{ task.Idorden }}" class="task-block {% if task.segment_index > 0 %}task-continuation{% endif %}{% if task.is_critical %} critical-task{% endif %}"
                                      data-task-id="{{ task.Idorden }}"
                                  data-color="{% if task.ProyectoCode %}{{ proj_color }}{% else %}#3b82f6{% endif %}"
                                  data-priority="{{ task.OrdenVisual|default:0 }}"
@@ -2883,95 +2887,96 @@
             }
         }
         
-        // --- DEPENDENCY ARROWS - PREMIUM IMPLEMENTATION ---
+        // --- DEPENDENCY ENGINE - ROBUST IMPLEMENTATION ---
         const dependenciesData = JSON.parse('{{ dependencies_json|safe }}');
-        
+        console.log("Gantt: Se han recibido", dependenciesData.length, "dependencias del servidor.");
+
         window.drawDependencies = function() {
             const svgLayer = document.getElementById('dependency-layer');
-            if (!svgLayer) return;
             
-            // Clear and only show if visible class is present
+            if (!svgLayer) {
+                console.error("Gantt Error: No se encontró el SVG de dependencias.");
+                return;
+            }
+            
+            // Si no está activo, limpiar y salir
             if (!svgLayer.classList.contains('visible')) {
                 svgLayer.innerHTML = '';
                 return;
             }
 
-            console.log("Drawing dependencies for", dependenciesData.length, "connections...");
-            svgLayer.innerHTML = '';
-            
-            // 1. Create Markers once
-            const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
-            
-            // Standard arrow marker
-            const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
-            marker.setAttribute('id', 'arrowhead');
-            marker.setAttribute('markerWidth', '10'); marker.setAttribute('markerHeight', '7');
-            marker.setAttribute('refX', '9'); marker.setAttribute('refY', '3.5');
-            marker.setAttribute('orient', 'auto');
-            const pathHead = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            pathHead.setAttribute('d', 'M0,0 L10,3.5 L0,7 Z'); 
-            pathHead.setAttribute('fill', '#3b82f6');
-            marker.appendChild(pathHead); defs.appendChild(marker); 
-            svgLayer.appendChild(defs);
-
-            // 2. Full-scroller size sync
+            // 1. Sincronizar dimensiones con el área scrollable total
             const masterScroller = document.getElementById('gantt-body-scroll');
-            if (masterScroller) {
-                const totalWidth = masterScroller.scrollWidth;
-                const totalHeight = masterScroller.scrollHeight;
-                svgLayer.setAttribute('width', totalWidth);
-                svgLayer.setAttribute('height', totalHeight);
-                // Ensure the SVG style also matches to prevent clipping
-                svgLayer.style.width = totalWidth + 'px';
-                svgLayer.style.height = totalHeight + 'px';
+            const innerWrapper = masterScroller ? masterScroller.firstElementChild : null;
+            if (innerWrapper) {
+                const w = innerWrapper.scrollWidth;
+                const h = innerWrapper.scrollHeight;
+                svgLayer.setAttribute('width', w);
+                svgLayer.setAttribute('height', h);
+                svgLayer.style.width = w + 'px';
+                svgLayer.style.height = h + 'px';
             }
 
-            const taskElementsMap = {};
-            document.querySelectorAll('.task-block').forEach(el => taskElementsMap[el.dataset.taskId] = el);
+            // 2. Limpiar y crear marcadores de flecha
+            svgLayer.innerHTML = '';
+            const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+            const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+            marker.setAttribute('id', 'arr');
+            marker.setAttribute('viewBox', '0 0 10 10');
+            marker.setAttribute('refX', '8'); marker.setAttribute('refY', '5');
+            marker.setAttribute('markerWidth', '6'); marker.setAttribute('markerHeight', '6');
+            marker.setAttribute('orient', 'auto');
+            const mPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            mPath.setAttribute('d', 'M 0 0 L 10 5 L 0 10 z');
+            mPath.setAttribute('fill', '#64748b');
+            marker.appendChild(mPath); defs.appendChild(marker);
+            svgLayer.appendChild(defs);
 
-            let count = 0;
-            dependenciesData.forEach(dep => {
-                const el1 = taskElementsMap[dep.pred];
-                const el2 = taskElementsMap[dep.succ];
-                
-                if (el1 && el2) {
-                    // Get coordinates relative to the SVG layer's coordinate system
-                    // Since both SVGLayer and TaskRowContainers share the same root origin in the scrollable div
-                    
-                    const row1 = el1.closest('.task-row');
-                    const row2 = el2.closest('.task-row');
-                    if (!row1 || !row2) return;
+            // 3. Obtener rectángulo del SVG para transformar coordenadas
+            const svgRect = svgLayer.getBoundingClientRect();
+            console.log('SVG Rect:', svgRect.left, svgRect.top, svgRect.width, svgRect.height);
 
-                    // X coords are absolute in the timeline
-                    const x1 = parseFloat(el1.style.left) + parseFloat(el1.style.width);
-                    const x2 = parseFloat(el2.style.left);
-                    
-                    // Y coords relative to the whole container
-                    // We need to find the offset of the task row relative to the gantt-body-scroll child
-                    const y1 = row1.offsetTop + (el1.offsetTop || 12) + 31; // 31 is roughly 50% of 62px height
-                    const y2 = row2.offsetTop + (el2.offsetTop || 12) + 31;
-
-                    const color = el1.dataset.color || '#3b82f6';
-                    
-                    // Path
-                    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                    const dx = Math.abs(x2 - x1);
-                    const cp1x = x1 + Math.min(dx * 0.4, 150);
-                    const cp2x = x2 - Math.min(dx * 0.4, 150);
-                    
-                    path.setAttribute('d', `M ${x1} ${y1} C ${cp1x} ${y1}, ${cp2x} ${y2}, ${x2} ${y2}`);
-                    path.setAttribute('stroke', color);
-                    path.setAttribute('stroke-width', '2');
-                    path.setAttribute('fill', 'none');
-                    path.setAttribute('opacity', '0.6');
-                    path.setAttribute('marker-end', 'url(#arrowhead)');
-                    path.classList.add('dependency-path');
-                    
-                    svgLayer.appendChild(path);
-                    count++;
-                }
+            // 4. Mapear todas las tarjetas visibles por su task-id
+            const taskMap = {};
+            document.querySelectorAll('.task-block').forEach(el => {
+                const tid = el.dataset.taskId;
+                if (tid) taskMap[tid] = el;
             });
-            console.log(`DEBUG: [Dependencies] Repaint: ${count} arrows drawn.`);
+            console.log('Tareas en pantalla:', Object.keys(taskMap).length, '| Dependencias a dibujar:', dependenciesData.length);
+
+            // 5. Dibujar cada conexión
+            let drawn = 0;
+            dependenciesData.forEach(dep => {
+                const elFrom = taskMap[dep.pred];
+                const elTo   = taskMap[dep.succ];
+                if (!elFrom || !elTo) return; // Huérfana: ignorar
+
+                // Coordenadas: salida del borde derecho del origen, entrada al borde izq del destino
+                const rFrom = elFrom.getBoundingClientRect();
+                const rTo   = elTo.getBoundingClientRect();
+
+                const x1 = rFrom.right - svgRect.left;
+                const y1 = rFrom.top + rFrom.height / 2 - svgRect.top;
+                const x2 = rTo.left - svgRect.left;
+                const y2 = rTo.top + rTo.height / 2 - svgRect.top;
+
+                const color = elFrom.dataset.color || '#3b82f6';
+                const dx = x2 - x1;
+                const c1x = x1 + Math.max(Math.abs(dx) * 0.4, 80);
+                const c2x = x2 - Math.max(Math.abs(dx) * 0.4, 80);
+
+                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                path.setAttribute('d', `M${x1},${y1} C${c1x},${y1} ${c2x},${y2} ${x2},${y2}`);
+                path.setAttribute('stroke', color);
+                path.setAttribute('stroke-width', '2');
+                path.setAttribute('fill', 'none');
+                path.setAttribute('opacity', '0.65');
+                path.setAttribute('marker-end', 'url(#arr)');
+                svgLayer.appendChild(path);
+                drawn++;
+            });
+
+            console.log(`Gantt: ${drawn} flechas renderizadas.`);
         };
         
         // Initial drawing and events
