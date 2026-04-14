@@ -154,8 +154,8 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
              # En la fila SIN ASIGNAR, forzamos que sea secuencial 
              if is_unassigned_row:
                  if forced_time < current_time:
-                     # Si el pin es anterior al fin de la tarea previa, la empujamos al final de la anterior + buffer
-                     current_time = current_time + timedelta(minutes=5)
+                     # No buffer between processes - Magnetism/Snap
+                     current_time = current_time
                  else:
                      current_time = forced_time
              else:
@@ -167,8 +167,8 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
         # Check for dependencies / constraints (Soft Limits)
         # En la fila SIN ASIGNAR, aunque no haya PIN, forzamos que espere a la anterior + buffer
         if is_unassigned_row and not forced_time:
-             # Solo empujamos si el current_time (fin de anterior) es posterior al inicio por defecto
-             current_time = current_time + timedelta(minutes=5)
+             # No buffer between processes - Magnetism/Snap
+             current_time = current_time
 
         # ONLY IF NOT FORCED (Manual override wins over Physics)
         if not forced_time and task_min_start_times:

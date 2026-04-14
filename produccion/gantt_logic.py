@@ -323,7 +323,15 @@ def get_gantt_data(request, force_run=False):
              tasks_moved_in_map[mid] = []
         tasks_moved_in_map[mid].append(oid)
     
-    hidden_ids = set(HiddenTask.objects.using('default').values_list('id_orden', flat=True))
+    # --- FILTER HIDDEN TASKS FOR THIS SCENARIO ---
+    hidden_ids = []
+    if plan_mode != 'original':
+         # Fetch only tasks hidden in the current scenario
+         hidden_qs = HiddenTask.objects.using('default').filter(scenario=active_scenario).values_list('id_orden', flat=True)
+         # Convert to set of strings for robust comparison with task IDs
+         hidden_ids = set(str(int(float(h))) for h in hidden_qs)
+    else:
+         hidden_ids = set()
 
     # EXECUTION CHECK
     run_calculation = (request.GET.get('run') == '1') or force_run
@@ -481,8 +489,12 @@ def get_gantt_data(request, force_run=False):
             for j in range(len(p_tasks_sorted) - 1):
                 predecessor = p_tasks_sorted[j]
                 successor = p_tasks_sorted[j+1]
-                pred_id = str(predecessor.get('Idorden'))
-                succ_id = str(successor.get('Idorden'))
+                def clean_id(val):
+                    try: return str(int(float(val)))
+                    except: return str(val)
+
+                pred_id = clean_id(predecessor.get('Idorden'))
+                succ_id = clean_id(successor.get('Idorden'))
                 if pred_id and succ_id and pred_id != succ_id:
                     if succ_id not in dependency_map:
                         dependency_map[succ_id] = []
@@ -509,10 +521,14 @@ def get_gantt_data(request, force_run=False):
             v_start = max_p_end
         global_task_end_dates[tid] = v_start + timedelta(hours=duration)
 
+    def clean_id(val):
+        try: return str(int(float(val)))
+        except: return str(val)
+
     db_deps = TaskDependency.objects.all()
     for dep in db_deps:
-        s_succ = str(dep.successor_id)
-        s_pred = str(dep.predecessor_id)
+        s_succ = clean_id(dep.successor_id)
+        s_pred = clean_id(dep.predecessor_id)
         if s_succ not in dependency_map: dependency_map[s_succ] = []
         if s_pred not in dependency_map[s_succ]: dependency_map[s_succ].append(s_pred)
 
@@ -679,11 +695,10 @@ def get_gantt_data(request, force_run=False):
                      target_start = force_start_times[tid]
                      is_pinned = 1
                  
-                 # Ordenamos por:
-                 # 1. Tiempo de inicio esperado (ms o pin)
-                 # 2. Prioridad visual (Si hay empate en tiempo)
-                 # 3. Nivel (Por seguridad)
-                 return (target_start, -get_nivel(t), t.get('OrdenVisual', 999999))
+                 # 1. Nivel (Manufacturing sequence is critical)
+                 # 2. Predicted start time (from dependencies)
+                 # 3. Visual Order (Tie breaker)
+                 return (-get_nivel(t), target_start, t.get('OrdenVisual', 999999))
             
             tasks.sort(key=get_sort_key)
             recalc = calculate_timeline(maquina, tasks, start_date=start_simulation, 

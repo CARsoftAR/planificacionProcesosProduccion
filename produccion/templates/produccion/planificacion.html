@@ -140,7 +140,7 @@
 
                 <div class="d-flex align-items-center gap-2 ms-2">
                     <label for="scenario_id" class="smaller fw-bold text-muted mb-0"><i class="fas fa-database"></i> Estado:</label>
-                    <select name="scenario_id" id="scenario-selector" class="form-select form-select-sm rounded-pill border-secondary border-opacity-25" style="width: 220px; font-size: 0.8rem;">
+                    <select name="scenario_id" id="scenario-selector" class="form-select form-select-sm rounded-pill border-secondary border-opacity-25" style="width: 200px; font-size: 0.8rem;">
                         <option value="">-- Estado Actual (Oficial) --</option>
                         {% for scenario in all_scenarios %}
                         <option value="{{ scenario.id }}" 
@@ -151,6 +151,17 @@
                         </option>
                         {% endfor %}
                     </select>
+                    <div class="d-flex gap-1">
+                        <button type="button" id="btnSaveScenario" class="btn btn-sm btn-outline-success rounded-pill px-2" title="Grabar Escenario (Copiar estado actual)">
+                            <i class="fas fa-save"></i>
+                        </button>
+                        <button type="button" id="btnDeleteScenario" class="btn btn-sm btn-outline-danger rounded-pill px-2" title="Borrar Escenario">
+                            <i class="fas fa-trash-alt"></i>
+                        </button>
+                        <button type="button" id="btnPublishScenario" class="btn btn-sm btn-outline-primary rounded-pill px-3 fw-bold" title="Activar Escenario (Convertir en Oficial)">
+                            <i class="fas fa-check-double me-1"></i> Activar
+                        </button>
+                    </div>
                 </div>
 
                 <div class="ms-auto d-flex align-items-center gap-2">
@@ -292,8 +303,8 @@
                                           <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z"/>
                                         </svg>
                                     </button>
-                                    <button class="btn btn-sm btn-outline-secondary btn-delete d-inline-flex align-items-center justify-content-center" style="width: 28px; height: 28px; padding: 0; margin-left: 4px;" title="Ocultar OP (No borra del SQLServer)">
-                                        <i class="fas fa-eye-slash"></i>
+                                    <button class="btn btn-sm btn-outline-danger btn-delete d-inline-flex align-items-center justify-content-center" style="width: 28px; height: 28px; padding: 0; margin-left: 4px;" title="Borrar OP (Solo de este escenario)">
+                                        <i class="fas fa-trash-alt"></i>
                                     </button>
                                 </td>
                                 <td>{{ item.ProyectoCode|default:"-" }}</td>

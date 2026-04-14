@@ -156,8 +156,8 @@ def reset_planning(request):
         deleted_dep_pred, _ = TaskDependency.objects.using('default').filter(predecessor_id__in=ids).delete()
         deleted_dep_succ, _ = TaskDependency.objects.using('default').filter(successor_id__in=ids).delete()
         
-        # 3. Clear HIDDEN Status
-        deleted_hidden, _ = HiddenTask.objects.using('default').filter(id_orden__in=ids).delete()
+        # 3. Clear HIDDEN Status FOR THIS SCENARIO ONLY
+        deleted_hidden, _ = HiddenTask.objects.using('default').filter(id_orden__in=ids, scenario=active_scenario).delete()
         
         return JsonResponse({'status': 'ok', 'message': f'Reset {len(ids)} tasks'})
     except Exception as e:
@@ -174,11 +174,15 @@ def hide_task(request):
     try:
         body = json.loads(request.body)
         id_orden = body.get('id_orden')
+        active_scenario = get_active_scenario(request)
         
         if not id_orden:
              return JsonResponse({'error': 'Missing ID'}, status=400)
              
-        HiddenTask.objects.using('default').create(id_orden=id_orden)
+        HiddenTask.objects.using('default').update_or_create(
+            id_orden=id_orden, 
+            scenario=active_scenario
+        )
         
         return JsonResponse({'status': 'ok'})
     except Exception as e:
@@ -373,33 +377,26 @@ def planificacion_list(request):
         name_to_id = {m.nombre.strip().upper(): m.id_maquina.strip() for m in local_machines}
         id_to_name = {m.id_maquina.strip(): m.nombre.strip() for m in local_machines}
         
-        # --- FILTER HIDDEN TASKS ---
-        hidden_ids = set(HiddenTask.objects.using('default').values_list('id_orden', flat=True))
-        
-        # EXPLICIT SEARCH UNHIDE: If the user is filtering for specific projects/IDs, 
-        # we automatically unhide those tasks because the search expresses an intent to see them.
-        if search_active and data:
-            ids_in_result = [d.get('Idorden') for d in data if d.get('Idorden')]
-            # Remove from hidden_task if they were there
-            if ids_in_result:
-                HiddenTask.objects.using('default').filter(id_orden__in=ids_in_result).delete()
-                # Refresh hidden_ids set
-                hidden_ids = set(HiddenTask.objects.using('default').values_list('id_orden', flat=True))
-
-        if hidden_ids:
-            data = [d for d in data if d.get('Idorden') not in hidden_ids]
-
-        
-        # Determine response format
-        if request.GET.get('format') == 'json':
-             return JsonResponse({'data': data}, safe=False)
-
         # Determine plan mode
         plan_mode = request.GET.get('plan_mode')
         if plan_mode:
             request.session['last_plan_mode'] = plan_mode
         else:
             plan_mode = request.session.get('last_plan_mode', 'original')
+
+        # --- FILTER HIDDEN TASKS FOR THIS SCENARIO ---
+        # If we are in 'original' mode, we show everything from ERP (Truth), ignoring manual deletions/hiding.
+        if plan_mode != 'original':
+            hidden_ids = set(HiddenTask.objects.using('default').filter(scenario=active_scenario).values_list('id_orden', flat=True))
+            if hidden_ids:
+                data = [d for d in data if d.get('Idorden') not in hidden_ids]
+
+        
+        # Determine response format
+        if request.GET.get('format') == 'json':
+             return JsonResponse({'data': data}, safe=False)
+
+
 
 
         # Fetch Local Priorities filtered by Scenario
@@ -1238,10 +1235,15 @@ def planificacion_visual_OLD(request):
              else:
                  item['OrdenVisual'] = default_prio
                  
-        # Sort tasks by Visual Priority
-        tasks.sort(key=lambda x: x.get('OrdenVisual', 999999))
+        # Group by Project, then sort by Nivel DESC, then by Visual Priority
+        # This ensures the manufacturing sequence is respected as requested.
+        tasks.sort(key=lambda x: (
+            x.get('ProyectoCode') or '', 
+            -int(x.get('Nivel_Planificacion', 0) or 0), 
+            x.get('OrdenVisual', 999999)
+        ))
         
-        # Re-normalize priorities
+        # Re-normalize priorities within the final resulting order
         for idx, item in enumerate(tasks):
             item['OrdenVisual'] = (idx + 1) * 1000
         
@@ -1448,57 +1450,58 @@ def planificacion_visual_OLD(request):
              dt = datetime.combine(d, datetime.min.time()) + timedelta(hours=h)
              time_columns.append(dt)
 
-    # 5. Pre-calculate Task Positions (Pixels)
-    COL_WIDTH = 40
+    # =========================================================
+    # 5. POSICIONAMIENTO DEFINITIVO - ANTI-SOLAPAMIENTO
+    # Regla: visual_left[n] = max(time_pos[n], cursor[n-1] + GAP)
+    # MIN_WIDTH = 100px universal — ninguna card puede ser menor.
+    # =========================================================
+    COL_WIDTH  = 40    # px por hora
+    MIN_WIDTH  = 100   # px mínimo de card (cubre badge "40D ATRASO" + padding)
+    SAFETY_GAP = 6     # px de aire entre cards
     
-    for row in timeline_data:
-        for t in row['tasks']:
-            t_start = t['start_date']
-            t_duration = t['duration_real'] # hours
-            
-            if not t_start:
-                continue
+    def _time_to_px(dt_obj):
+        day_idx = date_to_visual_index.get(dt_obj.date(), 0)
+        h_diff  = (dt_obj.hour - global_min_h) + (dt_obj.minute / 60.0)
+        if h_diff < 0: h_diff = 0
+        return ((day_idx * slots_per_day) + h_diff) * COL_WIDTH
 
-            # Calculate CSS Left
-            # Find visual index of the day
-            t_date = t_start.date()
-            
-            # If start date is not in valid_dates (e.g. started on a Sunday? Should not happen with calc_timeline logic)
-            # We fallback to nearest previous or 0
-            # But calc_timeline skips non-working.
-            
-            day_visual_idx = date_to_visual_index.get(t_date)
-            
-            if day_visual_idx is None:
-                # Fallback: find nearest valid date?
-                # For now 0
-                day_visual_idx = 0
-            
-            # Include minutes in hour_diff
-            hour_diff = (t_start.hour - global_min_h) + (t_start.minute / 60.0)
-            
-            # Safety checks
-            if hour_diff < 0: hour_diff = 0
-            
-            col_index = (day_visual_idx * slots_per_day) + hour_diff
-            
-            t['visual_left'] = col_index * COL_WIDTH
-            t['visual_width'] = t_duration * COL_WIDTH
-            
-        # Calculate visual positions for Maintenances
-        for maint in row.get('maintenances', []):
-            m_start = maint['start']
-            # We want visual duration, which should be capped visually or just raw duration
-            m_duration = (maint['end'] - maint['start']).total_seconds() / 3600.0
-            
-            day_visual_idx = date_to_visual_index.get(m_start.date(), 0)
-            
-            hour_diff = (m_start.hour - global_min_h) + (m_start.minute / 60.0)
-            if hour_diff < 0: hour_diff = 0
-            
-            col_index = (day_visual_idx * slots_per_day) + hour_diff
-            maint['visual_left'] = col_index * COL_WIDTH
-            maint['visual_width'] = m_duration * COL_WIDTH
+    for row in timeline_data:
+
+        # Paso 1 — lista unificada (tareas + mantenimientos) con ancho_total_elemento
+        events = []
+        for t in row['tasks']:
+            if not t.get('start_date'):
+                continue
+            raw_left        = _time_to_px(t['start_date'])
+            duration_px     = t['duration_real'] * COL_WIDTH
+            # ancho_total_elemento: mínimo 100px siempre
+            ancho_total     = max(MIN_WIDTH, duration_px)
+            events.append({'obj': t, 'raw_left': raw_left, 'ancho': ancho_total, 'is_maint': False})
+
+        for m in row.get('maintenances', []):
+            raw_left    = _time_to_px(m['start'])
+            maint_px    = (m['end'] - m['start']).total_seconds() / 3600.0 * COL_WIDTH
+            ancho_total = max(MIN_WIDTH, maint_px)
+            events.append({'obj': m, 'raw_left': raw_left, 'ancho': ancho_total, 'is_maint': True})
+
+        # Paso 2 — ordenar por tiempo real
+        events.sort(key=lambda e: e['raw_left'])
+
+        # Paso 3 — push acumulativo
+        # cursor  = borde derecho del último elemento YA posicionado
+        cursor = -9999.0
+        for ev in events:
+            # REGLA CENTRAL: left[n] = max(time_pos, fin_anterior + gap)
+            final_left = max(ev['raw_left'], cursor + SAFETY_GAP)
+            ev['obj']['visual_left']  = round(final_left, 2)
+            ev['obj']['visual_width'] = round(ev['ancho'],  2)
+            cursor = final_left + ev['ancho']
+            # Diagnóstico en consola
+            oid  = ev['obj'].get('Idorden', 'MAINT')
+            is_d = ev['obj'].get('is_delayed', False)
+            print(f"  [POS] OP={oid} delayed={is_d} left={final_left:.0f} width={ev['ancho']:.0f} cursor={cursor:.0f}")
+
+
 
     # Build dependencies list for JSON (for visualization)
     dependencies_list = []
@@ -1911,38 +1914,82 @@ def planificacion_visual(request):
     day_max_hours = data.get('day_max_hours', {})
     date_start_col = data.get('date_start_col', {})
 
-    # 5. Pre-calculate Task Positions (Pixels) for HTML View
+    # =========================================================
+    # 5. POSICIONAMIENTO DINÁMICO (ANTI-SOLAPAMIENTO)
+    # Regla: visual_left = max(posición_por_tiempo, fin_anterior + 6px)
+    # Para OPs con atraso, garantizamos un ancho visual de 100px.
+    # =========================================================
     COL_WIDTH = 40
     DAY_GAP = 10
     
-    # Map each date to its visual day index
+    # Mapa de fechas a índice visual
     date_to_day_idx = {d: i for i, d in enumerate(valid_dates)}
     
     for row in timeline_data:
+        # --- Paso 1: Recolectar todos los elementos de la fila (ordenados por tiempo) ---
+        elements = []
         for t in row['tasks']:
-            t_start = t['start_date']
-            t_duration = t['duration_real'] # hours
+            t_start = t.get('start_date')
+            if not t_start: continue
             
-            if not t_start:
-                continue
-
-            # Calculate CSS Left using day-specific hour counts
-            t_date = t_start.date()
-            day_idx = date_to_day_idx.get(t_date, 0)
-            
-            # Get the starting column index for this date
-            day_col_start = date_start_col.get(t_date, 0)
-            
-            # Get the hour offset within the day
-            hour_diff = (t_start.hour - global_min_h) + (t_start.minute / 60.0)
+            day_idx = date_to_day_idx.get(t_start.date(), 0)
+            day_col_start = date_start_col.get(t_start.date(), 0)
+            hour_diff = float((t_start.hour - global_min_h) + (t_start.minute / 60.0))
             if hour_diff < 0: hour_diff = 0
-            hour_diff = float(hour_diff)
             
-            col_index = day_col_start + hour_diff
+            time_left = (day_col_start + hour_diff) * COL_WIDTH + (day_idx * DAY_GAP)
+            duration_px = t.get('duration_real', 0) * COL_WIDTH
+            elements.append({'obj': t, 'time_left': time_left, 'duration_px': duration_px, 'is_maint': False})
+
+        for m in row.get('maintenances', []):
+            m_s = m.get('start')
+            if not m_s: continue
+            m_dur_px = (m['end'] - m['start']).total_seconds() / 3600.0 * COL_WIDTH
+            day_idx = date_to_day_idx.get(m_s.date(), 0)
+            day_col_start = date_start_col.get(m_s.date(), 0)
+            hour_diff = float((m_s.hour - global_min_h) + (m_s.minute / 60.0))
+            if hour_diff < 0: hour_diff = 0
+            time_left = (day_col_start + hour_diff) * COL_WIDTH + (day_idx * DAY_GAP)
+            elements.append({'obj': m, 'time_left': time_left, 'duration_px': m_dur_px, 'is_maint': True})
+
+        # Ordenar por tiempo de inicio real
+        elements.sort(key=lambda x: x['time_left'])
+
+        # --- Paso 2: Posicionamiento Temporal Estricto con Escalonamiento de Badges ---
+        cursor_card_end = -9999.0
+        cursor_badge_end = -9999.0
+        stagger_level = 0 # 0=normal, 1=alto
+        
+        for el in elements:
+            obj = el['obj']
+            # Normalización robusta del ID para el frontend
+            try:
+                obj['Idorden'] = str(int(float(obj.get('Idorden', 0))))
+            except:
+                obj['Idorden'] = str(obj.get('Idorden', ''))
+
+            # 1. Ancho NATURAL (mínimo 24px para ser accionable)
+            natural_w = max(24, el['duration_px']) 
             
-            # Add DAY_GAP for each visual day transition
-            t['visual_left'] = (col_index * COL_WIDTH) + (day_idx * DAY_GAP)
-            t['visual_width'] = t_duration * COL_WIDTH
+            # 2. El inicio (left) solo se empuja si las CARDS físicas colisionan (overlap real)
+            final_left = max(el['time_left'], cursor_card_end + 3)
+            
+            obj['visual_left']  = round(final_left, 2)
+            obj['visual_width'] = round(natural_w, 2)
+            
+            # 3. Lógica de Escalonamiento de Badges (Staggering)
+            has_badge = obj.get('is_delayed') and obj.get('segment_index', 0) == 0
+            if has_badge:
+                if final_left < (cursor_badge_end + 5):
+                     stagger_level = (stagger_level + 1) % 2
+                else:
+                     stagger_level = 0
+                
+                obj['badge_stagger'] = stagger_level
+                cursor_badge_end = final_left + 95
+            
+            # El cursor de tiempo solo avanza con la tarjeta física
+            cursor_card_end = final_left + natural_w
 
 
     # Build time columns with gap info
@@ -1962,10 +2009,38 @@ def planificacion_visual(request):
         last_date = curr_date
 
     # Build dependencies list for JSON
+    # To handle hidden tasks, we need to find the "first visible predecessor" for each visible task
     dependencies_list = []
-    for succ_id, pred_ids in dependency_map.items():
-        for pred_id in pred_ids:
+    visible_tids = {str(t['Idorden']) for row in timeline_data for t in row['tasks']}
+    
+    def get_visible_preds(tid, visited=None):
+        if visited is None: visited = set()
+        if tid in visited: return []
+        visited.add(tid)
+        
+        preds = dependency_map.get(tid, [])
+        v_preds = []
+        for pid in preds:
+            s_pid = str(pid)
+            # Try cleaning for match
+            try: clean_p = str(int(float(s_pid)))
+            except: clean_p = s_pid
+            
+            if clean_p in visible_tids:
+                v_preds.append(clean_p)
+            else:
+                # Recursively look for visible predecessors of this hidden task
+                v_preds.extend(get_visible_preds(s_pid, visited))
+        return v_preds
+
+    for succ_id in visible_tids:
+        v_preds = get_visible_preds(succ_id)
+        for pred_id in set(v_preds): # Deduplicate
             dependencies_list.append({'pred': pred_id, 'succ': succ_id})
+    
+    print(f"DEBUG: [Dependencies] Grafo reconstruido (saltando ocultos): {len(dependencies_list)} vínculos encontrados.")
+    
+    print(f"DEBUG: [Dependencies] Grafo generado: {len(dependencies_list)} vínculos encontrados.")
 
     # Fetch all scenarios for selector (used in template)
     from .models import Scenario
@@ -2325,6 +2400,7 @@ def create_scenario(request):
                     # Clean target scenario first
                     PrioridadManual.objects.using('default').filter(scenario=scenario).delete()
                     ProyectoPrioridad.objects.using('default').filter(scenario=scenario).delete()
+                    HiddenTask.objects.using('default').filter(scenario=scenario).delete()
                     
                     # Clone from source
                     source = Scenario.objects.using('default').get(pk=copy_from_id)
@@ -2336,19 +2412,27 @@ def create_scenario(request):
                             id_orden=o.id_orden, maquina=o.maquina, prioridad=o.prioridad,
                             tiempo_manual=o.tiempo_manual, nivel_manual=o.nivel_manual,
                             porcentaje_solapamiento=o.porcentaje_solapamiento,
-                            fecha_inicio_manual=o.fecha_inicio_manual, scenario=scenario
+                            fecha_inicio_manual=o.fecha_inicio_manual,
+                            scenario=scenario
                         ) for o in overrides
                     ]
                     PrioridadManual.objects.using('default').bulk_create(new_overrides)
+
+                    # Clone Hidden Tasks
+                    hidden = HiddenTask.objects.using('default').filter(scenario=source)
+                    new_hidden = [
+                        HiddenTask(id_orden=h.id_orden, scenario=scenario)
+                        for h in hidden
+                    ]
+                    HiddenTask.objects.using('default').bulk_create(new_hidden)
                     
                     # Clone Project Priorities
-                    p_priorities = ProyectoPrioridad.objects.using('default').filter(scenario=source)
-                    new_p_priorities = [
-                        ProyectoPrioridad(
-                            scenario=scenario, proyecto=p.proyecto, prioridad=p.prioridad
-                        ) for p in p_priorities
+                    proj_prios = ProyectoPrioridad.objects.using('default').filter(scenario=source)
+                    new_proj_prios = [
+                        ProyectoPrioridad(proyecto=p.proyecto, prioridad=p.prioridad, scenario=scenario)
+                        for p in proj_prios
                     ]
-                    ProyectoPrioridad.objects.using('default').bulk_create(new_p_priorities)
+                    ProyectoPrioridad.objects.using('default').bulk_create(new_proj_prios)
 
                 return JsonResponse({'status': 'ok', 'scenario': {'id': scenario.id, 'nombre': scenario.nombre}})
                 

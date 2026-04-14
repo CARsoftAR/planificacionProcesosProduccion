@@ -314,6 +314,7 @@
             position: relative;
             background-color: var(--bg-row);
             display: flex;
+            isolation: isolate; /* Badge z-index no escala a filas vecinas */
         }
 
         .grid-bg {
@@ -345,31 +346,31 @@
         ========================================= */
         .task-block {
             position: absolute;
-            top: 12px;           /* Compensamos el badge que sobresale arriba */
+            top: 12px;
             height: 62px;
             z-index: 3;
             background: #FFFFFF;
-            border-radius: 8px;  /* Efecto Cápsula */
-            padding: 8px 14px;   /* Más aire interno */
+            border-radius: 8px;
+            padding: 8px 14px;
             font-size: 0.68rem;
-            overflow: visible;   
-            cursor: grab;
+            overflow: visible;
+            cursor: default;
             transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s ease;
-            box-shadow: 0 3px 10px rgba(0, 0, 0, 0.08);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
             box-sizing: border-box;
             display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: flex-start;
-            margin-left: 2px;
-            width: calc(100% - 2px);
+            border: 1px solid rgba(0,0,0,0.05);
+            /* NO min-width: el backend garantiza min 22px via visual_width */
         }
         
         .task-block:hover {
-            transform: translateY(-3px);
-            z-index: 100;
-            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
-            cursor: pointer;
+            transform: translateY(-4px) scale(1.02); /* Mayor elevación */
+            z-index: 200; /* Aseguramos que vuele sobre el resto */
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
+            cursor: default;
         }
 
         /* Texto interno de la card: ID de Proyecto */
@@ -466,8 +467,9 @@
 
         .delay-badge {
             position: absolute;
-            top: -11px;          /* Flota 50% por encima de la card */
-            left: 10px;
+            top: -14px;
+            left: 6px;            /* Anclado al borde izq de su card */
+            max-width: calc(100% + 0px); /* No supera el ancho del card+badge calculado */
             font-size: 0.58rem;
             background: linear-gradient(135deg, #dc2626, #991b1b);
             color: white;
@@ -475,7 +477,7 @@
             padding: 2px 7px;
             font-weight: 700;
             letter-spacing: 0.4px;
-            z-index: 20;         /* Por encima de la card */
+            z-index: 20;
             white-space: nowrap;
             box-shadow: 0 2px 6px rgba(220,38,38,0.5);
             text-transform: uppercase;
@@ -507,13 +509,29 @@
             text-transform: uppercase;
             border: 1px solid rgba(255,255,255,0.2);
         }
+        
+        /* Visibilidad Condicional */
+        body:not(.show-delays) .delay-badge {
+            display: none !important;
+        }
+        
+        body.hide-tooltips #global-tooltip {
+            display: none !important;
+        }
+
+        /* Contenedor de Controles Flotantes */
+        .planning-controls {
+            position: fixed;
+            bottom: 24px;
+            right: 18px; /* Ajustado para estar cerca del borde pero con aire */
+            display: flex;
+            flex-direction: row-reverse; /* Alineados de derecha a izquierda */
+            gap: 12px;
+            z-index: 1000;
+        }
 
         /* Critical path legend toggle button */
         .cp-legend-btn {
-            position: fixed;
-            bottom: 24px;
-            right: 100px; /* Movido a la izquierda para no tapar el Chat */
-            z-index: 999;
             background: linear-gradient(135deg, #ef4444, #f97316);
             color: white;
             border: none;
@@ -527,12 +545,38 @@
             align-items: center;
             gap: 6px;
             transition: all 0.3s ease;
+            white-space: nowrap;
         }
         .cp-legend-btn:hover {
             transform: translateY(-2px);
             box-shadow: 0 8px 25px rgba(239,68,68,0.5);
         }
         .cp-legend-btn.dimmed {
+            background: linear-gradient(135deg, #6b7280, #9ca3af);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+
+        .dt-legend-btn {
+            background: linear-gradient(135deg, #f59e0b, #d97706); /* Orange/Amber */
+            color: white;
+            border: none;
+            border-radius: 50px;
+            padding: 8px 16px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(245,158,11,0.4);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.3s ease;
+            white-space: nowrap;
+        }
+        .dt-legend-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(245,158,11,0.5);
+        }
+        .dt-legend-btn.dimmed {
             background: linear-gradient(135deg, #6b7280, #9ca3af);
             box-shadow: 0 4px 15px rgba(0,0,0,0.2);
         }
@@ -742,9 +786,10 @@
         }
         
         .active-glass {
-            background: rgba(255, 255, 255, 0.5) !important;
+            background: rgba(59, 130, 246, 0.1) !important;
             border-color: #3b82f6 !important;
             box-shadow: 0 0 10px rgba(59, 130, 246, 0.2);
+            color: #1d4ed8 !important;
         }
 
         /* Load Levels Colors */
@@ -894,7 +939,7 @@
         }
     </style>
 </head>
-<body class="show-cp">
+<body class="show-cp show-delays">
     <div class="container-fluid p-0">
         <div class="top-bar d-flex justify-content-between align-items-center">
             <div class="d-flex align-items-center">
@@ -926,27 +971,73 @@
                  </div>
 
                  <!-- 2. AI Button -->
-                  <button id="btn-request-ai" class="btn-modern btn-ai rounded-pill px-3" style="height: 34px; font-size: 0.8rem;" title="Optimizar con IA">
-                      <i class="fas fa-brain"></i> Sugerencia IA
-                  </button>
+
+                 <!-- 2. Scenarios Group -->
+                 {% if plan_mode != 'original' %}
+                 <div class="d-flex align-items-center gap-2 ms-2">
+                     <select id="scenario-selector" name="scenario_id" class="form-select form-select-sm rounded-pill border-secondary border-opacity-25" style="width: 180px; font-size: 0.8rem; background: rgba(255,255,255,0.7); height: 32px;">
+                         <option value="">-- Estado Actual --</option>
+                         {% for scenario in all_scenarios %}
+                         <option value="{{ scenario.id }}" 
+                                 data-proyectos="{{ scenario.proyectos|default:'' }}"
+                                 data-principal="{{ scenario.es_principal|yesno:'1,0' }}"
+                                 {% if active_scenario.id == scenario.id %}selected{% endif %}>
+                             {{ scenario.nombre }}
+                         </option>
+                         {% endfor %}
+                     </select>
+                     
+                     <div class="d-flex gap-1">
+                         <button type="button" id="btnSaveScenario" class="btn-modern glass rounded-pill px-2" style="height: 32px; border-color: #e2e8f0;" title="Grabar Escenario">
+                             <i class="fas fa-save text-success"></i>
+                         </button>
+                         <button type="button" id="btnDeleteScenario" class="btn-modern glass rounded-pill px-2" style="height: 32px; border-color: #e2e8f0;" title="Borrar Escenario">
+                             <i class="fas fa-trash-alt text-danger"></i>
+                         </button>
+                         <button type="button" id="btnPublishScenario" class="btn-modern glass rounded-pill px-3" style="height: 32px; border-color: #e2e8f0; font-weight: 600; font-size: 0.75rem;" title="Activar Escenario">
+                             <i class="fas fa-check-double text-primary me-1"></i> Activar
+                         </button>
+                         <div class="vr mx-1 bg-secondary opacity-25" style="height: 20px;"></div>
+                         <button type="button" id="btnResetToERP" class="btn-modern glass rounded-pill px-3" style="height: 32px; border-color: #e2e8f0; font-weight: 600; font-size: 0.75rem;" title="Resetear a Plan ERP (Borra movimientos de este escenario)">
+                             <i class="fas fa-history text-warning me-1"></i> Reset ERP
+                         </button>
+                     </div>
+                 </div>
+                 {% endif %}
+
+                  <div class="vr mx-2 bg-secondary opacity-25" style="height: 25px;"></div>
+                  
+                  <!-- Visual Toggles (Direct Inline Control) -->
+                  <div class="d-flex align-items-center gap-1">
+                      <button id="btn-toggle-arrows" 
+                              class="btn-modern glass rounded-pill px-2" 
+                              style="height: 34px; border-color: #e2e8f0; color: #475569;" 
+                              onclick="this.classList.toggle('active-glass'); document.getElementById('dependency-layer').classList.toggle('visible'); if(typeof window.drawDependencies === 'function') window.drawDependencies();"
+                              title="Ver Dependencias">
+                          <i class="fas fa-project-diagram"></i>
+                      </button>
+                      <button id="btn-toggle-cp" class="btn-modern glass rounded-pill px-2 active-glass" style="height: 34px; border-color: #e2e8f0; color: #475569;" onclick="toggleCriticalPath();" title="Toggle Ruta Crítica">
+                          <i class="fas fa-fire text-danger"></i>
+                      </button>
+                      <button id="btn-toggle-delays" class="btn-modern glass rounded-pill px-2 active-glass" style="height: 34px; border-color: #e2e8f0; color: #475569;" onclick="toggleDelayIndicators();" title="Toggle Atrasos">
+                          <i class="fas fa-clock text-warning"></i>
+                      </button>
+                      <button id="btn-toggle-tooltips" class="btn-modern glass rounded-pill px-2" style="height: 34px; border-color: #e2e8f0; color: #475569;" onclick="toggleTooltips();" title="Toggle Tooltips">
+                          <i class="fas fa-comment-slash text-secondary"></i>
+                      </button>
+                  </div>
 
                   <div class="vr mx-2 bg-secondary opacity-25" style="height: 25px;"></div>
                   
                   <!-- 3. Actions Dropdown -->
                   <div class="dropdown me-1">
                       <button class="btn-modern glass rounded-pill no-caret px-3" style="height: 34px; border-color: #e2e8f0; color: #475569;" type="button" data-bs-toggle="dropdown">
-                          <i class="fas fa-plus-circle text-primary"></i> Herramientas
+                          <i class="fas fa-tools text-primary"></i> Reportes
                       </button>
                       <ul class="dropdown-menu dropdown-menu-end dropdown-menu-premium mt-2">
                           <li>
-                              <a class="dropdown-item dropdown-item-premium" href="#" id="btn-toggle-arrows">
-                                  <i class="fas fa-project-diagram me-2 text-primary"></i> Ver Dependencias
-                              </a>
-                          </li>
-                          <li><hr class="dropdown-divider"></li>
-                          <li>
                               <a class="dropdown-item dropdown-item-premium" href="#" id="btnPlanillasDiarias" onclick="openPlanillasDiarias()">
-                                  <i class="fas fa-file-alt me-2 text-warning"></i> Planillas Diarias
+                                   <i class="fas fa-file-alt me-2 text-warning"></i> Planillas Diarias
                               </a>
                           </li>
                           <li>
@@ -983,14 +1074,9 @@
             </div>
         </div>
 
-        <!-- Toolbar oculta por solicitud del usuario (Se mantienen inputs para compatibilidad JS) -->
-        <div class="d-none">
-            <input type="hidden" name="proyectos" id="proyectos" value="{{ proyectos_value|default:'' }}">
-            <select id="scenario-selector" name="scenario_id" class="d-none">
-                <option value="{{ active_scenario.id|default:'' }}" selected>{{ active_scenario.nombre|default:'' }}</option>
-            </select>
-            <input type="hidden" name="plan_mode" id="plan_mode_hidden" value="{{ plan_mode|default:'manual' }}">
-        </div>
+        <!-- Toolbar oculta inputs para compatibilidad JS -->
+        <input type="hidden" name="proyectos" id="proyectos" value="{{ proyectos_value|default:'' }}">
+        <input type="hidden" name="plan_mode" id="plan_mode_hidden" value="{{ plan_mode|default:'manual' }}">
 
 
         <!-- Modal Guardar Escenario -->
@@ -1610,68 +1696,68 @@
     </div>
 
         <div class="gantt-container {% if plan_mode == 'original' %}gantt-expanded{% endif %}">
-            <!-- Header Row -->
-            <div class="d-flex">
-                <div class="machine-column">
-                    <div class="machine-header-cell border-end border-secondary border-opacity-25">MÁQUINA</div>
-                </div>
-                <div class="gantt-body" id="header-container" style="overflow: hidden; border-bottom: 1px solid var(--border);"> 
-                    <div class="time-header-row" style="width: {{ total_width }}px;">
-                        {% for col in time_columns %}
-                            {% if col.is_day_start and not forloop.first %}
-                                <div class="day-gap-separator"></div>
-                            {% endif %}
-                            <div class="time-hour {% if col.is_day_start %}day-start{% endif %}" style="position: relative;">
-                                {% if col.is_day_start %}
-                                <div style="position: absolute; top: 4px; left: 6px; font-size: 0.6rem; font-weight: 800; color: var(--accent); white-space: nowrap; text-transform: uppercase;">
-                                    {{ col.datetime|date:"d M" }} <span class="opacity-50">• {{ col.datetime|date:"D" }}</span>
-                                </div>
-                                {% endif %}
-                                <span style="margin-top: 14px; font-weight: 500;">{{ col.datetime|date:"H" }}</span>
+            <div id="gantt-body-scroll" style="flex: 1; overflow: auto; display: flex; flex-direction: column; position: relative;">
+                <div style="min-width: calc(200px + {{ total_width }}px); position: relative; display: flex; flex-direction: column; flex: 1;">
+                    <!-- 1. HEADER ROW (Sticky Top) -->
+                    <div class="d-flex sticky-top" style="z-index: 100; background: var(--bg-header); border-bottom: 2px solid var(--border); width: 100%;">
+                        <div class="machine-column" style="z-index: 101;">
+                            <div class="machine-header-cell border-end border-secondary border-opacity-25">MÁQUINA</div>
+                        </div>
+                        <div class="gantt-body" id="header-container" style="overflow: visible; flex: 1;"> 
+                            <div class="time-header-row" style="width: {{ total_width }}px;">
+                                {% for col in time_columns %}
+                                    {% if col.is_day_start and not forloop.first %}
+                                        <div class="day-gap-separator"></div>
+                                    {% endif %}
+                                    <div class="time-hour {% if col.is_day_start %}day-start{% endif %}" style="position: relative;">
+                                        {% if col.is_day_start %}
+                                        <div style="position: absolute; top: 4px; left: 6px; font-size: 0.6rem; font-weight: 800; color: var(--accent); white-space: nowrap; text-transform: uppercase;">
+                                            {{ col.datetime|date:"d M" }} <span class="opacity-50">• {{ col.datetime|date:"D" }}</span>
+                                        </div>
+                                        {% endif %}
+                                        <span style="margin-top: 14px; font-weight: 500;">{{ col.datetime|date:"H" }}</span>
+                                    </div>
+                                {% endfor %}
                             </div>
-                        {% endfor %}
-                    </div>
-                </div>
-            </div>
-
-            <!-- Body Rows -->
-            <div class="d-flex" id="gantt-body-scroll" style="flex: 1; overflow: auto;">
-                <div class="machine-column border-end border-secondary border-opacity-25">
-                    {% for row in timeline_data %}
-                    <div class="machine-row-cell">
-                        <span class="fw-bold text-dark mb-1">{{ row.machine.nombre }}</span>
-                        <div class="d-flex align-items-center gap-1">
-                            <span class="badge bg-secondary bg-opacity-25 text-muted fw-mono" style="font-size: 0.65rem;">ID: {{ row.machine.id_maquina }}</span>
-                            <i class="fas fa-microchip text-primary opacity-50" style="font-size: 0.7rem;"></i>
                         </div>
                     </div>
-                    {% endfor %}
-                </div>
-                
-                <div class="timeline-area" style="position: relative;">
-                    <!-- SVG Layer for Dependencies -->
-                    <svg id="dependency-layer" style="position: absolute; top:0; left:0; width: 100%; height: 100%; pointer-events: none; z-index: 2;"></svg>
-                    <!-- Task Rows -->
-                    {% for row in timeline_data %}
-                    <div class="task-row" 
-                         style="width: {{ total_width }}px;"
-                         data-machine-id="{{ row.machine.id_maquina }}">
-                        
-                        <!-- Background Grid -->
-                        <div class="grid-bg">
-                            {% for col in time_columns %}
-                                {% if col.is_day_start and not forloop.first %}
-                                    <div class="day-gap-separator"></div>
-                                {% endif %}
-                                <div class="grid-cell {% if col.is_day_start %}day-start{% endif %}"></div>
-                            {% endfor %}
-                        </div>
 
-                        <!-- Task blocks -->
-                        {% for task in row.tasks %}
-                            {% with proj_color=task.ProyectoCode|string_to_color %}
-                            <div class="task-block {% if task.segment_index > 0 %}task-continuation{% endif %}{% if task.is_critical %} critical-task{% endif %}"
-                                 data-task-id="{{ task.Idorden }}"
+                    
+                    <!-- SVG Layer for Dependencies - Master Universal Overlay -->
+                    <svg id="dependency-layer" style="position: absolute; top:0; left:0; width: 100%; height: 100%; pointer-events: none; z-index: 90;"></svg>
+
+                        {% for row in timeline_data %}
+                        <div class="d-flex task-row-wrapper" style="width: 100%;">
+                            <!-- Sticky Machine Label -->
+                            <div class="machine-column border-end border-secondary border-opacity-25" style="z-index: 50;">
+                                <div class="machine-row-cell">
+                                    <span class="fw-bold text-dark mb-1">{{ row.machine.nombre }}</span>
+                                    <div class="d-flex align-items-center gap-1">
+                                        <span class="badge bg-secondary bg-opacity-25 text-muted fw-mono" style="font-size: 0.65rem;">ID: {{ row.machine.id_maquina }}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Task Row Content -->
+                            <div class="task-row" 
+                                 style="width: {{ total_width }}px; position: relative;"
+                                 data-machine-id="{{ row.machine.id_maquina }}">
+                                
+                                <!-- Background Grid (Hours) -->
+                                <div class="grid-bg">
+                                    {% for col in time_columns %}
+                                        {% if col.is_day_start and not forloop.first %}
+                                            <div class="day-gap-separator"></div>
+                                        {% endif %}
+                                        <div class="grid-cell {% if col.is_day_start %}day-start{% endif %}"></div>
+                                    {% endfor %}
+                                </div>
+
+                                <!-- Task blocks -->
+                                {% for task in row.tasks %}
+                                {% with proj_color=task.ProyectoCode|string_to_color %}
+                                <div id="task-{{ task.Idorden }}" class="task-block {% if task.segment_index > 0 %}task-continuation{% endif %}{% if task.is_critical %} critical-task{% endif %}"
+                                     data-task-id="{{ task.Idorden }}"
                                  data-color="{% if task.ProyectoCode %}{{ proj_color }}{% else %}#3b82f6{% endif %}"
                                  data-priority="{{ task.OrdenVisual|default:0 }}"
                                  data-critical="{{ task.is_critical|yesno:'true,false' }}"
@@ -1683,6 +1769,10 @@
                                         border-bottom: 1.5px solid {% if task.ProyectoCode %}{{ proj_color }}{% else %}#3b82f6{% endif %};
                                         opacity: {% if task.segment_index > 0 %}0.6{% else %}1{% endif %};">
                                 
+                                <!-- Anchors for Dependencies -->
+                                <div id="anchor-exit-{{ task.Idorden }}" class="dep-anchor exit" style="position:absolute; right:0; top:50%; width:1px; height:1px;"></div>
+                                <div id="anchor-entry-{{ task.Idorden }}" class="dep-anchor entry" style="position:absolute; left:0; top:50%; width:1px; height:1px;"></div>
+
                                 <div class="task-progress-bg" style="width: {{ task.progress_percent|unlocalize }}%;"></div>
 
                                  {% if task.is_critical and task.segment_index == 0 %}
@@ -1690,7 +1780,9 @@
                                  {% endif %}
 
                                  {% if task.is_delayed and task.segment_index == 0 %}
-                                     <div class="delay-badge" title="Proyecto con {{ task.delay_days }} días de retraso">
+                                     <div class="delay-badge"
+                                          style="{% if task.badge_stagger %}top: -32px; z-index: 21;{% endif %}"
+                                          title="Proyecto con {{ task.delay_days }} días de retraso">
                                          <i class="fas fa-exclamation-triangle me-1"></i>{{ task.delay_days }}d ATRASO
                                      </div>
                                  {% endif %}
@@ -1860,18 +1952,15 @@
                                 </div>
                             </div>
                         {% endfor %}
-                    </div>
-                    {% endfor %}
+                    </div> <!-- End Task Row -->
+                </div> <!-- End Task Row Wrapper -->
+                {% endfor %}
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Critical Path Toggle Button -->
-    <button class="cp-legend-btn" id="cpToggleBtn" onclick="toggleCriticalPath()" title="Mostrar/Ocultar Ruta Crítica">
-        <i class="fas fa-fire"></i>
-        <span id="cpBtnText">Ruta Crítica</span>
-    </button>
+    <!-- Controles Flotantes eliminados por solicitud del usuario (Movidos a Herramientas) -->
     
     <script src="https://cdn.jsdelivr.net/npm/interactjs/dist/interact.min.js"></script>
     <script>
@@ -1884,22 +1973,62 @@
     // ============================================================
     // CRITICAL PATH TOGGLE
     // ============================================================
+    // ============================================================
+    // CRITICAL PATH TOGGLE
+    // ============================================================
     let cpVisible = true;
 
     function toggleCriticalPath() {
         cpVisible = !cpVisible;
         const body = document.body;
-        const btn = document.getElementById('cpToggleBtn');
-        const btnText = document.getElementById('cpBtnText');
+        const btn = document.getElementById('btn-toggle-cp');
 
         if (!cpVisible) {
             body.classList.remove('show-cp');
-            btn.classList.add('dimmed');
-            btnText.textContent = 'Mostrar Ruta Crítica';
+            if (btn) btn.classList.remove('active-glass');
         } else {
             body.classList.add('show-cp');
-            btn.classList.remove('dimmed');
-            btnText.textContent = 'Ruta Crítica';
+            if (btn) btn.classList.add('active-glass');
+        }
+    }
+
+    // ============================================================
+    // DELAY INDICATORS TOGGLE
+    // ============================================================
+    let delaysVisible = true;
+
+    function toggleDelayIndicators() {
+        delaysVisible = !delaysVisible;
+        const body = document.body;
+        const btn = document.getElementById('btn-toggle-delays');
+
+        if (!delaysVisible) {
+            body.classList.remove('show-delays');
+            if (btn) btn.classList.remove('active-glass');
+        } else {
+            body.classList.add('show-delays');
+            if (btn) btn.classList.add('active-glass');
+        }
+    }
+
+    // ============================================================
+    // TOOLTIPS TOGGLE
+    // ============================================================
+    let tooltipsVisible = true;
+
+    function toggleTooltips() {
+        tooltipsVisible = !tooltipsVisible;
+        const body = document.body;
+        const btn = document.getElementById('btn-toggle-tooltips');
+
+        if (!tooltipsVisible) {
+            body.classList.add('hide-tooltips');
+            if (btn) btn.classList.add('active-glass');
+            const gt = document.getElementById('global-tooltip');
+            if (gt) gt.style.display = 'none';
+        } else {
+            body.classList.remove('hide-tooltips');
+            if (btn) btn.classList.remove('active-glass');
         }
     }
 
@@ -1977,327 +2106,11 @@
             });
         }
         
-        interact('.task-block').draggable({
-            listeners: {
-                start (event) {
-                    console.log('DragStart');
-                    const taskEl = event.target;
-                    taskEl.classList.add('is-dragging'); 
-                    taskEl.style.zIndex = '9999';
-                },
-                move (event) {
-                    const target = event.target;
-                    // keep the dragged position in the data-x/data-y attributes
-                    const x = (parseFloat(target.getAttribute('data-x')) || 0) + event.dx;
-                    const y = (parseFloat(target.getAttribute('data-y')) || 0) + event.dy;
-        
-                    target.style.transform = `translate(${x}px, ${y}px)`;
-        
-                    target.setAttribute('data-x', x);
-                    target.setAttribute('data-y', y);
-                    
-                    // DISABLED drawDependencies for performance/stability during drag
-                    // if (typeof drawDependencies === 'function') drawDependencies();
-                },
-                end (event) {
-                    const taskEl = event.target;
-                    taskEl.classList.remove('is-dragging');
-                    taskEl.style.zIndex = ''; 
-                    
-                    const mouseX = event.client.x;
-                    const mouseY = event.client.y;
-                    
-                    // Reset Visuals
-                    // NOTA: El reset del transform se movió al final o se maneja en ondrop 
-                    // para evitar saltos antes de calcular la posición final.
-                    
-                    // Reset Visuals Solo si NO terminó en un dropzone (el ondrop se encarga si fue exitoso)
-                    // Si el mouse se soltó fuera de los límites, reseteamos.
-                    const timelineContainer_reset = document.querySelector('.timeline-area');
-                    const tlRect = timelineContainer_reset.getBoundingClientRect();
-                    if (mouseX < tlRect.left || mouseX > tlRect.right || mouseY < tlRect.top || mouseY > tlRect.bottom) {
-                        taskEl.style.transform = 'none'; 
-                        taskEl.setAttribute('data-x', 0);
-                        taskEl.setAttribute('data-y', 0);
-                    }
+        // Drag and Drop disabled by user request. 
+        // interact('.task-block').draggable({...}) 
 
-                    // --- GEOMETRIC DROP DETECTION (MATH > DOM) ---
-                    // Reliable approach: Calculate which row index we are hovering based on Y position
-                    
-                    const bodyScroll = document.getElementById('gantt-body-scroll');
-                    const bodyRect = bodyScroll.getBoundingClientRect();
-                    
-                    // Check if drop is within the Gantt Body Area vertically and horizontally
-                    if (mouseY < bodyRect.top || mouseY > bodyRect.bottom || mouseX < bodyRect.left || mouseX > bodyRect.right) {
-                         console.warn("Drop outside Gantt Body");
-                         return;
-                    }
-
-                    // Calculate relative Y inside the scrollable area
-                    // Need to account for scroll position!
-                    // The rows are direct children of .machine-column (for names) and .timeline-area (for tasks)
-                    // We need the visual rows in .timeline-area
-                    
-                    const timelineArea = document.querySelector('.timeline-area');
-                    const timelineRect = timelineArea.getBoundingClientRect();
-                    
-                    // Check horizontal bounds of timeline (must be to the right of machine headers)
-                    const machineCol = document.querySelector('.machine-column');
-                    const machineColWidth = machineCol ? machineCol.offsetWidth : 0;
-                    
-                    // Visual check: Are we right of the headers?
-                    if (mouseX < bodyRect.left + machineColWidth) {
-                         console.warn("Drop on headers, not timeline");
-                         return;
-                    }
-                    
-                    // Calculate Row Index
-                    // Relative Y from the top of the visible timeline view (bodyRect.top)
-                    // Plus the scrollTop to get absolute Y in the list
-                    const relativeY = mouseY - bodyRect.top + bodyScroll.scrollTop;
-                    const ROW_HEIGHT = 80; // Fixed CSS height
-                    
-                    const rowIndex = Math.floor(relativeY / ROW_HEIGHT);
-                    
-                    console.log(`📏 Math Drop: Y=${mouseY} RelY=${relativeY} Index=${rowIndex}`);
-                    
-                    // Find the corresponding DOM row to get Machine ID
-                    // The rows are in .timeline-area > .task-row
-                    const rows = document.querySelectorAll('.timeline-area .task-row');
-                    
-                    if (rowIndex >= 0 && rowIndex < rows.length) {
-                        const targetRow = rows[rowIndex];
-                        const targetMachineId = targetRow.dataset.machineId;
-                        const taskId = taskEl.dataset.taskId;
-                        
-                        console.log(`🎯 TARGET HIT: Row ${rowIndex} -> Machine ${targetMachineId}`);
-                        
-                        // Calculate Time (Horizontal)
-                        const dropX = mouseX - timelineRect.left + timelineArea.scrollLeft;
-                        let hoursOffset = dropX / 40.0;
-                        if (hoursOffset < 0) hoursOffset = 0;
-                        
-                        const baseDate = new Date(START_SIMULATION_ISO);
-                        baseDate.setMinutes(baseDate.getMinutes() + (hoursOffset * 60));
-                        
-                        const yyyy = baseDate.getFullYear();
-                        const mm = String(baseDate.getMonth() + 1).padStart(2, '0');
-                        const dd = String(baseDate.getDate()).padStart(2, '0');
-                        const hh = String(baseDate.getHours()).padStart(2, '0');
-                        const mn = String(baseDate.getMinutes()).padStart(2, '0');
-                        const ss = String(baseDate.getSeconds()).padStart(2, '0');
-                        
-                        const manualStartStr = `${yyyy}-${mm}-${dd} ${hh}:${mn}:${ss}`;
-                        const newPriority = 5000 + (hoursOffset * 10);
-                        
-                        // Visual Feedback
-                        taskEl.style.opacity = '0.5';
-                        taskEl.style.cursor = 'wait';
-                        
-                        // THE API CALL WAS MOVED TO THE 'ondrop' EVENT OF THE DROPZONE
-                        // THIS 'end' LISTENER SHOULD ONLY HANDLE VISUAL RESET AND STATE
-                        console.log("Drag ended, handing over to ondrop (if applicable)");
-                        
-                        /* 
-                        // DEPRECATED REDUNDANT SAVE
-                        fetch(`/api/set_priority/${taskId}/`, { ... })
-                        */
-
-
-                    } else {
-                        console.warn("Row Index out of bounds");
-                    }
-                }
-            },
-            modifiers: [
-                interact.modifiers.restrictRect({
-                    restriction: '.gantt-container',
-                    endOnly: false
-                })
-            ],
-            inertia: true
-        });
-
-            // Make Rows Dropzones
-            interact('.task-row').dropzone({
-                accept: '.task-block',
-                overlap: 'pointer', // Use POINTER position, not element overlap
-                
-                ondropactivate: function (event) {
-                    event.target.classList.add('drop-active');
-                    console.log("DROPZONE ACTIVATE");
-                },
-                ondragenter: function (event) {
-                    var draggableElement = event.relatedTarget;
-                    var dropzoneElement = event.target;
-                    dropzoneElement.classList.add('drop-target');
-                    draggableElement.classList.add('can-drop');
-                    console.log(">>> ENTER DROPZONE: " + dropzoneElement.dataset.machineId);
-                },
-                ondragleave: function (event) {
-                    event.target.classList.remove('drop-target');
-                    if (event.relatedTarget) event.relatedTarget.classList.remove('can-drop');
-                },
-                ondrop: function (event) {
-                console.log("EVENTO ONDROP DISPARADO - Iniciando persistencia...");
-                
-                try {
-                    const taskEl = event.relatedTarget;
-                    let rowEl = event.target;
-                    const oldRowEl = taskEl.closest('.task-row');
-                    
-                    if (!rowEl.classList.contains('task-row')) {
-                        rowEl = rowEl.closest('.task-row');
-                    }
-                    
-                    if (!taskEl || !rowEl) {
-                        console.error("Drop fallido: Elementos no encontrados");
-                        return;
-                    }
-
-                    const targetMachineId = rowEl.dataset.machineId;
-                    const taskId = taskEl.dataset.taskId;
-                    
-                    // --- Cálculo de Posición y Tiempo (REFORMULADO) ---
-                    const timelineContainer = document.querySelector('.timeline-area');
-                    const containerRect = timelineContainer.getBoundingClientRect();
-                    
-                    // Usamos el puntero del mouse del evento de drag para mayor precisión
-                    const dragEvent = event.dragEvent;
-                    const pointerX = dragEvent.clientX;
-                    
-                    // Calculamos el offset horizontal real desde el inicio del timeline
-                    // Restamos el inicio del contenedor y sumamos el scroll
-                    let pixelsFromStart = (pointerX - containerRect.left) + timelineContainer.scrollLeft;
-                    
-                    // Ajuste: si el usuario agarró la tarea por el medio, compensamos un poco
-                    // aunque lo ideal es que el inicio de la tarea sea lo que mande.
-                    // Para simplificar, usamos una estimación o el offset relativo si existiera.
-                    
-                    // Snapping (Magnetic Mode)
-                    if (typeof magneticMode !== 'undefined' && magneticMode) {
-                        const step = 40; // 1 hora = 40px
-                        pixelsFromStart = Math.round(pixelsFromStart / step) * step;
-                    }
-                    
-                    let hoursOffset = pixelsFromStart / 40.0;
-                    if (hoursOffset < 0) hoursOffset = 0;
-                    
-                    const baseDate = new Date(START_SIMULATION_ISO);
-                    baseDate.setMinutes(baseDate.getMinutes() + (hoursOffset * 60));
-                    
-                    const offsetMs = baseDate.getTimezoneOffset() * 60000;
-                    const localDate = new Date(baseDate.getTime() - offsetMs);
-                    const manualStartStr = localDate.toISOString().replace('T', ' ').substring(0, 19);
-                    
-                    const newPriority = 5000 + (hoursOffset * 10); 
-
-                    // --- FEEDBACK VISUAL INMEDIATO (Estado Traslúcido) ---
-                    taskEl.style.opacity = '0.5';
-                    taskEl.style.cursor = 'wait';
-                    taskEl.classList.add('moving-persist'); // Clase para indicar proceso
-
-                    // Mover el elemento físicamente al nuevo contenedor de fila para que no "vuelva" al origen visualmente
-                    if (rowEl !== oldRowEl) {
-                        // Conservamos el offset relativo al contenedor para que no de un salto
-                        const relativeLeft = taskRect.left - containerRect.left + timelineContainer.scrollLeft;
-                        rowEl.appendChild(taskEl);
-                        taskEl.style.left = relativeLeft + 'px';
-                        console.log(`Movido físicamente a máquina: ${targetMachineId}`);
-                    }
-
-                    const payload = {
-                        maquina: targetMachineId,
-                        new_priority: newPriority,
-                        manual_start: manualStartStr,
-                        scenario_id: ACTIVE_SCENARIO_ID
-                    };
-                    
-                    fetch(`/api/set_priority/${taskId}/`, {
-                        method: 'POST',
-                        headers: { 
-                            'Content-Type': 'application/json',
-                            'X-CSRFToken': '{{ csrf_token }}'
-                        },
-                        body: JSON.stringify(payload)
-                    })
-                    .then(response => {
-                        if (!response.ok) throw new Error("Error del servidor: " + response.statusText);
-                        return response.json();
-                    })
-                    .then(data => {
-                        if (data.status === 'ok') {
-                            // --- ÉXITO: RECUPERAR OPACIDAD Y FIJAR ---
-                            taskEl.style.opacity = '1';
-                            taskEl.style.cursor = 'pointer';
-                            taskEl.style.transform = 'none'; // Importante resetear transform tras mover físicamente
-                            taskEl.setAttribute('data-x', 0);
-                            taskEl.setAttribute('data-y', 0);
-                            
-                            taskEl.style.border = "2px solid #10b981"; // Verde éxito temporal
-                            taskEl.style.boxShadow = "0 0 10px rgba(16, 185, 129, 0.4)";
-                            taskEl.classList.remove('moving-persist');
-                            
-                            // Si el servidor devolvió metadatos útiles podrías actualizarlos aquí
-                            console.log(`Persistencia exitosa para OP ${taskId}`);
-                            
-                            // Mostrar un pequeño toast no intrusivo si se prefiere
-                            const Toast = Swal.mixin({
-                                toast: true,
-                                position: 'top-end',
-                                showConfirmButton: false,
-                                timer: 2000,
-                                timerProgressBar: true
-                            });
-                            Toast.fire({
-                                icon: 'success',
-                                title: 'Reprogramación guardada'
-                            });
-                            
-                            // Quitamos el borde de éxito tras 2 segundos
-                            setTimeout(() => {
-                                taskEl.style.border = "";
-                                taskEl.style.boxShadow = "";
-                            }, 2000);
-
-                        } else {
-                            throw new Error(data.error || "Error desconocido");
-                        }
-                    })
-                    .catch(err => {
-                        // --- ERROR: VOLVER AL ORIGEN ---
-                        console.error("Falla en persistencia:", err);
-                        
-                        Swal.fire({
-                            title: 'Error al reprogramar',
-                            text: 'No se pudo guardar el cambio en el servidor. La tarea volverá a su posición original.',
-                            icon: 'error',
-                            confirmButtonText: 'Entendido',
-                            customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
-                        }).then(() => {
-                            // Recarga forzosa para limpiar estado inconsistente si falla
-                            window.location.reload();
-                        });
-                        
-                        taskEl.style.opacity = '1';
-                        taskEl.style.cursor = 'pointer';
-                    });
-                    
-                } catch (e) {
-                    console.error("Excepción en ondrop:", e);
-                    window.location.reload();
-                }
-                
-                // Limpieza de clases de interact
-                event.target.classList.remove('drop-active', 'drop-target');
-                if (event.relatedTarget) event.relatedTarget.classList.remove('can-drop');
-            },
-
-            ondropdeactivate: function (event) {
-                event.target.classList.remove('drop-active');
-                event.target.classList.remove('drop-target');
-            }
-        });
+            // Dropzone disabled by user request
+            // interact('.task-row').dropzone({...})
         
         
         // --- DEPENDENCY VISUALIZATION & LINKING ---
@@ -2695,6 +2508,7 @@
         const globalTooltip = document.getElementById('global-tooltip');
 
         function showGlobalTooltip(taskBlock, e) {
+            if (document.body.classList.contains('hide-tooltips')) return;
             const template = taskBlock.querySelector('.task-tooltip');
             if (!template) return;
 
@@ -3069,126 +2883,95 @@
             }
         }
         
-        // === DEPENDENCY ARROWS - PREMIUM IMPLEMENTATION ===
+        // --- DEPENDENCY ARROWS - PREMIUM IMPLEMENTATION ---
         const dependenciesData = JSON.parse('{{ dependencies_json|safe }}');
-        
-        window.drawArrow = function(el1, el2, predId, succId) {
-            const svgLayer = document.getElementById('dependency-layer');
-            const timelineArea = document.querySelector('.timeline-area');
-            
-            if (!svgLayer || !timelineArea) return;
-            
-            const rect1 = el1.getBoundingClientRect();
-            const rect2 = el2.getBoundingClientRect();
-            const containerRect = timelineArea.getBoundingClientRect();
-            
-            const scrollLeft = timelineArea.scrollLeft;
-            const scrollTop = timelineArea.scrollTop;
-            
-            const x1 = rect1.right - containerRect.left + scrollLeft;
-            const y1 = rect1.top + (rect1.height / 2) - containerRect.top + scrollTop;
-            
-            const x2 = rect2.left - containerRect.left + scrollLeft;
-            const y2 = rect2.top + (rect2.height / 2) - containerRect.top + scrollTop;
-            
-            const color = el1.dataset.color || '#3b82f6';
-            const markerId = `arrowhead-${predId}-${succId}`;
-            
-            // Create marker for arrowhead
-            const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
-            const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
-            marker.setAttribute('id', markerId);
-            marker.setAttribute('markerWidth', '10');
-            marker.setAttribute('markerHeight', '10');
-            marker.setAttribute('refX', '9');
-            marker.setAttribute('refY', '5');
-            marker.setAttribute('orient', 'auto');
-            
-            const pathHead = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            pathHead.setAttribute('d', 'M0,0 L10,5 L0,10 Z');
-            pathHead.setAttribute('fill', color);
-            marker.appendChild(pathHead);
-            defs.appendChild(marker);
-            svgLayer.appendChild(defs);
-            
-            // Create the path (Bézier curve for premium look)
-            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            const cp1x = x1 + (x2 - x1) * 0.4;
-            const cp2x = x1 + (x2 - x1) * 0.6;
-            
-            const d = `M ${x1} ${y1} C ${cp1x} ${y1}, ${cp2x} ${y2}, ${x2} ${y2}`;
-            
-            path.setAttribute('d', d);
-            path.setAttribute('stroke', color);
-            path.setAttribute('stroke-width', '2');
-            path.setAttribute('fill', 'none');
-            path.setAttribute('marker-end', `url(#${markerId})`);
-            path.setAttribute('class', 'dependency-path');
-            path.setAttribute('opacity', '0.7');
-            path.style.transition = 'all 0.3s ease';
-            
-            // Interactive arrows
-            path.style.cursor = 'pointer';
-            path.style.pointerEvents = 'stroke';
-            
-            path.addEventListener('mouseenter', () => {
-                path.setAttribute('stroke-width', '4');
-                path.setAttribute('opacity', '1');
-            });
-            
-            path.addEventListener('mouseleave', () => {
-                path.setAttribute('stroke-width', '2');
-                path.setAttribute('opacity', '0.7');
-            });
-
-            path.addEventListener('click', (e) => {
-                unlinkTasks(predId, succId);
-            });
-            
-            svgLayer.appendChild(path);
-        };
         
         window.drawDependencies = function() {
             const svgLayer = document.getElementById('dependency-layer');
-            const timelineArea = document.querySelector('.timeline-area');
-            if (!svgLayer || !timelineArea) return;
+            if (!svgLayer) return;
             
-            if (!svgLayer.classList.contains('visible')) return;
-
-            // Sync SVG size to timeline area
-            svgLayer.style.width = timelineArea.scrollWidth + 'px';
-            svgLayer.style.height = timelineArea.scrollHeight + 'px';
-            
-            // Clear existing arrows
-            while (svgLayer.firstChild) {
-                svgLayer.removeChild(svgLayer.firstChild);
+            // Clear and only show if visible class is present
+            if (!svgLayer.classList.contains('visible')) {
+                svgLayer.innerHTML = '';
+                return;
             }
+
+            console.log("Drawing dependencies for", dependenciesData.length, "connections...");
+            svgLayer.innerHTML = '';
             
-            // PRE-CACHE task elements for much faster lookup
+            // 1. Create Markers once
+            const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+            
+            // Standard arrow marker
+            const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+            marker.setAttribute('id', 'arrowhead');
+            marker.setAttribute('markerWidth', '10'); marker.setAttribute('markerHeight', '7');
+            marker.setAttribute('refX', '9'); marker.setAttribute('refY', '3.5');
+            marker.setAttribute('orient', 'auto');
+            const pathHead = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            pathHead.setAttribute('d', 'M0,0 L10,3.5 L0,7 Z'); 
+            pathHead.setAttribute('fill', '#3b82f6');
+            marker.appendChild(pathHead); defs.appendChild(marker); 
+            svgLayer.appendChild(defs);
+
+            // 2. Full-scroller size sync
+            const masterScroller = document.getElementById('gantt-body-scroll');
+            if (masterScroller) {
+                const totalWidth = masterScroller.scrollWidth;
+                const totalHeight = masterScroller.scrollHeight;
+                svgLayer.setAttribute('width', totalWidth);
+                svgLayer.setAttribute('height', totalHeight);
+                // Ensure the SVG style also matches to prevent clipping
+                svgLayer.style.width = totalWidth + 'px';
+                svgLayer.style.height = totalHeight + 'px';
+            }
+
             const taskElementsMap = {};
-            document.querySelectorAll('.task-block').forEach(el => {
-                if (el.dataset.taskId) taskElementsMap[el.dataset.taskId] = el;
-            });
+            document.querySelectorAll('.task-block').forEach(el => taskElementsMap[el.dataset.taskId] = el);
 
             let count = 0;
-            // Use requestIdleCallback or chunks if dependencies exceed 500
-            const maxArrows = 1000;
-            const depsToDraw = dependenciesData.slice(0, maxArrows);
-
-            depsToDraw.forEach(dep => {
-                const predEl = taskElementsMap[dep.pred];
-                const succEl = taskElementsMap[dep.succ];
+            dependenciesData.forEach(dep => {
+                const el1 = taskElementsMap[dep.pred];
+                const el2 = taskElementsMap[dep.succ];
                 
-                if (predEl && succEl) {
-                    window.drawArrow(predEl, succEl, dep.pred, dep.succ);
+                if (el1 && el2) {
+                    // Get coordinates relative to the SVG layer's coordinate system
+                    // Since both SVGLayer and TaskRowContainers share the same root origin in the scrollable div
+                    
+                    const row1 = el1.closest('.task-row');
+                    const row2 = el2.closest('.task-row');
+                    if (!row1 || !row2) return;
+
+                    // X coords are absolute in the timeline
+                    const x1 = parseFloat(el1.style.left) + parseFloat(el1.style.width);
+                    const x2 = parseFloat(el2.style.left);
+                    
+                    // Y coords relative to the whole container
+                    // We need to find the offset of the task row relative to the gantt-body-scroll child
+                    const y1 = row1.offsetTop + (el1.offsetTop || 12) + 31; // 31 is roughly 50% of 62px height
+                    const y2 = row2.offsetTop + (el2.offsetTop || 12) + 31;
+
+                    const color = el1.dataset.color || '#3b82f6';
+                    
+                    // Path
+                    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                    const dx = Math.abs(x2 - x1);
+                    const cp1x = x1 + Math.min(dx * 0.4, 150);
+                    const cp2x = x2 - Math.min(dx * 0.4, 150);
+                    
+                    path.setAttribute('d', `M ${x1} ${y1} C ${cp1x} ${y1}, ${cp2x} ${y2}, ${x2} ${y2}`);
+                    path.setAttribute('stroke', color);
+                    path.setAttribute('stroke-width', '2');
+                    path.setAttribute('fill', 'none');
+                    path.setAttribute('opacity', '0.6');
+                    path.setAttribute('marker-end', 'url(#arrowhead)');
+                    path.classList.add('dependency-path');
+                    
+                    svgLayer.appendChild(path);
                     count++;
                 }
             });
-            
-            if (dependenciesData.length > maxArrows) {
-                 console.warn(`⚠️ Demasiadas dependencias (${dependenciesData.length}). Se limitaron a las primeras ${maxArrows}.`);
-            }
-            console.log(`✅ Visualización de Dependencias: ${count} flechas generadas.`);
+            console.log(`DEBUG: [Dependencies] Repaint: ${count} arrows drawn.`);
         };
         
         // Initial drawing and events
@@ -3227,27 +3010,30 @@
                 });
             }
 
-            // Arrow Toggle logic
+            // Arrow Toggle Logic - Reinforced
             const btnArrows = document.getElementById('btn-toggle-arrows');
             const svgLayer = document.getElementById('dependency-layer');
-            if (btnArrows && svgLayer) {
-                btnArrows.addEventListener('click', function() {
-                    svgLayer.classList.toggle('visible');
-                    this.classList.toggle('active-glass');
-                    if (svgLayer.classList.contains('visible')) {
-                        window.drawDependencies();
-                    }
-                });
-            }
             
-            // Sync scroll for body and header
-            const bodyScroll = document.getElementById('gantt-body-scroll');
-            const headerScroll = document.getElementById('header-container');
-            if (bodyScroll && headerScroll) {
-                bodyScroll.addEventListener('scroll', () => {
-                    headerScroll.scrollLeft = bodyScroll.scrollLeft;
-                    // Redraw arrows on scroll if they feel "stuck"
-                });
+            console.log("DEBUG: [Init] Dependency Button exists?", !!btnArrows);
+            console.log("DEBUG: [Init] SVG Layer exists?", !!svgLayer);
+
+            if (btnArrows && svgLayer) {
+                btnArrows.onclick = function(e) {
+                    e.preventDefault();
+                    console.log("DEBUG: Click en dependencias detectado!");
+                    
+                    const isVisible = svgLayer.classList.toggle('visible');
+                    this.classList.toggle('active-glass');
+                    
+                    if (isVisible) {
+                        console.log("DEBUG: Dibujando dependencias...");
+                        if (typeof window.drawDependencies === 'function') {
+                            window.drawDependencies();
+                        } else {
+                            console.error("ERROR: window.drawDependencies no definida!");
+                        }
+                    }
+                };
             }
             
             // --- SCENARIO MANAGEMENT (moved inside DOMContentLoaded) ---

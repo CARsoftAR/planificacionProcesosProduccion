@@ -254,12 +254,21 @@ class TaskDependency(models.Model):
         verbose_name_plural = 'Dependencias de Tareas'
 
 class HiddenTask(models.Model):
-    id_orden = models.BigIntegerField(db_column='IdOrden', primary_key=True, verbose_name='ID de Orden')
+    id_orden = models.BigIntegerField(db_column='IdOrden', verbose_name='ID de Orden')
+    scenario = models.ForeignKey(
+        Scenario,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='hidden_tasks',
+        verbose_name='Escenario'
+    )
     fecha_oculto = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         managed = True
         db_table = 'hidden_task'
+        unique_together = ('id_orden', 'scenario')
         verbose_name = 'Tarea Oculta'
         verbose_name_plural = 'Tareas Ocultas'
 
