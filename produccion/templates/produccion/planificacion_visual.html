@@ -2701,18 +2701,20 @@
     
     <!-- We need custom template tags for maths 'multiply' and 'time_diff_hours' -->
     <script>
-        // Draw dependencies on load
-        if (typeof drawDependencies === 'function') {
-            console.log("Drawing dependencies...");
-            // Small delay to ensure layout is final
-            setTimeout(drawDependencies, 500);
-        } else {
-             console.warn("drawDependencies function not found!");
-        }
-        
-        // Re-draw on window resize
-        window.addEventListener('resize', () => {
-             if (typeof drawDependencies === 'function') drawDependencies();
+        document.addEventListener('DOMContentLoaded', function() {
+            // Draw dependencies on load
+            if (typeof window.drawDependencies === 'function') {
+                console.log("Drawing dependencies...");
+                // Small delay to ensure layout is final
+                setTimeout(window.drawDependencies, 500);
+            } else {
+                 console.warn("drawDependencies function not found!");
+            }
+            
+            // Re-draw on window resize
+            window.addEventListener('resize', () => {
+                 if (typeof window.drawDependencies === 'function') window.drawDependencies();
+            });
         });
     </script>
     
