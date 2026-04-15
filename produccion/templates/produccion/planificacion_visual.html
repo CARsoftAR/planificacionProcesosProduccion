@@ -1,4 +1,4 @@
-﻿{% load static %}
+{% load static %}
 {% load l10n %}
 {% load produccion_extras %}
 <!DOCTYPE html>
@@ -1180,6 +1180,13 @@
                       <button id="btn-toggle-tooltips" class="btn-modern glass rounded-pill px-2 active-glass" style="height: 34px; border-color: #e2e8f0; color: #475569;" onclick="toggleTooltips();" title="Toggle Tooltips">
                           <i class="fas fa-comment text-primary"></i>
                       </button>
+                      <button id="btn-filter-ops" 
+                              class="btn-modern glass rounded-pill px-2" 
+                              style="height: 34px; border-color: #e2e8f0; color: #475569;" 
+                              onclick="window.toggleOpFilterSidebar()" 
+                              title="Filtrar Visibilidad de OPs">
+                          <i class="fas fa-filter" style="color: #06b6d4;"></i>
+                      </button>
                   </div>
 
                   <div class="vr mx-2 bg-secondary opacity-25" style="height: 25px;"></div>
@@ -1922,8 +1929,8 @@
                                 {% with proj_color=task.ProyectoCode|string_to_color %}
                                 <div id="op-{{ task.Idorden }}-{{ task.segment_index }}" 
                                      class="task-block {% if task.segment_index > 0 %}task-continuation{% endif %}{% if task.is_critical %} critical-task{% endif %}"
-                                     title="OP {{ task.Idorden }} - {{ task.ProyectoCode|default:'S/P' }}"
                                      data-task-id="{{ task.Idorden }}"
+                                 data-project-name="{{ task.ProyectoCode|default:'S/P' }}"
                                  data-color="{% if task.ProyectoCode %}{{ proj_color }}{% else %}#3b82f6{% endif %}"
                                  data-priority="{{ task.OrdenVisual|default:0 }}"
                                  data-critical="{{ task.is_critical|yesno:'true,false' }}"
@@ -1947,14 +1954,13 @@
 
                                  {% if task.is_delayed and task.segment_index == 0 %}
                                      <div class="delay-badge"
-                                          style="{% if task.badge_stagger %}top: -32px; z-index: 21;{% endif %}"
-                                          title="Proyecto con {{ task.delay_days }} días de retraso">
+                                          style="{% if task.badge_stagger %}top: -32px; z-index: 21;{% endif %}">
                                          <i class="fas fa-exclamation-triangle me-1"></i>{{ task.delay_days }}d ATRASO
                                      </div>
                                  {% endif %}
 
                                  {% if task.is_moved and task.segment_index == 0 %}
-                                     <div class="moved-badge" title="Originalmente en: {{ task.original_machine_name }}">
+                                     <div class="moved-badge">
                                          <i class="fas fa-exchange-alt me-1"></i>DE: {{ task.original_machine_name }}
                                      </div>
                                  {% endif %}
@@ -2858,7 +2864,7 @@
     </script>
     
     <!-- Debug Table -->
-    <div class="mt-5 p-3 bg-white border">
+    <div class="mt-5 p-3 bg-white border" style="display: none;">
         <h5>Debug Data (Check Task 1 & 2 here)</h5>
         <table class="table table-striped table-sm" style="font-size: 0.8rem;">
             <thead>
@@ -2983,6 +2989,9 @@
                 const box2 = taskMapFirst[s_succ];
                 
                 if (!box1 || !box2) return;
+                
+                // Si alguna de las tarjetas está oculta por filtro, no dibujamos la flecha
+                if (box1.style.display === 'none' || box2.style.display === 'none') return;
 
                 // Las anclas están dentro de los bloques
                 // Usamos selectores dentro del elemento específico de la OP/segmento
@@ -3800,36 +3809,52 @@
     <script>
     (function() {
         var populated = false;
-        function collectOPs() {
-            var ops = {};
+
+        function collectProjects() {
+            var projects = {};
             document.querySelectorAll('.task-block').forEach(function(el) {
-                var tid = el.dataset.taskId;
-                if (!tid) return;
-                var idParts = el.id.split('-');
-                var seg = parseInt(idParts[idParts.length - 1]) || 0;
-                if (seg > 0) return;
-                if (!ops[tid]) {
-                    var projEl = el.querySelector('.task-card-project');
-                    var opEl   = el.querySelector('.task-card-op');
-                    var color  = window.getComputedStyle(el).borderTopColor || '#3b82f6';
-                    ops[tid] = { id: tid, project: projEl ? projEl.textContent.trim() : 'S/P', op: opEl ? opEl.textContent.trim() : ('OP ' + tid), color: color };
+                var projectName = el.dataset.projectName || 'S/P';
+                if (!projects[projectName]) {
+                    var color = window.getComputedStyle(el).borderTopColor || '#3b82f6';
+                    projects[projectName] = {
+                        name: projectName,
+                        color: color,
+                        opCount: 0,
+                        opIds: new Set()
+                    };
+                }
+                var opId = el.dataset.taskId;
+                if (opId && !projects[projectName].opIds.has(opId)) {
+                    projects[projectName].opIds.add(opId);
+                    projects[projectName].opCount++;
                 }
             });
-            return Object.values(ops).sort(function(a,b){ return a.project.localeCompare(b.project); });
+            return Object.values(projects).sort(function(a, b) { 
+                return a.name.localeCompare(b.name); 
+            });
         }
+
         function populateList() {
             var listEl = document.getElementById('op-filter-list');
             if (!listEl) return;
-            var ops = collectOPs();
+            var projects = collectProjects();
             listEl.innerHTML = '';
-            ops.forEach(function(op) {
+            
+            projects.forEach(function(proj) {
                 var item = document.createElement('label');
                 item.className = 'op-filter-item';
-                item.innerHTML = '<input type="checkbox" checked data-op-id="' + op.id + '" onchange="window.applyOpFilter(\'' + op.id + '\', this.checked)"><span class="color-dot" style="background:' + op.color + ';flex-shrink:0;width:10px;height:10px;border-radius:50%;display:inline-block;"></span><span style="font-size:0.75rem;color:#334155;font-weight:500;flex:1;">' + op.project + '<br><small style="color:#94a3b8;font-size:0.65rem;">' + op.op + '</small></span>';
+                item.innerHTML = 
+                    '<input type="checkbox" checked data-project-name="' + proj.name + '" onchange="window.applyProjectFilter(\'' + proj.name + '\', this.checked)">' +
+                    '<span class="color-dot" style="background:' + proj.color + ';flex-shrink:0;width:10px;height:10px;border-radius:50%;display:inline-block;"></span>' +
+                    '<span style="font-size:0.75rem;color:#334155;font-weight:500;flex:1;">' + 
+                        'PROJECT ' + proj.name + 
+                        '<br><small style="color:#94a3b8;font-size:0.65rem;">' + proj.opCount + ' OPs asociadas</small>' +
+                    '</span>';
                 listEl.appendChild(item);
             });
             populated = true;
         }
+
         window.toggleOpFilterSidebar = function() {
             var sidebar = document.getElementById('op-filter-sidebar');
             var overlay = document.getElementById('op-filter-overlay');
@@ -3840,21 +3865,27 @@
             if (btn)     btn.classList.toggle('active-glass', isOpen);
             if (isOpen && !populated) populateList();
         };
-        window.applyOpFilter = function(opId, visible) {
-            document.querySelectorAll('.task-block[data-task-id="' + opId + '"]').forEach(function(el) {
+
+        window.applyProjectFilter = function(projectName, visible) {
+            // Ocultar/Mostrar todos los task-blocks del proyecto
+            document.querySelectorAll('.task-block[data-project-name="' + projectName + '"]').forEach(function(el) {
                 el.style.display = visible ? '' : 'none';
             });
+            
+            // Redibujar dependencias: la lógica interna ahora ignora boxes con display:none
             var svgLayer = document.getElementById('dependency-layer');
             if (svgLayer && svgLayer.style.display !== 'none' && typeof window.drawDependencies === 'function') {
-                setTimeout(window.drawDependencies, 50);
+                window.drawDependencies();
             }
         };
+
         window.setAllOpsVisible = function(visible) {
             document.querySelectorAll('#op-filter-list input[type=checkbox]').forEach(function(cb) {
                 cb.checked = visible;
-                window.applyOpFilter(cb.dataset.opId, visible);
+                window.applyProjectFilter(cb.dataset.projectName, visible);
             });
         };
+
         window.filterOpSearchList = function(query) {
             var q = query.toLowerCase();
             document.querySelectorAll('#op-filter-list .op-filter-item').forEach(function(item) {
