@@ -1,4 +1,4 @@
-{% load static %}
+﻿{% load static %}
 {% load l10n %}
 {% load produccion_extras %}
 <!DOCTYPE html>
@@ -760,6 +760,149 @@
 
         .dependency-path {
             stroke-dasharray: none;
+        }
+
+        /* OP Filter Sidebar */
+        #op-filter-sidebar {
+            position: fixed;
+            top: 0;
+            right: -340px;
+            width: 320px;
+            height: 100vh;
+            background: rgba(255, 255, 255, 0.92);
+            backdrop-filter: blur(20px) saturate(180%);
+            -webkit-backdrop-filter: blur(20px) saturate(180%);
+            border-left: 1px solid rgba(0,0,0,0.08);
+            box-shadow: -8px 0 32px rgba(0,0,0,0.12);
+            z-index: 10000;
+            transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        #op-filter-sidebar.open {
+            right: 0;
+        }
+        #op-filter-sidebar .sidebar-header {
+            padding: 1.2rem 1.4rem;
+            border-bottom: 1px solid rgba(0,0,0,0.07);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+        }
+        #op-filter-sidebar .sidebar-header h6 {
+            margin: 0;
+            font-weight: 700;
+            font-size: 0.85rem;
+            color: #1e293b;
+            letter-spacing: -0.3px;
+        }
+        #op-filter-sidebar .sidebar-search {
+            padding: 0.8rem 1rem;
+            border-bottom: 1px solid rgba(0,0,0,0.06);
+            flex-shrink: 0;
+        }
+        #op-filter-sidebar .sidebar-search input {
+            width: 100%;
+            padding: 0.45rem 0.75rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 0.8rem;
+            background: rgba(255,255,255,0.8);
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        #op-filter-sidebar .sidebar-search input:focus {
+            border-color: #3b82f6;
+        }
+        #op-filter-sidebar .sidebar-actions {
+            padding: 0.5rem 1rem;
+            display: flex;
+            gap: 0.5rem;
+            border-bottom: 1px solid rgba(0,0,0,0.06);
+            flex-shrink: 0;
+        }
+        #op-filter-sidebar .sidebar-actions button {
+            flex: 1;
+            padding: 0.3rem 0.5rem;
+            font-size: 0.72rem;
+            font-weight: 600;
+            border-radius: 6px;
+            border: 1px solid #e2e8f0;
+            background: white;
+            cursor: pointer;
+            color: #475569;
+            transition: all 0.15s;
+        }
+        #op-filter-sidebar .sidebar-actions button:hover {
+            background: #f1f5f9;
+            color: #1e293b;
+        }
+        #op-filter-sidebar .sidebar-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0.5rem 0;
+        }
+        #op-filter-sidebar .sidebar-list::-webkit-scrollbar {
+            width: 4px;
+        }
+        #op-filter-sidebar .sidebar-list::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 2px;
+        }
+        .op-filter-item {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.55rem 1rem;
+            cursor: pointer;
+            transition: background 0.15s;
+            border-bottom: 1px solid rgba(0,0,0,0.03);
+        }
+        .op-filter-item:hover {
+            background: rgba(59, 130, 246, 0.05);
+        }
+        .op-filter-item .color-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+        .op-filter-item label {
+            font-size: 0.75rem;
+            color: #334155;
+            cursor: pointer;
+            flex: 1;
+            line-height: 1.3;
+            font-weight: 500;
+        }
+        .op-filter-item label span {
+            display: block;
+            font-size: 0.65rem;
+            color: #94a3b8;
+            font-weight: 400;
+        }
+        .op-filter-item input[type=checkbox] {
+            accent-color: #3b82f6;
+            width: 15px;
+            height: 15px;
+            flex-shrink: 0;
+            cursor: pointer;
+        }
+        #op-filter-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.2);
+            z-index: 9999;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s;
+        }
+        #op-filter-overlay.open {
+            opacity: 1;
+            pointer-events: all;
         }
 
         /* Scrollbar styling */
@@ -3636,6 +3779,90 @@
 </script>
     <!-- Portal Tooltip Global -->
     <div id="global-tooltip" style="display: none; position: absolute; z-index: 10000;"></div>
+
+    <!-- OP Visibility Filter Sidebar -->
+    <div id="op-filter-overlay" onclick="window.toggleOpFilterSidebar()"></div>
+    <aside id="op-filter-sidebar">
+        <div class="sidebar-header">
+            <h6><i class="fas fa-filter me-2 text-info"></i>Filtrar Visibilidad de OPs</h6>
+            <button onclick="window.toggleOpFilterSidebar()" style="background:none;border:none;cursor:pointer;color:#64748b;font-size:1rem;"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="sidebar-search">
+            <input type="text" id="op-filter-search" placeholder="Buscar proyecto u OP..." oninput="window.filterOpSearchList(this.value)">
+        </div>
+        <div class="sidebar-actions">
+            <button onclick="window.setAllOpsVisible(true)"><i class="fas fa-eye me-1"></i>Mostrar todo</button>
+            <button onclick="window.setAllOpsVisible(false)"><i class="fas fa-eye-slash me-1"></i>Ocultar todo</button>
+        </div>
+        <div class="sidebar-list" id="op-filter-list"></div>
+    </aside>
+
+    <script>
+    (function() {
+        var populated = false;
+        function collectOPs() {
+            var ops = {};
+            document.querySelectorAll('.task-block').forEach(function(el) {
+                var tid = el.dataset.taskId;
+                if (!tid) return;
+                var idParts = el.id.split('-');
+                var seg = parseInt(idParts[idParts.length - 1]) || 0;
+                if (seg > 0) return;
+                if (!ops[tid]) {
+                    var projEl = el.querySelector('.task-card-project');
+                    var opEl   = el.querySelector('.task-card-op');
+                    var color  = window.getComputedStyle(el).borderTopColor || '#3b82f6';
+                    ops[tid] = { id: tid, project: projEl ? projEl.textContent.trim() : 'S/P', op: opEl ? opEl.textContent.trim() : ('OP ' + tid), color: color };
+                }
+            });
+            return Object.values(ops).sort(function(a,b){ return a.project.localeCompare(b.project); });
+        }
+        function populateList() {
+            var listEl = document.getElementById('op-filter-list');
+            if (!listEl) return;
+            var ops = collectOPs();
+            listEl.innerHTML = '';
+            ops.forEach(function(op) {
+                var item = document.createElement('label');
+                item.className = 'op-filter-item';
+                item.innerHTML = '<input type="checkbox" checked data-op-id="' + op.id + '" onchange="window.applyOpFilter(\'' + op.id + '\', this.checked)"><span class="color-dot" style="background:' + op.color + ';flex-shrink:0;width:10px;height:10px;border-radius:50%;display:inline-block;"></span><span style="font-size:0.75rem;color:#334155;font-weight:500;flex:1;">' + op.project + '<br><small style="color:#94a3b8;font-size:0.65rem;">' + op.op + '</small></span>';
+                listEl.appendChild(item);
+            });
+            populated = true;
+        }
+        window.toggleOpFilterSidebar = function() {
+            var sidebar = document.getElementById('op-filter-sidebar');
+            var overlay = document.getElementById('op-filter-overlay');
+            var btn     = document.getElementById('btn-filter-ops');
+            if (!sidebar) return;
+            var isOpen = sidebar.classList.toggle('open');
+            if (overlay) overlay.classList.toggle('open', isOpen);
+            if (btn)     btn.classList.toggle('active-glass', isOpen);
+            if (isOpen && !populated) populateList();
+        };
+        window.applyOpFilter = function(opId, visible) {
+            document.querySelectorAll('.task-block[data-task-id="' + opId + '"]').forEach(function(el) {
+                el.style.display = visible ? '' : 'none';
+            });
+            var svgLayer = document.getElementById('dependency-layer');
+            if (svgLayer && svgLayer.style.display !== 'none' && typeof window.drawDependencies === 'function') {
+                setTimeout(window.drawDependencies, 50);
+            }
+        };
+        window.setAllOpsVisible = function(visible) {
+            document.querySelectorAll('#op-filter-list input[type=checkbox]').forEach(function(cb) {
+                cb.checked = visible;
+                window.applyOpFilter(cb.dataset.opId, visible);
+            });
+        };
+        window.filterOpSearchList = function(query) {
+            var q = query.toLowerCase();
+            document.querySelectorAll('#op-filter-list .op-filter-item').forEach(function(item) {
+                item.style.display = item.textContent.toLowerCase().includes(q) ? '' : 'none';
+            });
+        };
+    })();
+    </script>
 
 </body>
 
