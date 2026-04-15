@@ -188,6 +188,41 @@ def hide_task(request):
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
 
+@csrf_exempt
+def reactivar_op(request):
+    """
+    API to restore a hidden task (remove from hidden_task table).
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    
+    try:
+        body = json.loads(request.body)
+        id_orden = body.get('id_orden')
+        # We can extract scenario_id directly to avoid redundant calls
+        scenario_id = body.get('scenario_id')
+        active_scenario = get_active_scenario(request, scenario_id=scenario_id)
+        
+        if not id_orden:
+             return JsonResponse({'error': 'Missing ID'}, status=400)
+             
+        # Normalize ID
+        try:
+            id_orden_clean = int(float(id_orden))
+        except:
+            id_orden_clean = id_orden
+
+        deleted_count, _ = HiddenTask.objects.using('default').filter(
+            id_orden=id_orden_clean, 
+            scenario=active_scenario
+        ).delete()
+        
+        return JsonResponse({'status': 'ok', 'active': True, 'deleted_count': deleted_count})
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        return JsonResponse({'error': str(e)}, status=500)
+
 
 @csrf_exempt
 def update_manual_time(request):
@@ -385,11 +420,21 @@ def planificacion_list(request):
             plan_mode = request.session.get('last_plan_mode', 'original')
 
         # --- FILTER HIDDEN TASKS FOR THIS SCENARIO ---
-        # If we are in 'original' mode, we show everything from ERP (Truth), ignoring manual deletions/hiding.
+        # If we are in 'audit_mode', we include hidden tasks but mark them.
+        audit_mode = request.GET.get('audit_mode') == '1'
+        hidden_ids = set()
         if plan_mode != 'original':
             hidden_ids = set(HiddenTask.objects.using('default').filter(scenario=active_scenario).values_list('id_orden', flat=True))
-            if hidden_ids:
-                data = [d for d in data if d.get('Idorden') not in hidden_ids]
+            
+            if audit_mode:
+                # In audit mode, we keep them but flag them
+                for item in data:
+                    if item.get('Idorden') in hidden_ids:
+                        item['is_hidden'] = True
+            else:
+                # Normal mode: filter them out
+                if hidden_ids:
+                    data = [d for d in data if d.get('Idorden') not in hidden_ids]
 
         
         # Determine response format
@@ -596,7 +641,8 @@ def planificacion_list(request):
             'proyectos_value': proyectos if proyectos else '',
             'id_orden_value': id_orden if id_orden else '',
             'all_scenarios': Scenario.objects.using('default').all() if 'Scenario' in globals() else [],
-            'active_scenario_id': active_scenario.id if active_scenario else None
+            'active_scenario_id': active_scenario.id if active_scenario else None,
+            'audit_mode': audit_mode
         })
     except Exception as e:
         if request.GET.get('format') == 'json':

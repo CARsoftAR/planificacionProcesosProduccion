@@ -50,6 +50,7 @@ urlpatterns = [
     path('api/export_excel/', views.export_planificacion_excel, name='export_planificacion_excel'),
     path('api/redistribute_tasks/', views.redistribute_tasks, name='redistribute_tasks'),
     path('api/hide_task/', views.hide_task, name='hide_task'),
+    path('api/reactivar_op/', views.reactivar_op, name='reactivar_op'),
     path('api/reset_planning/', views.reset_planning, name='reset_planning'),
     
     # Scenario Management

@@ -86,6 +86,25 @@
             background: rgba(59, 130, 246, 0.1) !important;
             color: #3b82f6 !important;
         }
+
+        /* Audit Mode Styles */
+        .hidden-row {
+            opacity: 0.5;
+            background-color: #f8fafc !important;
+        }
+        .hidden-row:hover {
+            opacity: 0.8;
+        }
+        .btn-audit-active {
+            background-color: #f59e0b !important; /* Orange */
+            color: white !important;
+            border-color: #d97706 !important;
+            box-shadow: 0 0 12px rgba(245, 158, 11, 0.4);
+        }
+
+        /* Toggle buttons based on row state */
+        .hidden-row .btn-normal-action { display: none !important; }
+        tr:not(.hidden-row) .btn-audit-action { display: none !important; }
     </style>
 </head>
 <body>
@@ -165,6 +184,10 @@
                 </div>
 
                 <div class="ms-auto d-flex align-items-center gap-2">
+                    <button type="button" id="btnToggleAudit" class="btn btn-sm btn-outline-secondary rounded-pill px-3 fw-bold {% if audit_mode %}btn-audit-active{% endif %}" title="Ver u ocultar procesos eliminados visualmente">
+                        <i class="fas {% if audit_mode %}fa-eye-slash{% else %}fa-eye{% endif %} me-1"></i> 
+                        {% if audit_mode %}Ocultar Modificados{% else %}Ver Ocultos{% endif %}
+                    </button>
                     <button type="button" id="btnResetToERP" class="btn btn-sm btn-warning rounded-pill px-3 fw-bold shadow-sm" style="background: #fbbf24; border: none; color: #78350f;" title="Restablecer al Plan Original del ERP">
                         <i class="fas fa-history me-1"></i> Reset ERP
                     </button>
@@ -291,22 +314,34 @@
                         <tbody>
                             <!-- Retrieve list for this machine from the dictionary -->
                              {% for item in grouped_data|get_item:machine.nombre %}
-                            <tr data-id="{{ item.Idorden }}" data-maquina="{{ item.MAQUINA_ID }}" data-priority="{{ item.OrdenVisual }}" style="cursor: grab;">
-                                <td class="text-center" style="white-space: nowrap;">
-                                    <button class="btn btn-sm btn-outline-primary btn-up d-inline-flex align-items-center justify-content-center" style="width: 28px; height: 28px; padding: 0; margin-right: 4px;" title="Subir">
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-chevron-up" viewBox="0 0 16 16">
-                                          <path fill-rule="evenodd" d="M7.646 4.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1-.708.708L8 5.707l-5.646 5.647a.5.5 0 0 1-.708-.708l6-6z"/>
-                                        </svg>
+                            <tr data-id="{{ item.Idorden }}" 
+                                data-maquina="{{ item.MAQUINA_ID }}" 
+                                data-priority="{{ item.OrdenVisual }}" 
+                                class="{% if item.is_hidden %}hidden-row{% endif %}"
+                                style="cursor: grab;">
+                                <td class="text-center actions-column" style="white-space: nowrap;">
+                                    <!-- Audit Mode Switchable Buttons -->
+                                    <button class="btn btn-sm btn-outline-success btn-reactivate btn-audit-action d-inline-flex align-items-center justify-content-center" style="width: 28px; height: 28px; padding: 0;" title="Recuperar OP">
+                                        <i class="fas fa-undo"></i>
                                     </button>
-                                    <button class="btn btn-sm btn-outline-secondary btn-down d-inline-flex align-items-center justify-content-center" style="width: 28px; height: 28px; padding: 0;" title="Bajar">
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-chevron-down" viewBox="0 0 16 16">
-                                          <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z"/>
-                                        </svg>
-                                    </button>
-                                    <button class="btn btn-sm btn-outline-danger btn-delete d-inline-flex align-items-center justify-content-center" style="width: 28px; height: 28px; padding: 0; margin-left: 4px;" title="Borrar OP (Solo de este escenario)">
-                                        <i class="fas fa-trash-alt"></i>
-                                    </button>
+                                    
+                                    <div class="btn-normal-action d-inline-flex">
+                                        <button class="btn btn-sm btn-outline-primary btn-up d-inline-flex align-items-center justify-content-center" style="width: 28px; height: 28px; padding: 0; margin-right: 4px;" title="Subir">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-chevron-up" viewBox="0 0 16 16">
+                                              <path fill-rule="evenodd" d="M7.646 4.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1-.708.708L8 5.707l-5.646 5.647a.5.5 0 0 1-.708-.708l6-6z"/>
+                                            </svg>
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-secondary btn-down d-inline-flex align-items-center justify-content-center" style="width: 28px; height: 28px; padding: 0;" title="Bajar">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-chevron-down" viewBox="0 0 16 16">
+                                              <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z"/>
+                                            </svg>
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-danger btn-delete d-inline-flex align-items-center justify-content-center" style="width: 28px; height: 28px; padding: 0; margin-left: 4px;" title="Borrar OP (Solo de este escenario)">
+                                            <i class="fas fa-trash-alt"></i>
+                                        </button>
+                                    </div>
                                 </td>
+      </td>
                                 <td>{{ item.ProyectoCode|default:"-" }}</td>
                                  <td style="min-width: 150px; white-space: normal;" title="{{ item.Denominacion }}">{{ item.Denominacion }}</td>
                                 <td>{{ item.Idorden }}</td>
@@ -1246,6 +1281,89 @@
                     });
                 }
             }
+
+            // --- Audit Mode Toggle Logic ---
+            const btnToggleAudit = document.getElementById('btnToggleAudit');
+            if (btnToggleAudit) {
+                btnToggleAudit.addEventListener('click', function() {
+                    const params = new URLSearchParams(window.location.search);
+                    const currentAudit = params.get('audit_mode') === '1';
+                    if (currentAudit) {
+                        params.delete('audit_mode');
+                    } else {
+                        params.set('audit_mode', '1');
+                    }
+                    window.location.href = window.location.pathname + '?' + params.toString();
+                });
+            }
+
+            // --- Reactivate (Unhide) Task Logic ---
+            document.querySelectorAll('.btn-reactivate').forEach(btn => {
+                btn.addEventListener('click', async function() {
+                    const row = this.closest('tr');
+                    const idOrden = row.dataset.id;
+                    const scenarioId = new URLSearchParams(window.location.search).get('scenario_id');
+
+                    console.log("Attempting reactivation for ID:", idOrden, "Scenario:", scenarioId);
+
+                    // Instant Visual Feedback
+                    row.style.opacity = '0.3';
+                    this.disabled = true;
+
+                    try {
+                        const response = await fetch("{% url 'reactivar_op' %}", {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRFToken': '{{ csrf_token }}'
+                            },
+                            body: JSON.stringify({
+                                id_orden: idOrden,
+                                scenario_id: scenarioId
+                            })
+                        });
+
+                        const responseData = await response.json();
+                        console.log("Server Response:", responseData);
+
+                        if (response.ok) {
+                            // Success: Update UI without Refresh
+                            row.classList.remove('hidden-row');
+                            row.style.opacity = '1';
+                            this.disabled = false;
+                            
+                            Swal.fire({
+                                title: '¡Recuperado!',
+                                text: 'La tarea vuelve a estar activa.',
+                                icon: 'success',
+                                timer: 1000,
+                                showConfirmButton: false,
+                                customClass: { popup: 'premium-swal' }
+                            });
+                        } else {
+                            console.error("Reactivation Error Status:", response.status, responseData);
+                            Swal.fire({
+                                title: 'Error',
+                                text: `No se pudo recuperar: ${responseData.error || "Error desconocido"} (Status: ${response.status})`,
+                                icon: 'error',
+                                customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                            });
+                            row.style.opacity = '0.5';
+                            this.disabled = false;
+                        }
+                    } catch (e) {
+                        console.error("Fetch Exception:", e);
+                        Swal.fire({
+                            title: 'Error de Red',
+                            text: "No se pudo comunicar con el servidor. Revise la consola (F12) para más detalles.",
+                            icon: 'error',
+                            customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                        });
+                        row.style.opacity = '0.5';
+                        this.disabled = false;
+                    }
+                });
+            });
         });
         // Theme Persistence
         function initTheme() {
