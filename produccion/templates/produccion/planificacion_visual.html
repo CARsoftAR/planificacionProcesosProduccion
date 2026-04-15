@@ -348,7 +348,7 @@
             position: absolute;
             top: 12px;
             height: 62px;
-            z-index: 3;
+            z-index: 10 !important; /* Elevamos sobre las flechas */
             background: #FFFFFF;
             border-radius: 8px;
             padding: 8px 14px;
@@ -747,19 +747,17 @@
         }
 
         /* Dependency Arrows SVG layer - always in layout tree but invisible until toggled */
-        #dependency-layer, #dependency-layer * {
-            opacity: 0;
-            transition: opacity 0.2s ease;
-            pointer-events: none !important;
-        }
-
         #dependency-layer {
-            z-index: -1 !important;
-        }
-
-        #dependency-layer.visible, #dependency-layer.visible * {
-            opacity: 1 !important;
+            position: absolute !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            z-index: 5 !important; /* Encima de la grilla (z-1) pero debajo de tarjetas (z-10) */
             pointer-events: none !important;
+            visibility: visible !important;
+            display: block !important;
+            opacity: 1 !important;
         }
 
         .dependency-path {
@@ -1741,7 +1739,7 @@
                     
                     <!-- SVG Layer for Dependencies - Master Universal Overlay -->
                     <!-- NEVER use display:none here - it breaks getBoundingClientRect -->
-                    <svg id="dependency-layer" pointer-events="none" style="position: absolute; top:0; left:0; width: 100%; height: 100%; pointer-events: none !important; z-index: 1;"></svg>
+                    <svg id="dependency-layer" pointer-events="none" style="position: absolute; top:0; left:0; width: 100%; height: 100%; pointer-events: none !important; z-index: 5 !important; visibility: visible !important; display: block !important;"></svg>
                     
                     <!-- Safe Data Injection for Dependencies -->
                     <script id="dependencies-data-json" type="application/json">
@@ -2792,10 +2790,9 @@
             const svgLayer = document.getElementById('dependency-layer');
             if (!svgLayer) return;
             
-            if (!svgLayer.classList.contains('visible')) {
-                svgLayer.innerHTML = '';
-                return;
-            }
+            // Forzado: Ignoramos 'visible' class para debug
+            svgLayer.style.display = 'block';
+            svgLayer.style.visibility = 'visible';
 
             const masterScroller = document.getElementById('gantt-body-scroll');
             if (!masterScroller) return;
@@ -2804,6 +2801,7 @@
             const totalH = masterScroller.scrollHeight;
             svgLayer.setAttribute('width', totalW);
             svgLayer.setAttribute('height', totalH);
+            svgLayer.setAttribute('viewBox', `0 0 ${totalW} ${totalH}`); // Vital para coordenadas absolutas
             svgLayer.style.width = totalW + 'px';
             svgLayer.style.height = totalH + 'px';
             svgLayer.innerHTML = '';
@@ -2860,13 +2858,12 @@
                 const x2 = (r2.left - containerRect.left) + sL;
                 const y2 = (r2.top - containerRect.top + (r2.height / 2)) + sT;
 
-                let color = box1.dataset.color || '#3b82f6';
-                if (box1.classList.contains('border-blue')) color = '#007bff';
-                if (box1.classList.contains('border-green')) color = '#28a745';
-                if (box1.dataset.critical === 'true') color = '#ef4444';
+                // Extraemos el color directamente del estilo calculado del borde
+                let color = window.getComputedStyle(box1).borderTopColor || '#3b82f6';
+                if (box1.dataset.critical === 'true') color = '#ef4444'; 
                 
-                // Use a safe ID by stripping all non-alphanumeric characters, in case color is an rgb() string
                 const colorId = color.replace(/[^a-zA-Z0-9]/g, '');
+                
                 if (!createdMarkers.has(colorId)) {
                     const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
                     marker.setAttribute('id', `arr-${colorId}`);
@@ -2874,11 +2871,11 @@
                     marker.setAttribute('refX', '8'); marker.setAttribute('refY', '5');
                     marker.setAttribute('markerWidth', '5'); marker.setAttribute('markerHeight', '5');
                     marker.setAttribute('orient', 'auto');
-                    marker.setAttribute('pointer-events', 'none'); // Safety
+                    marker.setAttribute('pointer-events', 'none');
                     const mPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
                     mPath.setAttribute('d', 'M 0 0 L 10 5 L 0 10 z');
                     mPath.setAttribute('fill', color);
-                    mPath.setAttribute('pointer-events', 'none'); // Safety
+                    mPath.setAttribute('pointer-events', 'none');
                     marker.appendChild(mPath);
                     defs.appendChild(marker);
                     createdMarkers.add(colorId);
@@ -2890,15 +2887,15 @@
                 
                 path.setAttribute('d', `M${x1},${y1} C${x1 + curveOffset},${y1} ${x2 - curveOffset},${y2} ${x2},${y2}`);
                 path.setAttribute('stroke', color);
-                path.setAttribute('stroke-width', '2.5');
+                path.setAttribute('stroke-width', '2');
                 path.setAttribute('fill', 'none');
-                path.setAttribute('opacity', '0.4');
+                path.setAttribute('stroke-opacity', '0.6');
                 path.setAttribute('marker-end', `url(#arr-${colorId})`);
                 path.classList.add('dependency-path');
                 
-                path.style.transition = 'opacity 0.2s, stroke-width 0.2s';
-                path.onmouseenter = () => { path.setAttribute('opacity', '1'); path.setAttribute('stroke-width', '3.5'); };
-                path.onmouseleave = () => { path.setAttribute('opacity', '0.4'); path.setAttribute('stroke-width', '2.5'); };
+                path.style.transition = 'stroke-opacity 0.2s, stroke-width 0.2s';
+                path.onmouseenter = () => { path.setAttribute('stroke-opacity', '1'); path.setAttribute('stroke-width', '3.5'); };
+                path.onmouseleave = () => { path.setAttribute('stroke-opacity', '0.6'); path.setAttribute('stroke-width', '2'); };
                 
                 svgLayer.appendChild(path);
                 count++;
