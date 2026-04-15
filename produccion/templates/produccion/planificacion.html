@@ -108,30 +108,9 @@
     </style>
 </head>
 <body>
-    <div class="container-fluid mt-4">
-        <div class="d-flex justify-content-between align-items-center mb-4">
-            <h1 class="text-primary m-0">Planificación de Procesos Productivos</h1>
-            <div class="d-flex gap-2">
-                <button id="btn-theme-toggle" class="btn btn-outline-secondary" title="Cambiar Tema">
-                    <i class="fas fa-moon"></i>
-                </button>
-                <a href="{% url 'home' %}" class="btn btn-outline-secondary">
-                    <i class="fas fa-home me-1"></i> Menú
-                </a>
-                <a href="javascript:void(0)" onclick="openPlanillasDiarias()" class="btn btn-warning text-dark fw-bold">
-                    <i class="fas fa-file-alt me-1"></i> Planillas Diarias
-                </a>
-                <a href="javascript:void(0)" onclick="openProjectPriorities()" class="btn btn-info text-white">
-                    <i class="fas fa-sort-numeric-down me-1"></i> Prioridades de Proyecto
-                </a>
-                <a href="javascript:void(0)" onclick="openGantt(this)" class="btn btn-success">
-                    <i class="fas fa-chart-gantt me-1"></i> Ver Gantt
-                </a>
-                <a href="{% url 'maquina_config_list' %}" class="btn btn-primary">
-                    <i class="fas fa-cogs me-1"></i> Configurar Máquinas
-                </a>
-            </div>
-        </div>
+    {% include "produccion/global_navbar.html" %}
+
+    <div class="container-fluid">
 
         <!-- Toolbar de Planificación (Tabla) -->
         <div class="px-4 py-2 mb-4 border rounded-4 bg-white shadow-sm d-flex align-items-center justify-content-between">

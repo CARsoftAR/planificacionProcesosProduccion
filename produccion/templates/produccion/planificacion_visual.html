@@ -139,6 +139,43 @@
             color: #2563eb;
         }
 
+        /* Full page loading spinner */
+        #page-loader {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.9);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            transition: opacity 0.5s ease;
+        }
+        [data-theme="dark"] #page-loader {
+            background: rgba(11, 14, 20, 0.95);
+        }
+        .spinner-inner {
+            width: 60px;
+            height: 60px;
+            border: 4px solid var(--accent);
+            border-top: 4px solid transparent;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .loader-text {
+            margin-top: 20px;
+            font-weight: 700;
+            color: var(--accent);
+            letter-spacing: 1px;
+        }
+
         .btn-ai {
             background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
             border: none;
@@ -260,7 +297,8 @@
         }
 
         .time-hour {
-            width: 40px;
+            width: 100px;
+            box-sizing: border-box;
             flex-shrink: 0;
             border-right: 1px solid var(--border);
             display: flex;
@@ -279,6 +317,7 @@
         /* Day Gap Separator Styles */
         .day-gap-separator {
             width: 10px;
+            box-sizing: border-box;
             flex-shrink: 0;
             background-color: #f1f5f9; /* Slate 100 */
             background-image: repeating-linear-gradient(
@@ -328,8 +367,9 @@
         }
 
         .grid-cell {
-            width: 40px;
+            width: 100px;
             height: 100%;
+            box-sizing: border-box;
             flex-shrink: 0;
             border-right: 1px solid var(--border);
         }
@@ -351,7 +391,7 @@
             z-index: 10 !important; /* Elevamos sobre las flechas */
             background: #FFFFFF;
             border-radius: 8px;
-            padding: 8px 14px;
+            padding: 8px 8px;
             font-size: 0.68rem;
             overflow: visible;
             cursor: default;
@@ -926,7 +966,10 @@
         .top-bar {
             background: var(--bg-header);
             border-bottom: 1px solid var(--border);
-            padding: 1rem 1.5rem;
+            padding: 0.5rem 1.5rem;
+            position: sticky;
+            top: 65px;
+            z-index: 1000;
         }
 
         .glass {
@@ -1095,70 +1138,20 @@
     </style>
 </head>
 <body class="show-cp show-delays">
+    <!-- Premium Loading Spinner -->
+    <div id="page-loader">
+        <div class="spinner-inner"></div>
+        <div class="loader-text text-uppercase smaller">Calculando Planificación...</div>
+    </div>
+
+    {% include "produccion/global_navbar.html" %}
     <div class="container-fluid p-0">
-        <div class="top-bar d-flex justify-content-between align-items-center">
-            <div class="d-flex align-items-center">
-                <div class="bg-primary p-2 rounded-3 me-3" style="box-shadow: 0 8px 20px rgba(59, 130, 246, 0.3);">
-                    <i class="fas fa-chart-gantt text-white fs-4"></i>
-                </div>
-                <div>
-                    <h4 class="m-0 fw-bold" style="letter-spacing: -0.5px; font-size: 1.25rem;">Planificación <span class="text-primary">Visual</span></h4>
-                    <small class="text-muted" style="font-size: 0.7rem;">Control de línea ABBAMAT</small>
-                </div>
-            </div>
-            
+        <div class="top-bar d-flex justify-content-end align-items-center">
              <div class="d-flex align-items-center gap-2">
 
-                 <!-- 1. Mode Group -->
-                 <div id="mode-selector-container" class="bg-light p-1 rounded-pill border d-flex me-2" style="display: none !important;">
-                     <a href="#" id="toggleOriginalMode"
-                        class="btn-modern rounded-pill px-3 py-1 {% if plan_mode == 'original' %}btn-primary-modern shadow-sm{% else %}text-muted{% endif %}"
-                        style="font-size: 0.8rem; height: 32px;"
-                        title="Automático: Datos SQL">
-                         <i class="fas fa-magic"></i> Auto
-                     </a>
-                     <a href="#" id="toggleManualMode"
-                        class="btn-modern rounded-pill px-3 py-1 {% if plan_mode != 'original' %}btn-primary-modern shadow-sm{% else %}text-muted{% endif %}"
-                        style="font-size: 0.8rem; height: 32px;"
-                        title="Manual: Ajustes manuales">
-                         <i class="fas fa-hand-pointer"></i> Manual
-                     </a>
-                 </div>
 
                  <!-- 2. AI Button -->
 
-                 <!-- 2. Scenarios Group -->
-                 {% if plan_mode != 'original' %}
-                 <div class="d-flex align-items-center gap-2 ms-2">
-                     <select id="scenario-selector" name="scenario_id" class="form-select form-select-sm rounded-pill border-secondary border-opacity-25" style="width: 180px; font-size: 0.8rem; background: rgba(255,255,255,0.7); height: 32px;">
-                         <option value="">-- Estado Actual --</option>
-                         {% for scenario in all_scenarios %}
-                         <option value="{{ scenario.id }}" 
-                                 data-proyectos="{{ scenario.proyectos|default:'' }}"
-                                 data-principal="{{ scenario.es_principal|yesno:'1,0' }}"
-                                 {% if active_scenario.id == scenario.id %}selected{% endif %}>
-                             {{ scenario.nombre }}
-                         </option>
-                         {% endfor %}
-                     </select>
-                     
-                     <div class="d-flex gap-1">
-                         <button type="button" id="btnSaveScenario" class="btn-modern glass rounded-pill px-2" style="height: 32px; border-color: #e2e8f0;" title="Grabar Escenario">
-                             <i class="fas fa-save text-success"></i>
-                         </button>
-                         <button type="button" id="btnDeleteScenario" class="btn-modern glass rounded-pill px-2" style="height: 32px; border-color: #e2e8f0;" title="Borrar Escenario">
-                             <i class="fas fa-trash-alt text-danger"></i>
-                         </button>
-                         <button type="button" id="btnPublishScenario" class="btn-modern glass rounded-pill px-3" style="height: 32px; border-color: #e2e8f0; font-weight: 600; font-size: 0.75rem;" title="Activar Escenario">
-                             <i class="fas fa-check-double text-primary me-1"></i> Activar
-                         </button>
-                         <div class="vr mx-1 bg-secondary opacity-25" style="height: 20px;"></div>
-                         <button type="button" id="btnResetToERP" class="btn-modern glass rounded-pill px-3" style="height: 32px; border-color: #e2e8f0; font-weight: 600; font-size: 0.75rem;" title="Resetear a Plan ERP (Borra movimientos de este escenario)">
-                             <i class="fas fa-history text-warning me-1"></i> Reset ERP
-                         </button>
-                     </div>
-                 </div>
-                 {% endif %}
 
                   <div class="vr mx-2 bg-secondary opacity-25" style="height: 25px;"></div>
                   
@@ -2916,6 +2909,19 @@
             const bodyScroll = document.getElementById('gantt-body-scroll');
             const headerScroll = document.getElementById('header-container');
             
+            // Initial Draw
+            setTimeout(() => {
+                if (typeof window.drawDependencies === 'function') {
+                    window.drawDependencies();
+                }
+                // Hide loader
+                const loader = document.getElementById('page-loader');
+                if (loader) {
+                    loader.style.opacity = '0';
+                    setTimeout(() => loader.style.display = 'none', 500);
+                }
+            }, 100);
+
             // Final Initialization for Theme
             initTheme();
         });

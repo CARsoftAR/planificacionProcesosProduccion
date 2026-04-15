@@ -333,36 +333,9 @@ def get_gantt_data(request, force_run=False):
     else:
          hidden_ids = set()
 
-    # EXECUTION CHECK
-    run_calculation = (request.GET.get('run') == '1') or force_run
-
-    if not run_calculation:
-        # Return empty structure
-        for maquina in maquinas:
-            timeline_data.append({
-                'machine': maquina,
-                'tasks': []
-            })
-        
-        return {
-            'timeline_data': timeline_data,
-            'maquinas': maquinas,
-            'start_simulation': start_simulation,
-            'time_columns': [],
-            'valid_dates': [],
-            'dependency_map': {},
-            'global_min_h': 7,
-            'global_max_h': 22,
-            'ran_calculation': False,
-            'active_scenario': active_scenario,
-            'analysis': {
-                'machines': [],
-                'project_alerts': []
-            },
-            'system_alerts': [],
-            'plan_mode': plan_mode
-        }
-
+    # EXECUTION CHECK: Default to True to allow automatic loading from Global Navbar
+    run_calculation = True 
+    
     # --- AUTOMATIC DEPENDENCIES ---
     deps_filter = {}
     if raw_proyectos:

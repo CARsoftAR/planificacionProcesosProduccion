@@ -1,0 +1,162 @@
+{% load static %}
+<style>
+    .global-navbar {
+        background: #f8fafc;
+        border-bottom: 1px solid #e2e8f0;
+        padding: 0.75rem 1.5rem;
+        position: sticky;
+        top: 0;
+        z-index: 2000;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        height: 65px;
+    }
+
+    .nav-buttons-group {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .btn-nav {
+        border-radius: 8px;
+        padding: 0.55rem 1.1rem;
+        font-weight: 700;
+        font-size: 0.85rem;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        border: none;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        text-decoration: none !important;
+        color: white !important;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        white-space: nowrap;
+    }
+
+    .btn-nav:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 15px rgba(0,0,0,0.1);
+        filter: brightness(1.05);
+    }
+
+    .btn-nav:active {
+        transform: translateY(0);
+    }
+
+    .btn-nav-home {
+        background: transparent;
+        color: #64748b !important;
+        box-shadow: none;
+        padding-left: 0;
+    }
+    .btn-nav-home:hover {
+        background: transparent;
+        color: #1e293b !important;
+        transform: none;
+        box-shadow: none;
+    }
+
+    /* Colors */
+    .btn-plan    { background-color: #0d6efd !important; } /* Planificación - Dark Blue */
+    .btn-yellow  { background-color: #ffb800 !important; color: #1e293b !important; } /* Planillas */
+    .btn-cyan    { background-color: #00d1ff !important; color: #1e293b !important; } /* Prioridades */
+    .btn-green   { background-color: #1a8754 !important; } /* Gantt */
+    .btn-blue    { background-color: #3b82f6 !important; } /* Config */
+
+    .navbar-logo {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        color: #1e293b;
+    }
+    
+    .navbar-logo i {
+        color: #2563eb;
+        font-size: 1.4rem;
+    }
+
+    .navbar-logo h5 {
+        margin: 0;
+        font-weight: 800;
+        font-size: 1.1rem;
+        letter-spacing: -0.5px;
+    }
+</style>
+
+{% with url_name=request.resolver_match.url_name %}
+<nav class="global-navbar">
+    <div class="navbar-logo">
+        <i class="fas fa-industry"></i>
+        <h5>ABBAMAT <span style="color: #2563eb;">PROD</span></h5>
+    </div>
+
+    <div class="nav-buttons-group">
+        <a href="{% url 'home' %}" class="btn-nav btn-nav-home">
+            <i class="fas fa-home"></i>
+            <span>Menú</span>
+        </a>
+
+        <!-- 1. Planificación -->
+        {% if url_name != 'planificacion_view' %}
+        <a href="{% url 'planificacion_view' %}" class="btn-nav btn-plan">
+            <i class="fas fa-tasks"></i>
+            <span>Planificación</span>
+        </a>
+        {% endif %}
+        
+        <!-- 2. Planillas Diarias (Always visible or hide if on specific list?) -->
+        {% if url_name != 'planillas_diarias' %}
+        <a href="{% url 'planillas_diarias' %}" class="btn-nav btn-yellow">
+            <i class="fas fa-file-invoice"></i>
+            <span>Planillas Diarias</span>
+        </a>
+        {% endif %}
+        
+        <!-- 3. Prioridades -->
+        {% if url_name != 'proyectos_prioridades' %}
+        <a href="{% url 'proyectos_prioridades' %}" class="btn-nav btn-cyan">
+            <i class="fas fa-sort-amount-down"></i>
+            <span>Prioridades de Proyecto</span>
+        </a>
+        {% endif %}
+        
+        <!-- 4. Ver Gantt -->
+        {% if url_name != 'planificacion_visual' %}
+        <a href="{% url 'planificacion_visual' %}" class="btn-nav btn-green">
+            <i class="fas fa-chart-gantt"></i>
+            <span>Ver Gantt</span>
+        </a>
+        {% endif %}
+        
+        <!-- 5. Configurar Máquinas -->
+        {% if url_name != 'maquina_config_list' and url_name != 'maquina_config_create' and url_name != 'maquina_config_update' %}
+        <a href="{% url 'maquina_config_list' %}" class="btn-nav btn-blue">
+            <i class="fas fa-cog"></i>
+            <span>Configurar Máquinas</span>
+        </a>
+        {% endif %}
+    </div>
+
+    <!-- Theme / User Group -->
+    <div class="d-flex align-items-center gap-3">
+        <button id="global-theme-toggle" class="btn btn-sm btn-outline-secondary rounded-circle" style="width: 32px; height: 32px; padding: 0;" title="Cambiar Tema">
+            <i class="fas fa-moon"></i>
+        </button>
+    </div>
+</nav>
+{% endwith %}
+
+<script>
+    // Toggle Theme Logic (Placeholder until full implementation)
+    document.getElementById('global-theme-toggle')?.addEventListener('click', () => {
+        document.body.classList.toggle('dark-mode');
+        const icon = document.querySelector('#global-theme-toggle i');
+        if (icon) {
+            icon.classList.toggle('fa-moon');
+            icon.classList.toggle('fa-sun');
+        }
+    });
+</script>

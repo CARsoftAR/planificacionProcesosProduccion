@@ -1501,8 +1501,8 @@ def planificacion_visual_OLD(request):
     # Regla: visual_left[n] = max(time_pos[n], cursor[n-1] + GAP)
     # MIN_WIDTH = 100px universal — ninguna card puede ser menor.
     # =========================================================
-    COL_WIDTH  = 40    # px por hora
-    MIN_WIDTH  = 100   # px mínimo de card (cubre badge "40D ATRASO" + padding)
+    COL_WIDTH  = 100   # px por hora
+    MIN_WIDTH  = 40    # px mínimo de card
     SAFETY_GAP = 6     # px de aire entre cards
     
     def _time_to_px(dt_obj):
@@ -1965,7 +1965,7 @@ def planificacion_visual(request):
     # Regla: visual_left = max(posición_por_tiempo, fin_anterior + 6px)
     # Para OPs con atraso, garantizamos un ancho visual de 100px.
     # =========================================================
-    COL_WIDTH = 40
+    COL_WIDTH = 100
     DAY_GAP = 10
     
     # Mapa de fechas a índice visual

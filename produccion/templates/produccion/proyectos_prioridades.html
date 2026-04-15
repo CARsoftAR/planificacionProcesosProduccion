@@ -17,7 +17,7 @@
         }
         .main-container {
             max-width: 900px;
-            margin: 40px auto;
+            margin: 20px auto;
             background: white;
             border-radius: 12px;
             box-shadow: 0 4px 15px rgba(0,0,0,0.05);
@@ -46,16 +46,7 @@
     </style>
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg navbar-dark navbar-custom shadow-sm">
-        <div class="container-fluid">
-            <a class="navbar-brand fw-bold" href="{% url 'home' %}">
-                <i class="fas fa-industry me-2"></i>ABBAMAT
-            </a>
-            <div class="d-flex">
-                <a href="{% url 'planificacion_view' %}?{{ request.GET.urlencode }}" class="btn btn-outline-light btn-sm me-2">Volver al la Planificación</a>
-            </div>
-        </div>
-    </nav>
+    {% include "produccion/global_navbar.html" %}
 
     <div class="container main-container">
         <div class="d-flex justify-content-between align-items-center mb-4">
