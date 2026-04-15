@@ -1737,7 +1737,7 @@
                     
                     <!-- SVG Layer for Dependencies - Master Universal Overlay -->
                     <!-- NEVER use display:none here - it breaks getBoundingClientRect -->
-                    <svg id="dependency-layer" pointer-events="none" style="position: absolute; top:0; left:0; width: 100%; height: 100%; pointer-events: none !important; z-index: 90;"></svg>
+                    <svg id="dependency-layer" pointer-events="none" style="position: absolute; top:0; left:0; width: 100%; height: 100%; pointer-events: none !important; z-index: 1;"></svg>
                     
                     <!-- Safe Data Injection for Dependencies -->
                     <script id="dependencies-data-json" type="application/json">
@@ -2857,7 +2857,8 @@
                 let color = box1.dataset.color || '#3b82f6';
                 if (box1.dataset.critical === 'true') color = '#ef4444';
                 
-                const colorId = color.replace('#', '');
+                // Use a safe ID by stripping all non-alphanumeric characters, in case color is an rgb() string
+                const colorId = color.replace(/[^a-zA-Z0-9]/g, '');
                 if (!createdMarkers.has(colorId)) {
                     const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
                     marker.setAttribute('id', `arr-${colorId}`);
