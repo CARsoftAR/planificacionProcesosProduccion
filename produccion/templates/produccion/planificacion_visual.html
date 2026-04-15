@@ -314,7 +314,7 @@
             position: relative;
             background-color: var(--bg-row);
             display: flex;
-            isolation: isolate; /* Badge z-index no escala a filas vecinas */
+            /* isolation: isolate removido - generaba stacking context separado que impedía z-index del SVG */
         }
 
         .grid-bg {
@@ -753,11 +753,9 @@
             left: 0 !important;
             width: 100% !important;
             height: 100% !important;
-            z-index: 5 !important; /* Encima de la grilla (z-1) pero debajo de tarjetas (z-10) */
+            z-index: 0 !important; /* Capa de fondo: debajo de tarjetas (z-10) */
             pointer-events: none !important;
-            visibility: visible !important;
-            display: block !important;
-            opacity: 1 !important;
+            display: none; /* Oculto por defecto, el botón lo activa */
         }
 
         .dependency-path {
@@ -2789,10 +2787,8 @@
         window.drawDependencies = function() {
             const svgLayer = document.getElementById('dependency-layer');
             if (!svgLayer) return;
-            
-            // Forzado: Ignoramos 'visible' class para debug
-            svgLayer.style.display = 'block';
-            svgLayer.style.visibility = 'visible';
+            // Si el SVG está oculto, no dibujamos (el botón lo activa con display:block)
+            if (svgLayer.style.display === 'none') return;
 
             const masterScroller = document.getElementById('gantt-body-scroll');
             if (!masterScroller) return;
@@ -2889,13 +2885,13 @@
                 path.setAttribute('stroke', color);
                 path.setAttribute('stroke-width', '2');
                 path.setAttribute('fill', 'none');
-                path.setAttribute('stroke-opacity', '0.6');
+                path.setAttribute('stroke-opacity', '0.5');
                 path.setAttribute('marker-end', `url(#arr-${colorId})`);
                 path.classList.add('dependency-path');
                 
                 path.style.transition = 'stroke-opacity 0.2s, stroke-width 0.2s';
-                path.onmouseenter = () => { path.setAttribute('stroke-opacity', '1'); path.setAttribute('stroke-width', '3.5'); };
-                path.onmouseleave = () => { path.setAttribute('stroke-opacity', '0.6'); path.setAttribute('stroke-width', '2'); };
+                path.onmouseenter = () => { path.setAttribute('stroke-opacity', '1'); path.setAttribute('stroke-width', '3'); };
+                path.onmouseleave = () => { path.setAttribute('stroke-opacity', '0.5'); path.setAttribute('stroke-width', '2'); };
                 
                 svgLayer.appendChild(path);
                 count++;
@@ -2948,20 +2944,25 @@
             console.log("DEBUG: [Init] SVG Layer exists?", !!svgLayer);
 
             if (btnArrows && svgLayer) {
+                // Estado inicial: apagado
+                svgLayer.style.display = 'none';
+                btnArrows.classList.remove('active-glass');
+
                 btnArrows.onclick = function(e) {
                     e.preventDefault();
-                    console.log("DEBUG: Click en dependencias detectado!");
+                    const isOn = svgLayer.style.display === 'none';
                     
-                    const isVisible = svgLayer.classList.toggle('visible');
-                    this.classList.toggle('active-glass');
-                    
-                    if (isVisible) {
-                        console.log("DEBUG: Dibujando dependencias...");
+                    if (isOn) {
+                        // Encender: mostrar SVG y redibujar
+                        svgLayer.style.display = 'block';
+                        this.classList.add('active-glass');
                         if (typeof window.drawDependencies === 'function') {
                             window.drawDependencies();
-                        } else {
-                            console.error("ERROR: window.drawDependencies no definida!");
                         }
+                    } else {
+                        // Apagar: ocultar SVG 
+                        svgLayer.style.display = 'none';
+                        this.classList.remove('active-glass');
                     }
                 };
             }
