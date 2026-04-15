@@ -829,9 +829,52 @@ def get_gantt_data(request, force_run=False):
     project_alerts = []
     proj_tasks_map = defaultdict(list)
     for row in timeline_data:
-        for t in row['tasks']: proj_tasks_map[t.get('ProyectoCode', 'S/P')].append(t)
+        for t in row['tasks']:
+            pc = t.get('ProyectoCode', 'S/P')
+            proj_tasks_map[pc].append(t)
+
+    # --- PROJECT PROGRESS CALCULATION (By Time/Hours) ---
+    project_time_stats = {}
+    project_audit = {}  # Auditing transparency
+    
+    if all_tasks_raw:
+        for t in all_tasks_raw:
+            pc = t.get('ProyectoCode', 'S/D')
+            if not pc: continue
+            
+            if pc not in project_time_stats:
+                project_time_stats[pc] = {'total': 0.0, 'done': 0.0}
+                project_audit[pc] = []
+            
+            t_unitary = float(t.get('Tiempo', 0.0) or 0.0)
+            qty_total = float(t.get('cantidad_final', 0.0) or 0.0)
+            qty_done  = float(t.get('cantidad_producida', 0.0) or 0.0)
+            
+            h_tot = t_unitary * qty_total
+            h_done = t_unitary * qty_done
+            
+            project_time_stats[pc]['total'] += h_tot
+            project_time_stats[pc]['done']  += h_done
+            
+            project_audit[pc].append({
+                'Idorden': t.get('Idorden'),
+                'Articulo': t.get('Articulo'),
+                'Tiempo_Unitario': t_unitary,
+                'Cant_Final': qty_total,
+                'Cant_Hecha': qty_done,
+                'Total_Horas': h_tot,
+                'Hecho_Horas': h_done
+            })
+
+    # Print audit to console for transparency
+    print("--- AUDIT: PROYECTO PROGRESS ---")
+    for pc, ops in project_audit.items():
+        total_proj = project_time_stats[pc]['total']
+        print(f"PROYECTO: {pc} | Suma Total Horas: {total_proj:.4f}h ({len(ops)} OPs)")
+        # for o in ops: print(f"  - OP {o['Idorden']}: {o['Total_Horas']:.4f}h")
 
     for pc, pts in proj_tasks_map.items():
+        # 1. Delay Checking
         me, mv = max((t['end_date'] for t in pts if t.get('end_date')), default=None), global_p_vtos.get(pc)
         if me and mv and me.date() > mv.date():
             dd = (me.date() - mv.date()).days
@@ -839,6 +882,18 @@ def get_gantt_data(request, force_run=False):
             project_alerts.append({'proyecto': pc, 'max_end': me, 'vto': mv, 'delay_days': dd, 'culprits': [{'orden': t['Idorden'], 'desc': t['Descri'], 'end': t['end_date'].strftime('%d/%m')} for t in pts if t.get('end_date') and t['end_date'].date() > mv.date()][:3]})
         else:
             for t in pts: t['is_delayed'], t['delay_days'] = False, 0
+
+        # 2. Time-based Progress
+        stats = project_time_stats.get(pc, {'total': 0.0, 'done': 0.0})
+        total_h = stats['total']
+        done_h  = stats['done']
+        pct = (done_h / total_h * 100) if total_h > 0 else 0.0
+        
+        for t in pts:
+            t['Horas_Totales_Proyecto'] = total_h
+            t['Horas_Realizadas_Proyecto'] = done_h
+            t['Porcentaje_Avance_Proyecto'] = pct
+            t['Project_Audit_Data'] = project_audit.get(pc, []) # Pass audit to frontend
 
     return {
         'timeline_data': timeline_data, 'maquinas': maquinas, 'start_simulation': start_simulation,

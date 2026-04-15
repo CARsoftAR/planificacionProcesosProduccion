@@ -2023,18 +2023,20 @@
                                     <!-- Hours -->
                                     <div class="tooltip-section">
                                         <div class="row g-2">
+                                            {% with h_tot=task.Tiempo|multiply:task.cantidad_final h_real=task.Tiempo|multiply:task.cantidad_producida %}
                                             <div class="col-4">
                                                 <div class="tooltip-label">Horas Totales</div>
-                                                <div class="tooltip-value">{{ task.Tiempo|multiply:task.cantidad_final|floatformat:2 }}h</div>
+                                                <div class="tooltip-value">{{ h_tot|format_hours }}</div>
                                             </div>
                                             <div class="col-4 border-start border-white border-opacity-10 ps-2">
                                                 <div class="tooltip-label">Realizadas</div>
-                                                <div class="tooltip-value text-success">{{ task.Tiempo|multiply:task.cantidad_producida|floatformat:2 }}h</div>
+                                                <div class="tooltip-value text-success">{{ h_real|format_hours }}</div>
                                             </div>
                                             <div class="col-4 border-start border-white border-opacity-10 ps-2">
                                                 <div class="tooltip-label">Por Hacer</div>
-                                                <div class="tooltip-value text-warning">{% if task.duration_task %}{{ task.duration_task|floatformat:2 }}{% else %}{{ task.duration_real|floatformat:2 }}{% endif %}h</div>
+                                                <div class="tooltip-value" style="color: #ffcc00;">{{ h_tot|subtract:h_real|format_hours }}</div>
                                             </div>
+                                            {% endwith %}
                                         </div>
                                     </div>
 
@@ -2053,18 +2055,14 @@
                                         <div class="d-flex justify-content-between align-items-end mb-2">
                                             <div>
                                                 <div class="tooltip-label">Avance Global del Proyecto</div>
-                                                <div class="tooltip-value">{{ task.cantidad_producida|floatformat:0 }} / {{ task.Cantidad_Proyecto|floatformat:0 }} unid.</div>
+                                                <div class="tooltip-value">{{ task.Horas_Realizadas_Proyecto|format_hours }} / {{ task.Horas_Totales_Proyecto|format_hours }}</div>
                                             </div>
                                             <div class="text-end">
-                                                {% with total_avance=task.cantidad_producida|multiply:100 %}
-                                                <span class="fs-5 fw-bold text-success">{{ total_avance|multiply:1|divide:task.Cantidad_Proyecto|floatformat:1 }}%</span>
-                                                {% endwith %}
+                                                <span class="fs-5 fw-bold text-success">{{ task.Porcentaje_Avance_Proyecto|floatformat:1 }}%</span>
                                             </div>
                                         </div>
                                         <div class="progress" style="height: 6px; background: rgba(255,255,255,0.1); border-radius: 10px;">
-                                            {% with pct=task.cantidad_producida|multiply:100 %}
-                                            <div class="progress-bar bg-success shadow-sm" style="width: {{ pct|multiply:1|divide:task.Cantidad_Proyecto }}%; border-radius: 10px;"></div>
-                                            {% endwith %}
+                                            <div class="progress-bar bg-success shadow-sm" style="width: {{ task.Porcentaje_Avance_Proyecto }}%; border-radius: 10px;"></div>
                                         </div>
                                     </div>
 
@@ -2213,6 +2211,22 @@
             if (!window.tooltipsVisible) return;
             const tmpl = block.querySelector('.task-tooltip');
             if (!tmpl) return;
+            
+            // --- AUDIT LOGGING ---
+            const auditData = block.getAttribute('data-project-audit');
+            if (auditData) {
+                try {
+                    const data = JSON.parse(auditData);
+                    const projectCode = block.getAttribute('data-project-code');
+                    console.group(`📊 AUDIT PROYECTO: ${projectCode}`);
+                    console.log(`Auditoría de OPs para el cálculo del avance global:`);
+                    console.table(data);
+                    console.groupEnd();
+                } catch(err) {
+                    console.warn("GanttEngine: Error al leer datos de auditoría", err);
+                }
+            }
+
             gt.innerHTML = tmpl.innerHTML;
             gt.style.display = 'block';
             gt.classList.add('tt-visible');

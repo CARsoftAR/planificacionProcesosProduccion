@@ -93,3 +93,41 @@ def string_to_color(value):
     
     return f"#{int(r*255):02x}{int(g*255):02x}{int(b*255):02x}"
 
+@register.filter
+def subtract(value, arg):
+    """Subtracts the arg from the value"""
+    try:
+        res = float(value) - float(arg)
+        return max(0, res)  # Per user request: if negative, show 0
+    except (ValueError, TypeError):
+        return 0
+
+@register.filter
+def format_hours(value):
+    """
+    Formats decimal hours into clock format (HH:MM) using total seconds
+    to prevent floating point artifacts.
+    """
+    try:
+        # Convert to total seconds first to stabilize math
+        total_secs = int(round(float(value) * 3600))
+        if total_secs < 0:
+            total_secs = 0
+            
+        hours = total_secs // 3600
+        minutes = (total_secs % 3600) // 60
+            
+        return f"{hours}:{minutes:02d}h"
+    except (ValueError, TypeError):
+        return "0:00h"
+
+import json
+@register.filter
+def json_dumps(value):
+    """Serializes a value to a JSON string for data attributes"""
+    try:
+        return json.dumps(value)
+    except:
+        return "[]"
+
+
