@@ -753,6 +753,10 @@
             pointer-events: none !important;
         }
 
+        #dependency-layer {
+            z-index: -1 !important;
+        }
+
         #dependency-layer.visible, #dependency-layer.visible * {
             opacity: 1 !important;
             pointer-events: none !important;
@@ -2855,6 +2859,8 @@
                 const y2 = (r2.top - containerRect.top + (r2.height / 2)) + sT;
 
                 let color = box1.dataset.color || '#3b82f6';
+                if (box1.classList.contains('border-blue')) color = '#007bff';
+                if (box1.classList.contains('border-green')) color = '#28a745';
                 if (box1.dataset.critical === 'true') color = '#ef4444';
                 
                 // Use a safe ID by stripping all non-alphanumeric characters, in case color is an rgb() string
@@ -2884,13 +2890,13 @@
                 path.setAttribute('stroke', color);
                 path.setAttribute('stroke-width', '2.5');
                 path.setAttribute('fill', 'none');
-                path.setAttribute('opacity', '0.6');
+                path.setAttribute('opacity', '0.4');
                 path.setAttribute('marker-end', `url(#arr-${colorId})`);
                 path.classList.add('dependency-path');
                 
                 path.style.transition = 'opacity 0.2s, stroke-width 0.2s';
                 path.onmouseenter = () => { path.setAttribute('opacity', '1'); path.setAttribute('stroke-width', '3.5'); };
-                path.onmouseleave = () => { path.setAttribute('opacity', '0.6'); path.setAttribute('stroke-width', '2.5'); };
+                path.onmouseleave = () => { path.setAttribute('opacity', '0.4'); path.setAttribute('stroke-width', '2.5'); };
                 
                 svgLayer.appendChild(path);
                 count++;
