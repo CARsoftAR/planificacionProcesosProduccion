@@ -515,9 +515,8 @@
             display: none !important;
         }
         
-        body.hide-tooltips #global-tooltip {
-            display: none !important;
-        }
+        /* hide-tooltips handled via #global-tooltip.tt-visible logic */
+
 
         /* Contenedor de Controles Flotantes */
         .planning-controls {
@@ -698,7 +697,9 @@
         
         #global-tooltip {
             position: fixed;
-            display: none;
+            display: block;
+            visibility: hidden;
+            opacity: 0;
             background: rgba(15, 23, 42, 0.98);
             backdrop-filter: blur(16px);
             color: #fff;
@@ -706,14 +707,24 @@
             border-radius: 16px;
             min-width: 330px;
             max-width: 400px;
-            z-index: 10000;
+            z-index: 15000;
             font-size: 0.8rem;
             white-space: normal;
             box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
             border: 1px solid rgba(59, 130, 246, 0.4);
             line-height: 1.4;
             pointer-events: none;
-            transition: opacity 0.15s ease;
+            transition: opacity 0.15s ease, visibility 0.15s ease;
+        }
+
+        #global-tooltip.tt-visible {
+            visibility: visible;
+            opacity: 1;
+        }
+
+        body.hide-tooltips #global-tooltip {
+            visibility: hidden !important;
+            opacity: 0 !important;
         }
 
         .tooltip-section {
@@ -736,14 +747,15 @@
         }
 
         /* Dependency Arrows SVG layer - always in layout tree but invisible until toggled */
-        #dependency-layer {
+        #dependency-layer, #dependency-layer * {
             opacity: 0;
             transition: opacity 0.2s ease;
             pointer-events: none !important;
         }
 
-        #dependency-layer.visible {
+        #dependency-layer.visible, #dependency-layer.visible * {
             opacity: 1 !important;
+            pointer-events: none !important;
         }
 
         .dependency-path {
@@ -955,7 +967,7 @@
              <div class="d-flex align-items-center gap-2">
 
                  <!-- 1. Mode Group -->
-                 <div class="bg-light p-1 rounded-pill border d-flex me-2">
+                 <div id="mode-selector-container" class="bg-light p-1 rounded-pill border d-flex me-2" style="display: none !important;">
                      <a href="#" id="toggleOriginalMode"
                         class="btn-modern rounded-pill px-3 py-1 {% if plan_mode == 'original' %}btn-primary-modern shadow-sm{% else %}text-muted{% endif %}"
                         style="font-size: 0.8rem; height: 32px;"
@@ -1022,8 +1034,8 @@
                       <button id="btn-toggle-delays" class="btn-modern glass rounded-pill px-2 active-glass" style="height: 34px; border-color: #e2e8f0; color: #475569;" onclick="toggleDelayIndicators();" title="Toggle Atrasos">
                           <i class="fas fa-clock text-warning"></i>
                       </button>
-                      <button id="btn-toggle-tooltips" class="btn-modern glass rounded-pill px-2" style="height: 34px; border-color: #e2e8f0; color: #475569;" onclick="toggleTooltips();" title="Toggle Tooltips">
-                          <i class="fas fa-comment-slash text-secondary"></i>
+                      <button id="btn-toggle-tooltips" class="btn-modern glass rounded-pill px-2 active-glass" style="height: 34px; border-color: #e2e8f0; color: #475569;" onclick="toggleTooltips();" title="Toggle Tooltips">
+                          <i class="fas fa-comment text-primary"></i>
                       </button>
                   </div>
 
@@ -1725,7 +1737,12 @@
                     
                     <!-- SVG Layer for Dependencies - Master Universal Overlay -->
                     <!-- NEVER use display:none here - it breaks getBoundingClientRect -->
-                    <svg id="dependency-layer" style="position: absolute; top:0; left:0; width: 100%; height: 100%; pointer-events: none; z-index: 90;"></svg>
+                    <svg id="dependency-layer" pointer-events="none" style="position: absolute; top:0; left:0; width: 100%; height: 100%; pointer-events: none !important; z-index: 90;"></svg>
+                    
+                    <!-- Safe Data Injection for Dependencies -->
+                    <script id="dependencies-data-json" type="application/json">
+                        {{ dependencies_json|safe }}
+                    </script>
                     
                     <!-- Diagnostic for Dependencies (Hidden by default, used for verification) -->
                     <div id="diag-deps" data-count="{{ dependencies_json|length }}" style="display:none;"></div>
@@ -1760,7 +1777,9 @@
                                 <!-- Task blocks -->
                                 {% for task in row.tasks %}
                                 {% with proj_color=task.ProyectoCode|string_to_color %}
-                                <div id="op-{{ task.Idorden }}" class="task-block {% if task.segment_index > 0 %}task-continuation{% endif %}{% if task.is_critical %} critical-task{% endif %}"
+                                <div id="op-{{ task.Idorden }}-{{ task.segment_index }}" 
+                                     class="task-block {% if task.segment_index > 0 %}task-continuation{% endif %}{% if task.is_critical %} critical-task{% endif %}"
+                                     title="OP {{ task.Idorden }} - {{ task.ProyectoCode|default:'S/P' }}"
                                      data-task-id="{{ task.Idorden }}"
                                  data-color="{% if task.ProyectoCode %}{{ proj_color }}{% else %}#3b82f6{% endif %}"
                                  data-priority="{{ task.OrdenVisual|default:0 }}"
@@ -1971,70 +1990,119 @@
     // --- DEBUG INIT ---
     console.log("!!! SCRIPT CARGADO !!!");
 
-    // Global Configuration
-    const START_SIMULATION_ISO = "{{ today|date:'c' }}"; // ISO format for JS
+    // Global Configuration & State (Universal Scope)
+    window.START_SIMULATION_ISO = "{{ today|date:'c' }}"; 
+    
+    // Safety check for dependencies data
+    const depDataEl = document.getElementById('dependencies-data-json');
+    try {
+        window.dependenciesData = depDataEl ? JSON.parse(depDataEl.textContent) : [];
+    } catch(e) {
+        console.error("GanttEngine: Error parsing dependency JSON", e);
+        window.dependenciesData = [];
+    }
+    
+    window.tooltipsVisible = true;
+    window.delaysVisible = true;
+    window.cpVisible = true;
+    
+    console.log("GanttEngine: Global data initialized.", window.dependenciesData.length, "dependencies.");
+    
+    // --- GLOBAL INTERFACE FUNCTIONS ---
+    window.toggleTooltips = function() {
+        window.tooltipsVisible = !window.tooltipsVisible;
+        const btn  = document.getElementById('btn-toggle-tooltips');
+        const icon = btn ? btn.querySelector('i') : null;
+        const gt   = document.getElementById('global-tooltip');
 
-    // ============================================================
-    // CRITICAL PATH TOGGLE
-    // ============================================================
-    // ============================================================
-    // CRITICAL PATH TOGGLE
-    // ============================================================
-    let cpVisible = true;
+        if (window.tooltipsVisible) {
+            document.body.classList.remove('hide-tooltips');
+            if (btn)  btn.classList.add('active-glass');
+            if (icon) icon.className = 'fas fa-comment text-primary';
+        } else {
+            document.body.classList.add('hide-tooltips');
+            if (btn)  btn.classList.remove('active-glass');
+            if (icon) icon.className = 'fas fa-comment-slash text-secondary';
+            if (gt)   gt.classList.remove('tt-visible');
+        }
+    };
 
-    function toggleCriticalPath() {
-        cpVisible = !cpVisible;
+    window.toggleCriticalPath = function() {
+        window.cpVisible = !window.cpVisible;
         const body = document.body;
         const btn = document.getElementById('btn-toggle-cp');
-
-        if (!cpVisible) {
+        if (!window.cpVisible) {
             body.classList.remove('show-cp');
             if (btn) btn.classList.remove('active-glass');
         } else {
             body.classList.add('show-cp');
             if (btn) btn.classList.add('active-glass');
         }
-    }
+    };
 
-    // ============================================================
-    // DELAY INDICATORS TOGGLE
-    // ============================================================
-    let delaysVisible = true;
-
-    function toggleDelayIndicators() {
-        delaysVisible = !delaysVisible;
+    window.toggleDelayIndicators = function() {
+        window.delaysVisible = !window.delaysVisible;
         const body = document.body;
         const btn = document.getElementById('btn-toggle-delays');
-
-        if (!delaysVisible) {
+        if (!window.delaysVisible) {
             body.classList.remove('show-delays');
             if (btn) btn.classList.remove('active-glass');
         } else {
             body.classList.add('show-delays');
             if (btn) btn.classList.add('active-glass');
         }
-    }
+    };
 
-    // ============================================================
-    // TOOLTIPS TOGGLE
-    // ============================================================
-    let tooltipsVisible = true;
 
-    function toggleTooltips() {
-        tooltipsVisible = !tooltipsVisible;
-        const body = document.body;
-        const btn = document.getElementById('btn-toggle-tooltips');
+    // --- TOOLTIP ENGINE - LIMPIO Y DEFINITIVO ---
+    document.addEventListener('DOMContentLoaded', function() {
+        const gt = document.getElementById('global-tooltip');
+        if (!gt) { console.error('GanttEngine: #global-tooltip no encontrado en el DOM'); return; }
+        console.log('GanttEngine: Tooltip Engine OK');
 
-        if (!tooltipsVisible) {
-            body.classList.add('hide-tooltips');
-            if (btn) btn.classList.add('active-glass');
-            const gt = document.getElementById('global-tooltip');
-            if (gt) gt.style.display = 'none';
-        } else {
-            body.classList.remove('hide-tooltips');
-            if (btn) btn.classList.remove('active-glass');
+        function showTT(block, e) {
+            if (!window.tooltipsVisible) return;
+            const tmpl = block.querySelector('.task-tooltip');
+            if (!tmpl) return;
+            gt.innerHTML = tmpl.innerHTML;
+            gt.style.display = 'block';
+            gt.classList.add('tt-visible');
+            moveTT(e);
         }
-    }
+
+        function moveTT(e) {
+            const pad = 20;
+            let x = e.clientX + pad;
+            let y = e.clientY - (gt.offsetHeight / 2);
+            if (x + gt.offsetWidth  > window.innerWidth  - pad) x = e.clientX - gt.offsetWidth  - pad;
+            if (y + gt.offsetHeight > window.innerHeight - pad) y = window.innerHeight - gt.offsetHeight - pad;
+            if (x < pad) x = pad;
+            if (y < pad) y = pad;
+            gt.style.left = x + 'px';
+            gt.style.top  = y + 'px';
+        }
+
+        function hideTT() {
+            gt.style.display = 'none';
+            gt.classList.remove('tt-visible');
+        }
+
+        document.addEventListener('mouseover', function(e) {
+            const block = e.target.closest('.task-block');
+            if (block) showTT(block, e);
+        });
+
+        document.addEventListener('mousemove', function(e) {
+            if (gt.classList.contains('tt-visible')) moveTT(e);
+        });
+
+        document.addEventListener('mouseout', function(e) {
+            const block = e.target.closest('.task-block');
+            if (block && (!e.relatedTarget || !block.contains(e.relatedTarget))) hideTT();
+        });
+    });
+
+
 
     // Show critical task count on load
     document.addEventListener('DOMContentLoaded', function() {
@@ -2117,9 +2185,7 @@
             // interact('.task-row').dropzone({...})
         
         
-        // --- DEPENDENCY VISUALIZATION & LINKING ---
-        // Dependency Data injected from View
-        const dependencies = JSON.parse('{{ dependencies_json|safe }}'); 
+        // Dependency Linking Logic (Uses global dependenciesData)
         
         let linkMode = false;
         let selectedPredecessor = null;
@@ -2137,98 +2203,7 @@
         // Resize initially and on window resize usually, but content is static for now
         setTimeout(resizeSVG, 1000); 
 
-        // 2. Draw Dependencies
-        function drawDependencies() {
-            if (!svgLayer) return;
-            // Clear existing
-            while (svgLayer.firstChild) {
-                svgLayer.removeChild(svgLayer.firstChild);
-            }
-            
-            // We define markers PER ARROW to support dynamic colors (SVG <marker> fill must be set)
-            dependencies.forEach(dep => {
-                const predEl = document.querySelector(`.task-block[data-task-id="${dep.pred}"]`);
-                const succEl = document.querySelector(`.task-block[data-task-id="${dep.succ}"]`);
-                
-                if (predEl && succEl) {
-                    drawArrow(predEl, succEl, dep.pred, dep.succ);
-                }
-            });
-        }
-        
-        function drawArrow(el1, el2, predId, succId) {
-            const rect1 = el1.getBoundingClientRect();
-            const rect2 = el2.getBoundingClientRect();
-            const containerRect = timelineArea.getBoundingClientRect();
-            
-            const scrollLeft = timelineArea.scrollLeft;
-            const scrollTop = timelineArea.scrollTop;
-            
-            const x1 = rect1.right - containerRect.left + scrollLeft;
-            const y1 = rect1.top + (rect1.height / 2) - containerRect.top + scrollTop;
-            
-            const x2 = rect2.left - containerRect.left + scrollLeft;
-            const y2 = rect2.top + (rect2.height / 2) - containerRect.top + scrollTop;
-            
-            // Get Dynamic Color
-            const color = el1.dataset.color || '#999';
-            
-            // Create Unique Marker for this line
-            const markerId = `arrowhead-${predId}-${succId}`;
-            
-            const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
-            const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
-            marker.setAttribute('id', markerId);
-            marker.setAttribute('markerWidth', '10');
-            marker.setAttribute('markerHeight', '7');
-            marker.setAttribute('refX', '10');
-            marker.setAttribute('refY', '3.5');
-            marker.setAttribute('orient', 'auto');
-            
-            const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-            polygon.setAttribute('points', '0 0, 10 3.5, 0 7');
-            polygon.setAttribute('fill', color); // Set Dynamic Fill
-            
-            marker.appendChild(polygon);
-            defs.appendChild(marker);
-            svgLayer.appendChild(defs);
 
-            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            
-            const midX = (x1 + x2) / 2;
-            const controlOffset = 30;
-            const d = `M ${x1} ${y1} C ${x1 + controlOffset} ${y1}, ${x2 - controlOffset} ${y2}, ${x2} ${y2}`;
-            
-            path.setAttribute('d', d);
-            path.setAttribute('stroke', color); // Set Dynamic Stroke
-            path.setAttribute('stroke-width', '2');
-            path.setAttribute('fill', 'none');
-            path.setAttribute('marker-end', `url(#${markerId})`);
-            path.style.cursor = 'pointer';
-            path.style.pointerEvents = 'stroke'; // Clickable
-            
-            path.addEventListener('click', async (e) => {
-                const result = await Swal.fire({
-                    title: '¿Eliminar Dependencia?',
-                    text: '¿Está seguro de que desea eliminar este vínculo entre tareas?',
-                    icon: 'warning',
-                    showCancelButton: true,
-                    confirmButtonText: 'Sí, eliminar',
-                    cancelButtonText: 'Cancelar',
-                    confirmButtonColor: '#ef4444',
-                    customClass: {
-                        popup: 'premium-swal',
-                        confirmButton: 'premium-confirm',
-                        cancelButton: 'premium-cancel'
-                    }
-                });
-                if (result.isConfirmed) {
-                    unlinkTasks(el1.dataset.taskId, el2.dataset.taskId);
-                }
-            });
-            
-            svgLayer.appendChild(path);
-        }
         
         // 3. Linking Logic
         const linkToggle = document.getElementById('link-mode-toggle');
@@ -2503,98 +2478,15 @@
             });
         });
         
-        // --- Lógica de Portal Tooltip Global (Delegada para máxima robustez) ---
-        if (!document.getElementById('global-tooltip')) {
-            const gt = document.createElement('div');
-            gt.id = 'global-tooltip';
-            document.body.appendChild(gt);
-        }
-        const globalTooltip = document.getElementById('global-tooltip');
-
-        function showGlobalTooltip(taskBlock, e) {
-            if (document.body.classList.contains('hide-tooltips')) return;
-            const template = taskBlock.querySelector('.task-tooltip');
-            if (!template) return;
-
-            globalTooltip.innerHTML = template.innerHTML;
-            globalTooltip.style.display = 'block';
-            globalTooltip.style.opacity = '1';
-            
-            positionGlobalTooltip(e);
-        }
-
-        function positionGlobalTooltip(e) {
-            const padding = 20;
-            let x = e.clientX + padding;
-            let y = e.clientY - (globalTooltip.offsetHeight / 2);
-
-            const rect = globalTooltip.getBoundingClientRect();
-            const vw = window.innerWidth;
-            const vh = window.innerHeight;
-
-            // Colisión Derecha
-            if (x + rect.width > vw - padding) {
-                x = e.clientX - rect.width - padding;
-            }
-
-            // Colisión Abajo
-            if (y + rect.height > vh - padding) {
-                y = vh - rect.height - padding;
-            }
-
-            // Colisión Arriba
-            if (y < padding) {
-                y = padding;
-            }
-
-            globalTooltip.style.left = x + 'px';
-            globalTooltip.style.top = y + 'px';
-        }
-
-        function hideGlobalTooltip() {
-            globalTooltip.style.display = 'none';
-            globalTooltip.style.opacity = '0';
-        }
-
-        // Delegación Global de Eventos para Tooltip
-        document.addEventListener('mouseover', function(e) {
-            const block = e.target.closest('.task-block');
-            if (block) {
-                // Lógica de Flip (Smart Positioning)
-                const rect = block.getBoundingClientRect();
-                const tooltipWidth = 350;
-                const spaceRight = window.innerWidth - rect.right;
-                if (spaceRight < tooltipWidth) {
-                    block.classList.add('tooltip-flip');
-                } else {
-                    block.classList.remove('tooltip-flip');
-                }
-                
-                showGlobalTooltip(block, e);
-            }
-        });
-
-        document.addEventListener('mousemove', function(e) {
-            if (globalTooltip.style.display === 'block') {
-                positionGlobalTooltip(e);
-            }
-        });
-
-        document.addEventListener('mouseout', function(e) {
-            const block = e.target.closest('.task-block');
-            if (block && (!e.relatedTarget || !block.contains(e.relatedTarget))) {
-                hideGlobalTooltip();
-            }
-        });
     });
-    
     </script>
     
-    <!-- Overlap Configuration Modal Script (Separate to ensure proper event handling) -->
+    <!-- Overlap Configuration Modal Script -->
     <script>
     // Initialize global variables FIRST
     window.currentOverlapTaskId = null;
     window.currentOverlapMaquina = null;
+    
     
     document.addEventListener('DOMContentLoaded', function() {
         // ========================================================================
@@ -2888,95 +2780,122 @@
         }
         
         // --- DEPENDENCY ENGINE - ROBUST IMPLEMENTATION ---
-        const dependenciesData = JSON.parse('{{ dependencies_json|safe }}');
-        console.log("Gantt: Se han recibido", dependenciesData.length, "dependencias del servidor.");
+            // dependenciesData ya está parseado en el scope exterior de DOMContentLoaded
 
         window.drawDependencies = function() {
             const svgLayer = document.getElementById('dependency-layer');
+            if (!svgLayer) return;
             
-            if (!svgLayer) {
-                console.error("Gantt Error: No se encontró el SVG de dependencias.");
-                return;
-            }
-            
-            // Si no está activo, limpiar y salir
             if (!svgLayer.classList.contains('visible')) {
                 svgLayer.innerHTML = '';
                 return;
             }
 
-            // 1. Sincronizar dimensiones con el área scrollable total
             const masterScroller = document.getElementById('gantt-body-scroll');
-            const innerWrapper = masterScroller ? masterScroller.firstElementChild : null;
-            if (innerWrapper) {
-                const w = innerWrapper.scrollWidth;
-                const h = innerWrapper.scrollHeight;
-                svgLayer.setAttribute('width', w);
-                svgLayer.setAttribute('height', h);
-                svgLayer.style.width = w + 'px';
-                svgLayer.style.height = h + 'px';
-            }
+            if (!masterScroller) return;
 
-            // 2. Limpiar y crear marcadores de flecha
+            const totalW = masterScroller.scrollWidth;
+            const totalH = masterScroller.scrollHeight;
+            svgLayer.setAttribute('width', totalW);
+            svgLayer.setAttribute('height', totalH);
+            svgLayer.style.width = totalW + 'px';
+            svgLayer.style.height = totalH + 'px';
             svgLayer.innerHTML = '';
+
             const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
-            const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
-            marker.setAttribute('id', 'arr');
-            marker.setAttribute('viewBox', '0 0 10 10');
-            marker.setAttribute('refX', '8'); marker.setAttribute('refY', '5');
-            marker.setAttribute('markerWidth', '6'); marker.setAttribute('markerHeight', '6');
-            marker.setAttribute('orient', 'auto');
-            const mPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            mPath.setAttribute('d', 'M 0 0 L 10 5 L 0 10 z');
-            mPath.setAttribute('fill', '#64748b');
-            marker.appendChild(mPath); defs.appendChild(marker);
             svgLayer.appendChild(defs);
 
-            // 3. Obtener rectángulo del SVG para transformar coordenadas
-            const svgRect = svgLayer.getBoundingClientRect();
-            console.log('SVG Rect:', svgRect.left, svgRect.top, svgRect.width, svgRect.height);
-
-            // 4. Mapear todas las tarjetas visibles por su task-id
-            const taskMap = {};
+            // MAPEAREMOS DOS DICCIONARIOS: Primer y Último segmento por OP
+            const taskMapFirst = {};
+            const taskMapLast = {};
+            
             document.querySelectorAll('.task-block').forEach(el => {
-                const tid = el.dataset.taskId;
-                if (tid) taskMap[tid] = el;
+                const tid = String(el.dataset.taskId || '').split('.')[0];
+                if (!tid) return;
+                
+                // Si es el primero que encontramos (o el que tiene el left más pequeño)
+                if (!taskMapFirst[tid] || parseFloat(el.style.left) < parseFloat(taskMapFirst[tid].style.left)) {
+                    taskMapFirst[tid] = el;
+                }
+                // Si es el último (o el que tiene el left más grande)
+                if (!taskMapLast[tid] || parseFloat(el.style.left) > parseFloat(taskMapLast[tid].style.left)) {
+                    taskMapLast[tid] = el;
+                }
             });
-            console.log('Tareas en pantalla:', Object.keys(taskMap).length, '| Dependencias a dibujar:', dependenciesData.length);
 
-            // 5. Dibujar cada conexión
-            let drawn = 0;
-            dependenciesData.forEach(dep => {
-                const elFrom = taskMap[dep.pred];
-                const elTo   = taskMap[dep.succ];
-                if (!elFrom || !elTo) return; // Huérfana: ignorar
+            const containerRect = masterScroller.getBoundingClientRect();
+            const sL = masterScroller.scrollLeft;
+            const sT = masterScroller.scrollTop;
+            let count = 0;
 
-                // Coordenadas: salida del borde derecho del origen, entrada al borde izq del destino
-                const rFrom = elFrom.getBoundingClientRect();
-                const rTo   = elTo.getBoundingClientRect();
+            const createdMarkers = new Set();
 
-                const x1 = rFrom.right - svgRect.left;
-                const y1 = rFrom.top + rFrom.height / 2 - svgRect.top;
-                const x2 = rTo.left - svgRect.left;
-                const y2 = rTo.top + rTo.height / 2 - svgRect.top;
+            (window.dependenciesData || []).forEach(dep => {
+                const s_pred = String(dep.pred).split('.')[0];
+                const s_succ = String(dep.succ).split('.')[0];
+                
+                // Salimos del ÚLTIMO segmento de la predecesora
+                const box1 = taskMapLast[s_pred];
+                // Entramos al PRIMER segmento de la sucesora
+                const box2 = taskMapFirst[s_succ];
+                
+                if (!box1 || !box2) return;
 
-                const color = elFrom.dataset.color || '#3b82f6';
-                const dx = x2 - x1;
-                const c1x = x1 + Math.max(Math.abs(dx) * 0.4, 80);
-                const c2x = x2 - Math.max(Math.abs(dx) * 0.4, 80);
+                // Las anclas están dentro de los bloques
+                // Usamos selectores dentro del elemento específico de la OP/segmento
+                const anchorExit = box1.querySelector('.dep-anchor.exit');
+                const anchorEntry = box2.querySelector('.dep-anchor.entry');
+                
+                const r1 = (anchorExit || box1).getBoundingClientRect();
+                const r2 = (anchorEntry || box2).getBoundingClientRect();
 
+                const x1 = (r1.right - containerRect.left) + sL;
+                const y1 = (r1.top - containerRect.top + (r1.height / 2)) + sT;
+                const x2 = (r2.left - containerRect.left) + sL;
+                const y2 = (r2.top - containerRect.top + (r2.height / 2)) + sT;
+
+                let color = box1.dataset.color || '#3b82f6';
+                if (box1.dataset.critical === 'true') color = '#ef4444';
+                
+                const colorId = color.replace('#', '');
+                if (!createdMarkers.has(colorId)) {
+                    const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+                    marker.setAttribute('id', `arr-${colorId}`);
+                    marker.setAttribute('viewBox', '0 0 10 10');
+                    marker.setAttribute('refX', '8'); marker.setAttribute('refY', '5');
+                    marker.setAttribute('markerWidth', '5'); marker.setAttribute('markerHeight', '5');
+                    marker.setAttribute('orient', 'auto');
+                    marker.setAttribute('pointer-events', 'none'); // Safety
+                    const mPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                    mPath.setAttribute('d', 'M 0 0 L 10 5 L 0 10 z');
+                    mPath.setAttribute('fill', color);
+                    mPath.setAttribute('pointer-events', 'none'); // Safety
+                    marker.appendChild(mPath);
+                    defs.appendChild(marker);
+                    createdMarkers.add(colorId);
+                }
+
+                const dx = Math.abs(x2 - x1);
                 const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                path.setAttribute('d', `M${x1},${y1} C${c1x},${y1} ${c2x},${y2} ${x2},${y2}`);
+                const curveOffset = Math.min(dx * 0.45, 120);
+                
+                path.setAttribute('d', `M${x1},${y1} C${x1 + curveOffset},${y1} ${x2 - curveOffset},${y2} ${x2},${y2}`);
                 path.setAttribute('stroke', color);
-                path.setAttribute('stroke-width', '2');
+                path.setAttribute('stroke-width', '2.5');
                 path.setAttribute('fill', 'none');
-                path.setAttribute('opacity', '0.65');
-                path.setAttribute('marker-end', 'url(#arr)');
+                path.setAttribute('opacity', '0.6');
+                path.setAttribute('marker-end', `url(#arr-${colorId})`);
+                path.classList.add('dependency-path');
+                
+                path.style.transition = 'opacity 0.2s, stroke-width 0.2s';
+                path.onmouseenter = () => { path.setAttribute('opacity', '1'); path.setAttribute('stroke-width', '3.5'); };
+                path.onmouseleave = () => { path.setAttribute('opacity', '0.6'); path.setAttribute('stroke-width', '2.5'); };
+                
                 svgLayer.appendChild(path);
-                drawn++;
+                count++;
             });
 
-            console.log(`Gantt: ${drawn} flechas renderizadas.`);
+            console.log(`GanttEngine: ${count} flechas dinámicas renderizadas.`);
         };
         
         // Initial drawing and events
@@ -3169,16 +3088,7 @@
                 });
             }
             
-            const scenarioSelector = document.getElementById('scenario-selector');
-            if (scenarioSelector) {
-                scenarioSelector.addEventListener('change', function() {
-                    const scenarioId = this.value;
-                    const url = new URL(window.location.href);
-                    url.searchParams.set('scenario_id', scenarioId);
-                    url.searchParams.set('run', '1');
-                    window.location.href = url.toString();
-                });
-            }
+            // Retirado scenarioSelector duplicado aquí para evitar SyntaxError
 
             // Url updating functionality for the new layout buttons
             function updateUrlParam(key, value) {
@@ -3203,22 +3113,7 @@
             const toggleManualMode = document.getElementById('toggleManualMode');
             if (toggleManualMode) toggleManualMode.addEventListener('click', (e) => { e.preventDefault(); updateUrlParam('plan_mode', 'manual'); });
 
-            // --- SCENARIO MANAGEMENT LOGIC ---
-            const scenarioSelector = document.getElementById('scenario-selector');
-            if (scenarioSelector) {
-                scenarioSelector.addEventListener('change', function() {
-                    const selectedOption = this.options[this.selectedIndex];
-                    const proyectosInput = document.getElementById('proyectos');
-                    
-                    // If a scenario is selected (not the placeholder), update projects input
-                    if (this.value && proyectosInput) {
-                        const scenarioProyectos = selectedOption.dataset.proyectos || '';
-                        proyectosInput.value = scenarioProyectos;
-                    }
-                    
-                    // this.form.submit(); // Fix: Form is removed
-                });
-            }
+
 
             // Publish Scenario
             const btnPublishScenario = document.getElementById('btnPublishScenario');
@@ -3523,11 +3418,8 @@
         });
         
         window.addEventListener('resize', window.drawDependencies);
-
-        // --- Tooltip logic migrated to main initialization block ---
     </script>
 
-</html>
 
 
 <!-- AI Chat Widget -->
@@ -3633,17 +3525,62 @@
             });
 
         });
+        // ============================================================
+        // AUTO-LAYOUT / COLLISION RESOLVER (MODO AUTO)
+        // ============================================================
+        function runAutoLayout() {
+            console.log("GanttEngine: Iniciando resolución de solapes en Modo Auto...");
+            const rows = document.querySelectorAll('.task-row');
+            
+            rows.forEach(row => {
+                // Obtener todas las tareas de la fila ordenadas por tiempo (left)
+                const tasks = Array.from(row.querySelectorAll('.task-block'))
+                                   .sort((a, b) => parseFloat(a.style.left) - parseFloat(b.style.left));
+                
+                let lastEnd = 0;
+                const MARGIN = 4; // Margen mínimo entre bloques
 
-        // ==========================================
-        // CONNECTOR VISUAL DE TAREAS CONTINUADAS
-        // Dibuja una línea de fondo que "amarra" los bloques 
-        // de una misma OP cuando está fragmentada
-        // ==========================================
+                tasks.forEach((task, index) => {
+                    const currentLeft = parseFloat(task.style.left);
+                    const currentWidth = parseFloat(task.style.width);
+                    
+                    // Si hay solape con el final del anterior (lastEnd), empujamos
+                    if (currentLeft < lastEnd + MARGIN) {
+                        const newLeft = lastEnd + MARGIN;
+                        task.style.left = newLeft + 'px';
+                        console.log(`GanttEngine: Empujando OP ${task.dataset.taskId} a ${newLeft}px`);
+                    }
+
+                    // Calculamos el final real de esta tarea incluyendo su badge si existe
+                    // Si el badge de ATRASO es muy grande, extendemos el 'espacio ocupado'
+                    const delayBadge = task.querySelector('.delay-badge');
+                    let effectiveWidth = currentWidth;
+                    
+                    if (delayBadge && delayBadge.offsetWidth > currentWidth) {
+                        // Si la etiqueta es más ancha que la caja, reservamos ese espacio
+                        effectiveWidth = delayBadge.offsetWidth + 10;
+                    }
+
+                    lastEnd = parseFloat(task.style.left) + effectiveWidth;
+                });
+            });
+
+            // Una vez reorganizado el layout, dibujamos flechas
+            if (typeof window.drawDependencies === 'function') {
+                setTimeout(window.drawDependencies, 100);
+            }
+        }
+
+        // Ejecutar si estamos en Modo Auto o al cargar
+        {% if plan_mode == 'original' %}
+            setTimeout(runAutoLayout, 850);
+        {% endif %}
+
+        // Sincronizar conectores de fragmentación (ya existente)
         document.querySelectorAll('.task-row').forEach(row => {
             const tasks = Array.from(row.querySelectorAll('.task-block'));
             const ops = {};
             
-            // Agrupar por data-task-id
             tasks.forEach(t => {
                 const op = t.getAttribute('data-task-id');
                 if(!op) return;
@@ -3651,17 +3588,14 @@
                 ops[op].push(t);
             });
             
-            // Dibujar conectores y bordes de corte transversales
             Object.keys(ops).forEach(op => {
                 const segments = ops[op];
                 if(segments.length > 1) {
                     segments.sort((a,b) => parseFloat(a.style.left) - parseFloat(b.style.left));
-                    
                     const first = segments[0];
                     const last = segments[segments.length - 1];
                     const color = first.getAttribute('data-color') || '#cccccc';
 
-                    // 1. Bordes derechos punteados para segmentos interrumpidos (todos menos el último)
                     segments.forEach((seg, index) => {
                         if (index < segments.length - 1) {
                             seg.style.setProperty('border-right-style', 'dashed', 'important');
@@ -3670,7 +3604,6 @@
                         }
                     });
                     
-                    // 2. Conector visual de fondo ("hilo conductor")
                     const startLeft = parseFloat(first.style.left);
                     const endLeft = parseFloat(last.style.left) + parseFloat(last.style.width);
                     const totalWidth = endLeft - startLeft;
@@ -3680,12 +3613,12 @@
                     connector.style.position = 'absolute';
                     connector.style.left = startLeft + 'px';
                     connector.style.width = totalWidth + 'px';
-                    connector.style.height = '14px';  // Grosor del hilo conductor
-                    connector.style.top = '35px';     // Centrado en la card
+                    connector.style.height = '14px';
+                    connector.style.top = '35px';
                     connector.style.backgroundColor = color;
-                    connector.style.opacity = '0.15'; // Muy suave
+                    connector.style.opacity = '0.15';
                     connector.style.borderRadius = '10px';
-                    connector.style.zIndex = '1';     // Detrás de las cards
+                    connector.style.zIndex = '1';
                     connector.style.pointerEvents = 'none';
                     
                     row.insertBefore(connector, row.firstChild);
@@ -3694,6 +3627,9 @@
         });
     });
 </script>
+    <!-- Portal Tooltip Global -->
+    <div id="global-tooltip" style="display: none; position: absolute; z-index: 10000;"></div>
+
 </body>
 
 </html>

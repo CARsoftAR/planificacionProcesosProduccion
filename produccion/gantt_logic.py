@@ -249,7 +249,7 @@ def get_gantt_data(request, force_run=False):
     if plan_mode:
         request.session['last_plan_mode'] = plan_mode
     else:
-        plan_mode = request.session.get('last_plan_mode', 'original')
+        plan_mode = request.session.get('last_plan_mode', 'manual')
  
     
     # 1. Get Local Machines
@@ -500,6 +500,8 @@ def get_gantt_data(request, force_run=False):
                         dependency_map[succ_id] = []
                     if pred_id not in dependency_map[succ_id]:
                         dependency_map[succ_id].append(pred_id)
+
+    print(f"DEBUG [dependencies]: dependency_map tiene {sum(len(v) for v in dependency_map.values())} vínculos en {len(dependency_map)} sucesores.")
 
     global_task_end_dates = {}
     unassigned_tasks = [
