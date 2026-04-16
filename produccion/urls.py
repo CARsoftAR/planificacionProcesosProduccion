@@ -43,6 +43,7 @@ urlpatterns = [
     path('api/proyectos/update_prioridad/', views.update_proyecto_prioridad, name='update_proyecto_prioridad'),
     path('api/move_task/', views.move_task, name='move_task'),
     path('api/update_manual_time/', views.update_manual_time, name='update_manual_time'),
+    path('api/update_cantidad_producida/', views.update_cantidad_producida, name='update_cantidad_producida'),
     path('api/update_manual_nivel/', views.update_manual_nivel, name='update_manual_nivel'),
     path('api/update_overlap_percentage/', views.update_overlap_percentage, name='update_overlap_percentage'),
     path('api/link_tasks/', views.link_tasks, name='link_tasks'),

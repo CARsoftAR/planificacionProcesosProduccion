@@ -258,6 +258,57 @@ def update_manual_time(request):
         print(f"ERROR update_manual_time: {e}")
         return JsonResponse({'error': str(e)}, status=500)
 
+@csrf_exempt
+def update_cantidad_producida(request):
+    """
+    API to update the produced quantity for a task manually.
+    """
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed"}, status=405)
+    
+    try:
+        body = json.loads(request.body)
+        id_orden = body.get("id_orden")
+        cantidad_producida = body.get("cantidad_producida")
+        maquina = body.get("maquina")
+        scenario_id = body.get("scenario_id")
+        
+        if not id_orden or cantidad_producida is None:
+            return JsonResponse({"error": "Missing parameters"}, status=400)
+        
+        active_scenario = get_active_scenario(request)
+        if scenario_id:
+            try:
+                from .models import Scenario
+                active_scenario = Scenario.objects.using('default').get(id=scenario_id)
+            except: pass
+            
+        from django.db import transaction
+        with transaction.atomic(using="default"):
+            # Ensure we update the right record
+            p = PrioridadManual.objects.using('default').filter(
+                id_orden=id_orden, 
+                scenario=active_scenario
+            ).first()
+            
+            if not p:
+                if not maquina:
+                     return JsonResponse({"error": "No manual state found for this OP. Move it or change machine first."}, status=400)
+                
+                p = PrioridadManual.objects.using('default').create(
+                    id_orden=id_orden,
+                    maquina=maquina,
+                    prioridad=0, 
+                    scenario=active_scenario
+                )
+            
+            p.cantidad_producida_manual = float(cantidad_producida)
+            p.save(using='default')
+            
+        return JsonResponse({"status": "ok", "new_value": p.cantidad_producida_manual})
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
 
 @csrf_exempt
 def update_manual_nivel(request):
@@ -465,6 +516,7 @@ def planificacion_list(request):
                         'tiempo_manual': p.tiempo_manual,
                         'nivel_manual': p.nivel_manual,
                         'porcentaje_solapamiento': p.porcentaje_solapamiento,
+                        'cantidad_producida_manual': p.cantidad_producida_manual,
                         'fecha_inicio_manual': p.fecha_inicio_manual
                     }
                     virtual_overrides[(oid, mid)] = node
@@ -568,8 +620,18 @@ def planificacion_list(request):
 
             # Cantidades
             item['Cantidad'] = item.get('cantidad_final') or 0
-            item['Cantidadpp'] = item.get('cantidad_producida') or 0
-            item['CantidadesPendientes'] = item.get('cantidad_pendiente') or 0
+            
+            # Apply Manual overrides for quantity if exists
+            manual_qty = None
+            if override_node and override_node.get('cantidad_producida_manual') is not None:
+                manual_qty = override_node['cantidad_producida_manual']
+                item['Cantidadpp'] = manual_qty
+                item['CantidadManualFlag'] = True
+            else:
+                item['Cantidadpp'] = item.get('cantidad_producida') or 0
+                item['CantidadManualFlag'] = False
+
+            item['CantidadesPendientes'] = max(0, item['Cantidad'] - item['Cantidadpp'])
 
 
         # 2. Initialize Grouping using MACHINE NAMES
@@ -605,12 +667,11 @@ def planificacion_list(request):
             # 2. Sort by the finalized OrdenVisual
             machine_items.sort(key=lambda x: x.get('OrdenVisual', 999999.0))
             
-            # 3. Re-assign discrete OrdenVisual (1000, 2000, 3000...) for the template/UI
-            # This provides the clean baseline for the next Drag event.
+            # 3. Solo re-asignamos OrdenVisual interno si es necesario para mantener el "snap" del Gantt,
+            # pero NO tocamos Idprioridad para respetar el valor original del ERP.
             for idx, m_item in enumerate(machine_items):
-                val = (idx + 1) * 1000
-                m_item['OrdenVisual'] = float(val)
-                m_item['Idprioridad'] = int(val)
+                if m_item['OrdenVisual'] is None:
+                    m_item['OrdenVisual'] = (idx + 1) * 1000.0
 
         # FINAL FILTER: REMOVED per user request ("no las ocultes")
         # We keep all machines visible to allow moving tasks to them.

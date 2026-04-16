@@ -9,7 +9,7 @@
     <!-- Use CDN for Bootstrap 5 for easy tabs and styling -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+    <link rel="stylesheet" href="{% static 'css/styles.css' %}?v=4">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
         /* Modern SweetAlert2 Custom Styles */
@@ -105,6 +105,55 @@
         /* Toggle buttons based on row state */
         .hidden-row .btn-normal-action { display: none !important; }
         tr:not(.hidden-row) .btn-audit-action { display: none !important; }
+
+        .dropdown-item-premium.active {
+            background-color: #eff6ff !important;
+            color: #2563eb !important;
+            font-weight: 700;
+        }
+
+        /* Machine Selection Modal Styling */
+        .btn-select-machine-modal {
+            transition: all 0.2s ease;
+            border: 1px solid #e2e8f0;
+            background: #f8fafc;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 80px;
+        }
+        .btn-select-machine-modal:hover {
+            border-color: #3b82f6 !important;
+            background: #eff6ff !important;
+            color: #2563eb !important;
+            transform: translateY(-3px);
+            box-shadow: 0 10px 15px -3px rgba(59, 130, 246, 0.2) !important;
+        }
+        .machine-item.hidden {
+            display: none !important;
+        }
+        .open-machine-modal {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+            height: 100%;
+            padding: 8px 12px;
+            text-decoration: none !important;
+            color: #1e293b;
+            font-weight: 700;
+            font-size: 0.78rem;
+            transition: all 0.2s ease;
+            background: transparent;
+            border: none;
+        }
+        .open-machine-modal:hover {
+            background-color: #f1f5f9;
+            color: #2563eb;
+        }
+
+
     </style>
 </head>
 <body>
@@ -331,12 +380,24 @@
                                     title="Click para editar Nivel Planificación"
                                     style="cursor: text; text-align: center; {% if item.NivelManualFlag %}background-color: #ffeeba;{% endif %}"
                                 >{{ item.Nivel_Planificacion|default:"0" }}</td>
-                                <td>{{ item.MAQUINAD }}</td>
+                                <td class="machine-cell-interactive p-0 align-middle" style="min-width: 160px;">
+                                    <button type="button" class="open-machine-modal w-100" 
+                                            data-op="{{ item.Idorden }}" 
+                                            data-current-machine-id="{{ item.MAQUINA_ID }}">
+                                        <span>{{ item.MAQUINAD }}</span>
+                                        <i class="fas fa-exchange-alt opacity-50 small"></i>
+                                    </button>
+                                </td>
                                 <td class="text-end bg-warning-lighter">{{ item.Tiempo|floatformat:3 }}</td>
                                 <td class="text-end bg-warning-lighter">{{ item.Tiempo_Logrado|floatformat:2 }}</td>
                                 <td class="text-end">{{ item.Cantidad|floatformat }}</td>
-                                <td class="text-end">{{ item.Cantidadpp|floatformat }}</td>
-                                <td class="text-end bg-warning-lighter fw-bold">
+                                <td class="text-end fw-bold editable-cantidad" 
+                                    contenteditable="true"
+                                    title="Click para editar Cantidad Producida"
+                                    style="cursor: text; text-align: right; {% if item.CantidadManualFlag %}background-color: #ffeeba;{% endif %}"
+                                    data-total="{{ item.Cantidad }}"
+                                >{{ item.Cantidadpp|floatformat }}</td>
+                                <td class="text-end bg-warning-lighter fw-bold cant-pendientes">
                                     {{ item.CantidadesPendientes|floatformat }}
                                 </td>
                                                            <td class="text-end fw-bold editable-solapamiento" 
@@ -834,6 +895,172 @@
                     } catch (e) {
                         console.error(e);
                         alert('Error de conexión');
+                    }
+                });
+            });
+
+            // --- Manual Quantity Produced Logic ---
+            const qtyCells = document.querySelectorAll('.editable-cantidad');
+            qtyCells.forEach(cell => {
+                cell.addEventListener('input', function() {
+                    const row = this.closest('tr');
+                    const total = parseFloat(this.dataset.total) || 0;
+                    const valText = this.innerText.trim().replace(',', '.');
+                    const val = parseFloat(valText) || 0;
+                    const pendientesCell = row.querySelector('.cant-pendientes');
+                    if (pendientesCell) {
+                        pendientesCell.innerText = Math.max(0, total - val).toLocaleString('es-AR', {minimumFractionDigits: 0, maximumFractionDigits: 1});
+                    }
+                });
+
+                cell.addEventListener('blur', async function() {
+                    const row = this.closest('tr');
+                    const idOrden = row.dataset.id;
+                    const total = parseFloat(this.dataset.total) || 0;
+                    let valText = this.innerText.trim().replace(',', '.');
+                    let val = parseFloat(valText) || 0;
+                    const maquina = row.dataset.maquina;
+                    const scenarioId = new URLSearchParams(window.location.search).get('scenario_id');
+
+                    if (val > total) {
+                         Swal.fire({
+                             title: 'Validación de Cantidad',
+                             text: `La cantidad producida (${val}) no puede ser superior al total (${total}).`,
+                             icon: 'warning',
+                             customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                         });
+                         val = total;
+                         this.innerText = val;
+                    }
+                    if (val < 0) val = 0;
+
+                    this.style.backgroundColor = '#e2e6ea';
+
+                    try {
+                        const response = await fetch('/api/update_cantidad_producida/', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRFToken': '{{ csrf_token }}'
+                            },
+                            body: JSON.stringify({
+                                id_orden: idOrden,
+                                cantidad_producida: val,
+                                maquina: maquina,
+                                scenario_id: scenarioId
+                            })
+                        });
+
+                        if (response.ok) {
+                            this.style.backgroundColor = '#ffeeba'; // Yellow flag
+                        } else {
+                            const data = await response.json();
+                            Swal.fire({ title: 'Error', text: data.error, icon: 'error' });
+                        }
+                    } catch (e) {
+                         console.error(e);
+                    }
+                });
+            });
+
+
+            // --- Machine Change via Modal Logic ---
+            const machineModal = new bootstrap.Modal(document.getElementById('machineSelectorModal'));
+            let currentEditingOp = null;
+            let currentOriginMachine = null;
+
+            document.querySelectorAll('.open-machine-modal').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    currentEditingOp = this.dataset.op;
+                    currentOriginMachine = this.dataset.currentMachineId;
+                    
+                    document.getElementById('modal-op-title').innerText = `OP: ${currentEditingOp}`;
+                    
+                    // Reset search
+                    const filterInput = document.getElementById('machineFilterInput');
+                    filterInput.value = '';
+                    document.querySelectorAll('.machine-item').forEach(item => item.classList.remove('hidden'));
+                    
+                    machineModal.show();
+                });
+            });
+
+            // Machine Search Filtering
+            document.getElementById('machineFilterInput').addEventListener('input', function() {
+                const term = this.value.toLowerCase();
+                document.querySelectorAll('.machine-item').forEach(item => {
+                    const name = item.querySelector('.fw-bold').innerText.toLowerCase();
+                    if (name.includes(term)) {
+                        item.classList.remove('hidden');
+                    } else {
+                        item.classList.add('hidden');
+                    }
+                });
+            });
+
+            document.querySelectorAll('.btn-select-machine-modal').forEach(btn => {
+                btn.addEventListener('click', async function() {
+                    const targetMachineId = this.dataset.targetId;
+                    const targetMachineName = this.dataset.targetName;
+                    const scenarioId = new URLSearchParams(window.location.search).get('scenario_id');
+
+                    if (currentOriginMachine === targetMachineId) {
+                        machineModal.hide();
+                        return;
+                    }
+
+                    machineModal.hide();
+
+                    const result = await Swal.fire({
+                        title: '¿Cambiar de Máquina?',
+                        html: `¿Desea mover la <b>OP ${currentEditingOp}</b> a la máquina <b>${targetMachineName}</b>?`,
+                        icon: 'question',
+                        showCancelButton: true,
+                        confirmButtonText: 'Sí, reasignar',
+                        cancelButtonText: 'Cancelar',
+                        customClass: {
+                            popup: 'premium-swal',
+                            confirmButton: 'premium-confirm',
+                            cancelButton: 'premium-cancel'
+                        }
+                    });
+
+                    if (!result.isConfirmed) return;
+
+                    Swal.fire({
+                        title: 'Procesando...',
+                        text: 'Recalculando tiempos y prioridades...',
+                        allowOutsideClick: false,
+                        didOpen: () => {
+                            Swal.showLoading();
+                        },
+                        customClass: { popup: 'premium-swal' }
+                    });
+
+                    try {
+                        const response = await fetch('/api/move_task/', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRFToken': '{{ csrf_token }}'
+                            },
+                            body: JSON.stringify({
+                                id_orden: currentEditingOp,
+                                target_machine_id: targetMachineId,
+                                new_priority: 99999, 
+                                scenario_id: scenarioId
+                            })
+                        });
+
+                        if (response.ok) {
+                            window.location.reload();
+                        } else {
+                            const data = await response.json();
+                            Swal.fire({ title: 'Error', text: data.error || 'No se pudo mover la tarea.', icon: 'error' });
+                        }
+                    } catch (err) {
+                        console.error(err);
+                        Swal.fire({ title: 'Error de Red', text: 'Desconexión con el servidor.', icon: 'error' });
                     }
                 });
             });
@@ -1379,5 +1606,58 @@
 
         initTheme();
     </script>
+
+    <!-- Modal para Selección de Máquina -->
+    <div class="modal fade" id="machineSelectorModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+                <div class="modal-header bg-primary text-white border-0 py-3">
+                    <h5 class="modal-title fw-bold">
+                        <i class="fas fa-random me-2"></i>REASIGNAR MÁQUINA
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <div class="d-flex align-items-center mb-4 bg-light p-3 rounded-3 border">
+                        <div class="bg-primary bg-opacity-10 p-2 rounded-2 me-3">
+                            <i class="fas fa-file-invoice text-primary"></i>
+                        </div>
+                        <div>
+                            <p class="mb-0 text-muted smaller text-uppercase fw-bold">Orden de Producción</p>
+                            <h5 class="mb-0 fw-bold" id="modal-op-title">OP: -</h5>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3 position-relative">
+                        <i class="fas fa-search position-absolute top-50 start-0 translate-middle-y ms-3 text-muted"></i>
+                        <input type="text" id="machineFilterInput" class="form-control rounded-pill ps-5 py-2 border-light-subtle shadow-sm" placeholder="Escribí el nombre de la máquina para filtrar...">
+                    </div>
+
+                    <div class="row g-2 overflow-auto custom-scrollbar" style="max-height: 400px; padding: 5px;" id="machineGrid">
+                        {% for m_opt in machines %}
+                        <div class="col-6 col-md-4 machine-item">
+                            <button class="btn btn-select-machine-modal w-100 h-100 p-3 rounded-3 shadow-sm"
+                                    data-target-id="{{ m_opt.id }}"
+                                    data-target-name="{{ m_opt.nombre }}">
+                                <div class="fw-bold fs-6 mb-1 text-center">{{ m_opt.nombre }}</div>
+                                <span class="smaller opacity-25 fw-mono text-uppercase">ID: {{ m_opt.id }}</span>
+                            </button>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="modal-footer bg-light border-0">
+                    <button type="button" class="btn btn-secondary px-4 rounded-pill fw-bold" data-bs-dismiss="modal">Cerrar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <style>
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
 </body>
 </html>

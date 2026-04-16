@@ -307,6 +307,7 @@ def get_gantt_data(request, force_run=False):
                     'tiempo_manual': entry.tiempo_manual,
                     'nivel_manual': entry.nivel_manual,
                     'porcentaje_solapamiento': entry.porcentaje_solapamiento if entry.porcentaje_solapamiento is not None else 0.0,
+                    'cantidad_producida_manual': entry.cantidad_producida_manual,
                     'manual_start': entry.fecha_inicio_manual 
                 }
                 # Forzar ID a string de entero para evitar problemas con .0 de SQL
@@ -458,7 +459,7 @@ def get_gantt_data(request, force_run=False):
             parts_groups[key].append(t)
 
         for part_key, part_tasks in parts_groups.items():
-            p_tasks_sorted = sorted(part_tasks, key=get_nivel, reverse=True)
+            p_tasks_sorted = sorted(part_tasks, key=get_nivel, reverse=False)
             for j in range(len(p_tasks_sorted) - 1):
                 predecessor = p_tasks_sorted[j]
                 successor = p_tasks_sorted[j+1]
@@ -600,7 +601,11 @@ def get_gantt_data(request, force_run=False):
                  item['OrdenVisual'] = (idx + 1) * 1000.0
              
              item['Cantidad'] = item.get('cantidad_final', item.get('Cantidad_Proyecto', 0))
-             item['Cantidadpp'] = item.get('cantidad_producida', 0)
+             
+             if p_id in virtual_overrides and virtual_overrides[p_id].get('cantidad_producida_manual') is not None:
+                 item['Cantidadpp'] = float(virtual_overrides[p_id]['cantidad_producida_manual'])
+             else:
+                 item['Cantidadpp'] = item.get('cantidad_producida', 0)
                   
         tasks.sort(key=lambda x: x.get('OrdenVisual', 999999))
         machine_tasks_map[machine_id] = {'maquina': maquina, 'tasks': tasks}
@@ -670,10 +675,9 @@ def get_gantt_data(request, force_run=False):
                      target_start = force_start_times[tid]
                      is_pinned = 1
                  
-                 # 1. Nivel (Manufacturing sequence is critical)
-                 # 2. Predicted start time (from dependencies)
-                 # 3. Visual Order (Tie breaker)
-                 return (-get_nivel(t), target_start, t.get('OrdenVisual', 999999))
+                 # PRIORIDAD ABSOLUTA: Reflejar el orden de la tabla (OrdenVisual)
+                 # El Nivel_Planificacion ya está embebido en el OrdenVisual inicial del SQL
+                 return (t.get('OrdenVisual', 999999), get_nivel(t), target_start)
             
             tasks.sort(key=get_sort_key)
             recalc = calculate_timeline(maquina, tasks, start_date=start_simulation, 

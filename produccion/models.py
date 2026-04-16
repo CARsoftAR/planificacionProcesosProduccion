@@ -97,6 +97,7 @@ class PrioridadManual(models.Model):
         verbose_name='% Solapamiento',
         help_text='Porcentaje del lote que debe estar completo antes de iniciar siguiente proceso (0-100)'
     )
+    cantidad_producida_manual = models.FloatField(blank=True, null=True, verbose_name='Cantidad Producida Manual')
     fecha_inicio_manual = models.DateTimeField(
         blank=True, 
         null=True, 
