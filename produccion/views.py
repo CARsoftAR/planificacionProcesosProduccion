@@ -7,7 +7,8 @@ from itertools import groupby
 from operator import itemgetter
 from .models import (
     PrioridadManual, MaquinaConfig, HorarioMaquina, 
-    TaskDependency, HiddenTask, Scenario, ProyectoPrioridad
+    TaskDependency, HiddenTask, Scenario, ProyectoPrioridad,
+    PlannedTask
 )
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
@@ -449,12 +450,22 @@ def planificacion_list(request):
             all_machines_list = [{'id': n, 'nombre': n} for n in names]
             machine_map = {n: n for n in names}
 
-        # Optimization: Only fetch data if filters are active
-        # Don't count machine_ids as an active user filter, we need user intent (project/id)
-        search_active = bool(filtros.get('proyectos') or filtros.get('id_orden'))
+        # NEW: Selective planning. Only show tasks that are explicitly in PlannedTask for this scenario.
+        # We fetch the IDs from SQLite but the data from SQL Server (ERP).
+        planned_ids = list(PlannedTask.objects.using('default').filter(scenario=active_scenario).values_list('id_orden', flat=True))
+        
+        # We always set this filter to ensure only selected tasks appear
+        filtros['id_orden_in'] = planned_ids
+
+        # Optimization: Only fetch data if we have planned IDs OR we are looking for a specific ID
+        # If the user is just "searching" for a project, we don't load ERP data into the table yet
+        # (the frontend will open the Selector modal instead).
+        search_active = bool(planned_ids or filtros.get('id_orden'))
         
         if search_active:
-            data = get_planificacion_data(filtros)
+            # We set exclude_completed=False because if a task is explicitly in PlannedTask
+            # (Selected via the new UI), we WANT to see it even if it's technically completed in ERP.
+            data = get_planificacion_data(filtros, exclude_completed=False)
         else:
             data = []
         
@@ -2508,6 +2519,7 @@ def create_scenario(request):
                     PrioridadManual.objects.using('default').filter(scenario=scenario).delete()
                     ProyectoPrioridad.objects.using('default').filter(scenario=scenario).delete()
                     HiddenTask.objects.using('default').filter(scenario=scenario).delete()
+                    PlannedTask.objects.using('default').filter(scenario=scenario).delete()
                     
                     # Clone from source
                     source = Scenario.objects.using('default').get(pk=copy_from_id)
@@ -2540,6 +2552,14 @@ def create_scenario(request):
                         for p in proj_prios
                     ]
                     ProyectoPrioridad.objects.using('default').bulk_create(new_proj_prios)
+
+                    # Clone Planned Tasks
+                    planned = PlannedTask.objects.using('default').filter(scenario=source)
+                    new_planned = [
+                        PlannedTask(id_orden=p.id_orden, scenario=scenario)
+                        for p in planned
+                    ]
+                    PlannedTask.objects.using('default').bulk_create(new_planned)
 
                 return JsonResponse({'status': 'ok', 'scenario': {'id': scenario.id, 'nombre': scenario.nombre}})
                 
@@ -2574,6 +2594,14 @@ def create_scenario(request):
                             scenario=new_scenario, proyecto=p.proyecto, prioridad=p.prioridad
                         ))
                     ProyectoPrioridad.objects.using('default').bulk_create(new_p_priorities)
+
+                    # Clone Planned Tasks
+                    planned = PlannedTask.objects.using('default').filter(scenario=source)
+                    new_planned = [
+                        PlannedTask(id_orden=p.id_orden, scenario=new_scenario)
+                        for p in planned
+                    ]
+                    PlannedTask.objects.using('default').bulk_create(new_planned)
                 
                 return JsonResponse({
                     'status': 'ok',
@@ -3180,4 +3208,192 @@ def redistribute_tasks(request):
         import traceback
         print(traceback.format_exc())
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
+
+@csrf_exempt
+def api_get_project_articles(request):
+    """
+    NIVEL 1: Obtiene la lista de artículos principales (Piezas/Conjuntos) para un proyecto.
+    Utiliza el flag IsMacro para identificar únicamente las cabeceras.
+    """
+    proyecto = request.GET.get('proyecto', '').strip()
+    scenario_id = request.GET.get('scenario_id')
+    active_scenario = get_active_scenario(request, scenario_id=scenario_id)
+    
+    if not proyecto:
+        return JsonResponse({'error': 'Proyecto no especificado'}, status=400)
+    
+    # 1. Buscamos los artículos principales en el ERP
+    # Nota: Filtramos por Formula para capturar la OP master. IsMacro = 1 son cabeceras.
+    sql_articles = """
+    SELECT 
+        Articulo,
+        Descri as Denominacion,
+        SUM(Cantidad) as Solicitado,
+        SUM(Cantidadpp) as Finalizado,
+        MacroPK,
+        MAX(Idorden) as IdOrdenMaster
+    FROM Tman050
+    WHERE Formula LIKE %s
+    AND IsMacro = 1
+    GROUP BY Articulo, Descri, MacroPK
+    ORDER BY Descri
+    """
+    
+    with connections['production'].cursor() as cursor:
+        search_val = f"%{proyecto}%"
+        cursor.execute(sql_articles, [search_val])
+        cols = [col[0] for col in cursor.description]
+        articles = [dict(zip(cols, row)) for row in cursor.fetchall()]
+
+        # 2. Buscamos qué OPs de este proyecto YA están en la planificación actual
+        # Consultamos SQLite para saber qué está planificado en este escenario
+        planned_ids = list(PlannedTask.objects.using('default').filter(
+            scenario=active_scenario
+        ).values_list('id_orden', flat=True))
+
+        planned_state = {}
+        if planned_ids:
+            # Consultamos el ERP para saber a qué MacroPK pertenecen estas OPs planificadas
+            # Usamos placeholders dinámicos para evitar errores de sintaxis con IN
+            placeholders = ', '.join(['%s'] * len(planned_ids))
+            sql_mapping = f"""
+            SELECT MacroPK, Idorden 
+            FROM Tman050 
+            WHERE Idorden IN ({placeholders})
+            AND Formula LIKE %s
+            """
+            params = list(planned_ids) + [search_val]
+            cursor.execute(sql_mapping, params)
+            mapping_rows = cursor.fetchall()
+            
+            for m_pk, oid in mapping_rows:
+                oid_s = str(oid)
+                if m_pk not in planned_state:
+                    planned_state[m_pk] = []
+                planned_state[m_pk].append(oid_s)
+
+    return JsonResponse({
+        'articles': articles,
+        'planned_state': planned_state
+    })
+
+@csrf_exempt
+def api_get_article_processes(request):
+    """
+    NIVEL 2: Obtiene los procesos (OPs) vinculados a un MacroPK específico.
+    """
+    macro_pk = request.GET.get('macro_pk', '').strip()
+    
+    if not macro_pk:
+        return JsonResponse({'error': 'MacroPK no especificado'}, status=400)
+    
+    # Buscamos las operaciones vinculadas al MacroPK. 
+    # Filtramos IsMacro = 0 para que no se traiga el artículo padre, solo los procesos.
+    # Join con Tman010 para traer el nombre de la máquina.
+    sql = """
+    SELECT 
+        T.Idorden as IdOrden,
+        T.Descri as Proceso,
+        (T.Cantidad - T.Cantidadpp) as Pendiente,
+        T.Cantidad as Cantidad,
+        T.Cantidadpp as Finalizado,
+        ISNULL(M.MAQUINAD, T.Idmaquina) as MaquinaNombre
+    FROM Tman050 T
+    LEFT JOIN Tman010 M ON T.Idmaquina = M.Idmaquina
+    WHERE T.MacroPK = %s
+    AND T.IsMacro = 0
+    ORDER BY T.Idorden
+    """
+    
+    with connections['production'].cursor() as cursor:
+        cursor.execute(sql, [macro_pk])
+        columns = [col[0] for col in cursor.description]
+        results = [dict(zip(columns, row)) for row in cursor.fetchall()]
+        
+    return JsonResponse({'processes': results})
+
+@csrf_exempt
+def api_confirm_selected_tasks(request):
+    """
+    Guarda las OPs seleccionadas en el modelo PlannedTask para que aparezcan en la planificación.
+    Limpia cualquier prioridad manual previa para que las tareas arranquen en su máquina original del ERP.
+    """
+    try:
+        body = json.loads(request.body)
+        id_ordens = body.get('id_ordens', [])
+        scenario_id = body.get('scenario_id')
+        project_code = body.get('project_code')
+        
+        active_scenario = get_active_scenario(request, scenario_id=scenario_id)
+        
+        # REPLACE: Borramos solo lo que pertenece al proyecto actual (para permitir acumulación)
+        with transaction.atomic(using='default'):
+            # 1. Si tenemos el código de proyecto, borramos solo sus OPs de este escenario
+            if project_code:
+                # Obtenemos todas las OPs que pertenecen a este proyecto en el ERP
+                # Nota: En este ERP, el código de proyecto se guarda en el campo 'Formula'
+                from django.db import connections
+                with connections['production'].cursor() as cursor:
+                    search_pattern = f"%{project_code}%"
+                    cursor.execute("SELECT Idorden FROM Tman050 WHERE Formula LIKE %s", [search_pattern])
+                    project_op_ids = [str(row[0]) for row in cursor.fetchall()]
+                
+                if project_op_ids:
+                    PlannedTask.objects.using('default').filter(
+                        scenario=active_scenario,
+                        id_orden__in=project_op_ids
+                    ).delete()
+            else:
+                # Si no se pasó proyecto (fallback), borramos todo como antes
+                PlannedTask.objects.using('default').filter(
+                    scenario=active_scenario
+                ).delete()
+            
+            # 2. Borramos prioridades manuales previas de las OPs seleccionadas
+            # (Así vuelven a su máquina original según ERP)
+            PrioridadManual.objects.using('default').filter(
+                id_orden__in=id_ordens, 
+                scenario=active_scenario
+            ).delete()
+
+            # 3. Registramos las OPs que el usuario seleccionó ahora
+            planned_tasks = [
+                PlannedTask(id_orden=oid, scenario=active_scenario)
+                for oid in id_ordens
+            ]
+            PlannedTask.objects.using('default').bulk_create(planned_tasks)
+                
+        return JsonResponse({'status': 'ok', 'count': len(id_ordens)})
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        return JsonResponse({'error': str(e)}, status=500)
+
+@csrf_exempt
+def api_clear_all_planning(request):
+    """
+    Clears ALL planned tasks and manual overrides for the active scenario.
+    This effectively "empties" the planner for the current project(s) or scenario.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    
+    try:
+        body = json.loads(request.body)
+        scenario_id = body.get('scenario_id')
+        active_scenario = get_active_scenario(request, scenario_id=scenario_id)
+        
+        from django.db import transaction
+        with transaction.atomic(using='default'):
+            # 1. Delete all tasks from the planned list in this scenario
+            PlannedTask.objects.using('default').filter(scenario=active_scenario).delete()
+            
+            # 2. Delete all manual overrides (machine moves, etc) for this scenario
+            PrioridadManual.objects.using('default').filter(scenario=active_scenario).delete()
+            
+        return JsonResponse({'status': 'ok', 'message': 'Selección vaciada correctamente'})
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        return JsonResponse({'error': str(e)}, status=500)
 

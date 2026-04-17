@@ -273,6 +273,26 @@ class HiddenTask(models.Model):
         verbose_name = 'Tarea Oculta'
         verbose_name_plural = 'Tareas Ocultas'
 
+class PlannedTask(models.Model):
+    id_orden = models.BigIntegerField(db_column='IdOrden', verbose_name='ID de Orden (OP)')
+    scenario = models.ForeignKey(
+        Scenario, 
+        on_delete=models.CASCADE, 
+        related_name='planned_tasks',
+        verbose_name='Escenario'
+    )
+    fecha_seleccion = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        managed = True
+        db_table = 'planned_task'
+        unique_together = ('id_orden', 'scenario')
+        verbose_name = 'Tarea Planificada'
+        verbose_name_plural = 'Tareas Planificadas'
+
+    def __str__(self):
+        return f"OP {self.id_orden} en {self.scenario.nombre}"
+
 class ProyectoPrioridad(models.Model):
     proyecto = models.CharField(max_length=50, verbose_name="Proyecto (Formula)")
     prioridad = models.IntegerField(default=999, verbose_name="Prioridad")

@@ -16,7 +16,8 @@ class ProductionRouter:
         'Scenario',
         'MantenimientoMaquina',
         'MaquinaEquivalencia',
-        'ProyectoPrioridad'
+        'ProyectoPrioridad',
+        'PlannedTask'
     }
 
     def db_for_read(self, model, **hints):

@@ -219,6 +219,9 @@
                     <button type="button" id="btnResetToERP" class="btn btn-sm btn-warning rounded-pill px-3 fw-bold shadow-sm" style="background: #fbbf24; border: none; color: #78350f;" title="Restablecer al Plan Original del ERP">
                         <i class="fas fa-history me-1"></i> Reset ERP
                     </button>
+                    <button type="button" id="btnClearPlanning" class="btn btn-sm btn-danger rounded-pill px-3 fw-bold shadow-sm" style="background: #dc2626; border: none;" title="Vaciar todas las tablas de planificación">
+                        <i class="fas fa-trash-alt me-1"></i> Vaciar Tablas
+                    </button>
                 </div>
 
                 <input type="hidden" name="run" value="1">
@@ -281,6 +284,100 @@
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
                         <button type="button" class="btn btn-success" id="btnConfirmSave">
                             <i class="fas fa-check me-1"></i>Confirmar Guardado
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- NEW: Selector de Producción Modal -->
+        <div class="modal fade" id="selectorProduccionModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-xl modal-dialog-scrollable" style="margin-top: 80px; height: 75vh; max-height: 75vh;">
+                <div class="modal-content border-0 shadow-lg" style="border-radius: 20px; overflow: hidden; height: 100%;">
+                    <div class="modal-header border-0 bg-primary text-white p-4">
+                        <div class="d-flex align-items-center">
+                            <i class="fas fa-tasks fa-lg me-3"></i>
+                            <div>
+                                <h5 class="modal-title fw-bold m-0" id="selectorTitle">Selector de Producción</h5>
+                                <p class="small opacity-75 m-0" id="selectorSub">Proyecto: -</p>
+                            </div>
+                        </div>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body p-4 bg-light">
+                        <!-- Level 1: Articles Table -->
+                        <div id="level1-articles">
+                            <h6 class="text-muted fw-bold mb-3 uppercase smaller"><i class="fas fa-layer-group me-1"></i> NIVEL 1: ARTÍCULOS DEL PROYECTO</h6>
+                            <div class="table-responsive rounded-4 bg-white shadow-sm border overflow-hidden">
+                                <table class="table table-hover align-middle mb-0" id="tableArticles">
+                                    <thead class="bg-light">
+                                        <tr>
+                                            <th class="ps-4 text-center">Planificar</th>
+                                            <th>OP</th>
+                                            <th>Artículo</th>
+                                            <th>Denominación (Articulo D.)</th>
+                                            <th class="text-center">Solicitado</th>
+                                            <th class="text-center">Finalizado</th>
+                                            <th class="text-center">Seleccionados</th>
+                                            <th class="pe-4 text-center">Acción</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="tbodyArticles">
+                                        <!-- Dynamic content -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- Level 2: Processes Table (Hidden by default) -->
+                        <div id="level2-processes" class="mt-4" style="display: none;">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h6 class="text-muted fw-bold m-0 uppercase smaller"><i class="fas fa-cogs me-1"></i> NIVEL 2: PROCESOS / OPERACIONES</h6>
+                                <button class="btn btn-sm btn-outline-secondary rounded-pill px-3" onclick="backToArticles()">
+                                    <i class="fas fa-arrow-left me-1"></i> Volver a Artículos
+                                </button>
+                            </div>
+                            <div class="bg-white rounded-4 shadow-sm border p-4 mb-3">
+                                <div class="d-flex align-items-center mb-0">
+                                    <div class="bg-info bg-opacity-10 p-2 rounded-3 me-3 text-info">
+                                        <i class="fas fa-info-circle fa-lg"></i>
+                                    </div>
+                                    <div>
+                                        <div class="fw-bold" id="detailArtName">-</div>
+                                        <div class="small text-muted" id="detailArtCode">-</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="table-responsive rounded-4 bg-white shadow-sm border overflow-hidden">
+                                <table class="table table-hover align-middle mb-0" id="tableProcesses">
+                                    <thead class="bg-light">
+                                        <tr>
+                                            <th class="ps-4 text-center" style="width: 80px;">
+                                                <div class="form-check form-switch form-switch-lg d-inline-block">
+                                                    <input class="form-check-input" type="checkbox" id="checkAllProcesses" onclick="toggleAllProcesses(this)">
+                                                </div>
+                                            </th>
+                                            <th>IdOrden (OP)</th>
+                                            <th>Descripción del Proceso</th>
+                                            <th class="text-center">Máquina</th>
+                                            <th class="text-center">Cant. Lote</th>
+                                            <th class="pe-4 text-center">Cant. Pendiente</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="tbodyProcesses">
+                                        <!-- Dynamic content -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer border-0 p-4 bg-white">
+                        <button type="button" class="btn btn-light rounded-pill px-4 fw-bold" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="button" class="btn btn-success rounded-pill px-4 fw-bold shadow-sm" id="btnAcceptSelector" onclick="backToArticles()" style="display: none;">
+                            <i class="fas fa-check me-2"></i>Aceptar
+                        </button>
+                        <button type="button" class="btn btn-primary rounded-pill px-4 fw-bold shadow-sm" id="btnConfirmSelect" onclick="confirmSelection()">
+                            <i class="fas fa-check-double me-2"></i>Confirmar y Cargar Planificación
                         </button>
                     </div>
                 </div>
@@ -486,7 +583,311 @@
             window.location.href = "{% url 'planillas_diarias' %}?" + params.toString();
         }
 
+        let currentProjectToSelect = "";
+        let selectedOpsByArticle = {}; // { macroPk: [idOrden1, idOrden2, ...] }
+        let enabledArticles = {}; // { macroPk: true/false }
+        let currentLevel2MacroPk = ""; // Tracker for the active article in detail view
+
         document.addEventListener('DOMContentLoaded', function() {
+            // --- SELECTIVE PLANNING FLOW ---
+            const planForm = document.getElementById('plan-filter-form');
+            if (planForm) {
+                planForm.addEventListener('submit', function(e) {
+                    const projectsInput = document.getElementById('proyectos');
+                    const projValue = projectsInput ? projectsInput.value.trim() : "";
+                    
+                    if (projValue && !projValue.includes(',')) {
+                         e.preventDefault();
+                         openProductionSelector(projValue);
+                    }
+                });
+            }
+
+            async function openProductionSelector(projectCode) {
+                currentProjectToSelect = projectCode;
+                selectedOpsByArticle = {};
+                enabledArticles = {};
+                document.getElementById('selectorSub').innerText = "Proyecto: " + projectCode;
+                
+                const scenarioId = new URLSearchParams(window.location.search).get('scenario_id');
+                const modal = new bootstrap.Modal(document.getElementById('selectorProduccionModal'));
+                modal.show();
+                
+                backToArticles();
+                
+                const tbody = document.getElementById('tbodyArticles');
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4"><i class="fas fa-sync fa-spin me-2"></i> Cargando artículos...</td></tr>';
+                
+                try {
+                    const response = await fetch(`/api/get_project_articles/?proyecto=${projectCode}&scenario_id=${scenarioId || ''}`);
+                    const data = await response.json();
+                    
+                    if (data.planned_state) {
+                        selectedOpsByArticle = data.planned_state;
+                    }
+
+                    if (data.articles && data.articles.length > 0) {
+                        tbody.innerHTML = "";
+                        data.articles.forEach(art => {
+                            enabledArticles[art.MacroPK] = true;
+                            const row = document.createElement('tr');
+                            row.id = `row-art-${art.MacroPK.replace(/\s+/g, '-')}`;
+                            row.innerHTML = `
+                                <td class="ps-4 text-center">
+                                    <div class="form-check form-switch form-switch-lg d-inline-block">
+                                        <input class="form-check-input shadow-sm" type="checkbox" checked onchange="toggleArticlePlan('${art.MacroPK}', this.checked)">
+                                    </div>
+                                </td>
+                                <td class="fw-bold text-muted">${art.IdOrdenMaster || '-'}</td>
+                                <td class="fw-bold text-primary article-clickable" onclick="handleArticleClick('${art.MacroPK}', '${art.Denominacion}', '${art.Articulo}')">${art.Articulo}</td>
+                                <td class="article-clickable" onclick="handleArticleClick('${art.MacroPK}', '${art.Denominacion}', '${art.Articulo}')">${art.Denominacion}</td>
+                                <td class="text-center">${parseFloat(art.Solicitado || 0).toFixed(0)}</td>
+                                <td class="text-center">${parseFloat(art.Finalizado || 0).toFixed(0)}</td>
+                                <td class="text-center"><span class="badge bg-secondary rounded-pill process-count" id="count-art-${art.MacroPK.replace(/\s+/g, '-')}">0</span></td>
+                                <td class="pe-4 text-center">
+                                    <button class="btn btn-sm btn-link text-primary article-clickable" onclick="handleArticleClick('${art.MacroPK}', '${art.Denominacion}', '${art.Articulo}')">
+                                        <i class="fas fa-chevron-right"></i>
+                                    </button>
+                                </td>
+                            `;
+                            tbody.appendChild(row);
+                        });
+                        updateAllCounters();
+                    } else {
+                        tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">No se encontraron artículos para este proyecto.</td></tr>';
+                    }
+                } catch (e) {
+                    tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-danger">Error al cargar artículos.</td></tr>';
+                }
+            }
+
+            window.toggleArticlePlan = function(macroPk, isEnabled) {
+                enabledArticles[macroPk] = isEnabled;
+                const rowId = `row-art-${macroPk.replace(/\s+/g, '-')}`;
+                const row = document.getElementById(rowId);
+                if (row) {
+                    if (isEnabled) {
+                         row.style.opacity = "1";
+                         row.classList.remove('bg-light');
+                    } else {
+                         row.style.opacity = "0.5";
+                         row.classList.add('bg-light');
+                    }
+                }
+            };
+
+            window.handleArticleClick = function(macroPk, artName, artCode) {
+                if (!enabledArticles[macroPk]) {
+                    Swal.fire({
+                        title: 'Artículo Desactivado',
+                        text: 'Active el switch de "Planificar" para ver los detalles de este artículo.',
+                        icon: 'info',
+                        timer: 2000,
+                        showConfirmButton: false,
+                        customClass: { popup: 'premium-swal' }
+                    });
+                    return;
+                }
+                showProcesses(macroPk, artName, artCode);
+            };
+
+            window.showProcesses = async function(macroPk, artName, artCode) {
+                currentLevel2MacroPk = macroPk; // Set global tracker
+                document.getElementById('level1-articles').style.display = 'none';
+                document.getElementById('level2-processes').style.display = 'block';
+                document.getElementById('detailArtName').innerText = artName;
+                document.getElementById('detailArtCode').innerText = "MacroPK: " + macroPk;
+                
+                // Button management
+                document.getElementById('btnAcceptSelector').style.display = 'block';
+                document.getElementById('btnConfirmSelect').style.display = 'none';
+                
+                const tbody = document.getElementById('tbodyProcesses');
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4"><i class="fas fa-sync fa-spin me-2"></i> Cargando procesos...</td></tr>';
+                
+                try {
+                    const response = await fetch(`/api/get_article_processes/?macro_pk=${macroPk}`);
+                    const data = await response.json();
+                    
+                    if (data.processes && data.processes.length > 0) {
+                        tbody.innerHTML = "";
+                        
+                        // FIXED: Only auto-select processes with real pending quantity (Pendiente > 0)
+                        const isFirstTime = !selectedOpsByArticle[macroPk];
+                        if (isFirstTime) {
+                            selectedOpsByArticle[macroPk] = data.processes
+                                .filter(p => parseFloat(p.Pendiente || 0) > 0)
+                                .map(p => p.IdOrden.toString());
+                        }
+
+                        const previouslySelected = selectedOpsByArticle[macroPk] || [];
+                        
+                        data.processes.forEach(proc => {
+                            const pendiente = parseFloat(proc.Pendiente || 0);
+                            const isChecked = previouslySelected.includes(proc.IdOrden.toString());
+                            const isCompleted = pendiente <= 0;
+                            const row = document.createElement('tr');
+                            if (isCompleted) row.style.opacity = '0.5';
+                            row.innerHTML = `
+                                <td class="ps-4 text-center">
+                                    <div class="form-check form-switch form-switch-lg d-inline-block">
+                                        <input class="form-check-input shadow-sm process-checkbox" type="checkbox" 
+                                               value="${proc.IdOrden}" ${isChecked ? 'checked' : ''} 
+                                               onchange="updateProcessSelection('${macroPk}', this)">
+                                    </div>
+                                </td>
+                                <td class="fw-bold">${proc.IdOrden}</td>
+                                <td>${proc.Proceso}</td>
+                                <td class="text-center"><span class="badge bg-light text-dark border">${proc.MaquinaNombre || '-'}</span></td>
+                                <td class="text-center">${parseFloat(proc.Cantidad || 0).toFixed(0)}</td>
+                                <td class="pe-4 text-center fw-bold ${isCompleted ? 'text-muted' : 'text-danger'}">${pendiente.toFixed(2)}</td>
+                            `;
+                            tbody.appendChild(row);
+                        });
+                        
+                        // Sync counters for all articles
+                        updateAllCounters();
+                        // Check if all are selected to sync master checkbox
+                        syncMasterCheckbox();
+                    } else {
+                        tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-muted">No hay procesos abiertos para este artículo.</td></tr>';
+                    }
+                } catch (e) {
+                    tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-danger">Error al cargar procesos.</td></tr>';
+                }
+            };
+
+            window.backToArticles = function() {
+                document.getElementById('level1-articles').style.display = 'block';
+                document.getElementById('level2-processes').style.display = 'none';
+                
+                // Button management
+                document.getElementById('btnAcceptSelector').style.display = 'none';
+                document.getElementById('btnConfirmSelect').style.display = 'block';
+            };
+
+            window.updateProcessSelection = function(macroPk, checkbox) {
+                if (!selectedOpsByArticle[macroPk]) selectedOpsByArticle[macroPk] = [];
+                const id = checkbox.value.toString();
+                if (checkbox.checked) {
+                    if (!selectedOpsByArticle[macroPk].includes(id)) {
+                        selectedOpsByArticle[macroPk].push(id);
+                    }
+                } else {
+                    selectedOpsByArticle[macroPk] = selectedOpsByArticle[macroPk].filter(x => x !== id);
+                }
+                updateCounter(macroPk);
+                syncMasterCheckbox();
+            };
+
+            window.updateCounter = function(macroPk) {
+                const badge = document.getElementById(`count-art-${macroPk.replace(/\s+/g, '-')}`);
+                if (badge) {
+                    const count = selectedOpsByArticle[macroPk] ? selectedOpsByArticle[macroPk].length : 0;
+                    badge.innerText = count;
+                    if (count > 0) {
+                        badge.classList.remove('bg-secondary');
+                        badge.classList.add('bg-primary');
+                    } else {
+                        badge.classList.remove('bg-primary');
+                        badge.classList.add('bg-secondary');
+                    }
+                }
+            };
+
+            window.updateAllCounters = function() {
+                for (const mPk in selectedOpsByArticle) {
+                    updateCounter(mPk);
+                }
+            };
+
+            function syncMasterCheckbox() {
+                const total = document.querySelectorAll('.process-checkbox').length;
+                const checked = document.querySelectorAll('.process-checkbox:checked').length;
+                const master = document.getElementById('checkAllProcesses');
+                if (master) {
+                    master.checked = total > 0 && total === checked;
+                }
+            }
+
+            window.toggleAllProcesses = function(master) {
+                const boxes = document.querySelectorAll('.process-checkbox');
+                if (!currentLevel2MacroPk) return;
+
+                if (master.checked) {
+                    // Select all
+                    selectedOpsByArticle[currentLevel2MacroPk] = Array.from(boxes).map(b => b.value.toString());
+                    boxes.forEach(b => b.checked = true);
+                } else {
+                    // Deselect all
+                    selectedOpsByArticle[currentLevel2MacroPk] = [];
+                    boxes.forEach(b => b.checked = false);
+                }
+                updateCounter(currentLevel2MacroPk);
+            };
+
+            window.confirmSelection = async function() {
+                // Collect all selected OPs but ONLY from ENABLED articles
+                let finalSelection = [];
+                for (const mPk in selectedOpsByArticle) {
+                    if (enabledArticles[mPk]) {
+                        finalSelection = finalSelection.concat(selectedOpsByArticle[mPk]);
+                    }
+                }
+                
+                if (finalSelection.length === 0) {
+                    Swal.fire({
+                        title: 'Atención',
+                        text: 'No hay procesos seleccionados en los artículos activos.',
+                        icon: 'warning',
+                        customClass: { popup: 'premium-swal' }
+                    });
+                    return;
+                }
+
+                const scenarioId = new URLSearchParams(window.location.search).get('scenario_id');
+                const btn = document.getElementById('btnConfirmSelect');
+                const originalHtml = btn.innerHTML;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Cargando...';
+                btn.disabled = true;
+
+                try {
+                    const response = await fetch('/api/confirm_selected_tasks/', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': '{{ csrf_token }}'
+                        },
+                        body: JSON.stringify({
+                            id_ordens: finalSelection,
+                            scenario_id: scenarioId,
+                            project_code: currentProjectToSelect
+                        })
+                    });
+                    
+                    if (response.ok) {
+                        Swal.fire({
+                            title: 'Planificación Lista',
+                            text: `Se han cargado ${finalSelection.length} procesos correctamente.`,
+                            icon: 'success',
+                            timer: 2000,
+                            showConfirmButton: false,
+                            customClass: { popup: 'premium-swal' }
+                        }).then(() => {
+                             const params = new URLSearchParams(window.location.search);
+                             params.set('proyectos', currentProjectToSelect);
+                             params.set('run', '1');
+                             window.location.href = window.location.pathname + "?" + params.toString();
+                        });
+                    } else {
+                        throw new Error("Error al confirmar la selección");
+                    }
+                } catch (e) {
+                    Swal.fire({ title: 'Error', text: e.message, icon: 'error' });
+                    btn.innerHTML = originalHtml;
+                    btn.disabled = false;
+                }
+            };
             // --- CLEAN / RESET TABLE BUTTON ---
             const btnClean = document.getElementById('btnCleanTable');
             if (btnClean) {
@@ -1375,6 +1776,47 @@
                                     // reload with manual mode and NO scenario_id to see current clean state
                                     window.location.href = window.location.pathname + "?plan_mode=manual&proyectos=" + encodeURIComponent(projVal);
                                 });
+                            }
+                        } catch (e) { console.error(e); }
+                    }
+                });
+            }
+
+            // --- CLEAR PLANNING ---
+            const btnClearPlanning = document.getElementById('btnClearPlanning');
+            if (btnClearPlanning) {
+                btnClearPlanning.addEventListener('click', async function() {
+                    const result = await Swal.fire({
+                        title: '¿Vaciar Planificación?',
+                        text: "Se borrarán TODOS los procesos seleccionados y sus ajustes en este escenario.",
+                        icon: 'warning',
+                        showCancelButton: true,
+                        confirmButtonText: 'Sí, Vaciar Todo',
+                        cancelButtonText: 'Cancelar',
+                        confirmButtonColor: '#dc2626',
+                        customClass: {
+                            popup: 'premium-swal',
+                            confirmButton: 'premium-confirm-danger',
+                            cancelButton: 'premium-cancel'
+                        }
+                    });
+
+                    if (result.isConfirmed) {
+                        try {
+                            const scenarioIdSelection = document.getElementById('scenario-selector') ? document.getElementById('scenario-selector').value : '';
+                            const response = await fetch('/api/clear_all_planning/', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'X-CSRFToken': '{{ csrf_token }}'
+                                },
+                                body: JSON.stringify({ scenario_id: scenarioIdSelection })
+                            });
+                            
+                            if (response.ok) {
+                                window.location.reload();
+                            } else {
+                                alert("Error al vaciar la planificación");
                             }
                         } catch (e) { console.error(e); }
                     }

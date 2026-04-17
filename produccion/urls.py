@@ -61,6 +61,12 @@ urlpatterns = [
     
     # Statistics
     path('estadisticas/', views.estadisticas_produccion, name='estadisticas_produccion'),
+    
+    # Selective Planning APIs
+    path('api/get_project_articles/', views.api_get_project_articles, name='api_get_project_articles'),
+    path('api/get_article_processes/', views.api_get_article_processes, name='api_get_article_processes'),
+    path('api/confirm_selected_tasks/', views.api_confirm_selected_tasks, name='api_confirm_selected_tasks'),
+    path('api/clear_all_planning/', views.api_clear_all_planning, name='api_clear_all_planning'),
 
     path('', views.main_menu, name='home'),
 ]
