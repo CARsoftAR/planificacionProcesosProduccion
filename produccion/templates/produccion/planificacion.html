@@ -875,7 +875,12 @@
                             customClass: { popup: 'premium-swal' }
                         }).then(() => {
                              const params = new URLSearchParams(window.location.search);
-                             params.set('proyectos', currentProjectToSelect);
+                             let currentProjects = params.get('proyectos') || '';
+                             let projectsArray = currentProjects.split(',').map(p => p.trim()).filter(p => p);
+                             if (!projectsArray.includes(currentProjectToSelect)) {
+                                 projectsArray.push(currentProjectToSelect);
+                             }
+                             params.set('proyectos', projectsArray.join(','));
                              params.set('run', '1');
                              window.location.href = window.location.pathname + "?" + params.toString();
                         });
