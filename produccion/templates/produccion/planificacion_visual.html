@@ -2039,17 +2039,7 @@
                                             <div class="col-6">
                                                 <div class="tooltip-label">PROGRESO TAREA</div>
                                                 <div class="tooltip-value">
-                                                    {% with d=task.Denominacion|upper s=task.Descri|upper %}
-                                                    {% if "ARMADO" in d or "ENSAMBLE" in d or "MONTAJE" in d or "ARMADO" in s or "ENSAMBLE" in s %}
-                                                        {% if task.cantidad_producida >= task.cantidad_final %}
-                                                            <span style="color: #10b981; font-weight: bold;">1</span> / 1 Lote
-                                                        {% else %}
-                                                            <span style="color: #00f2ff; font-weight: bold;">0</span> / 1 Lote
-                                                        {% endif %}
-                                                    {% else %}
-                                                        <span style="color: #00f2ff; font-weight: bold;">{{ task.cantidad_producida|floatformat:0 }}</span> / {{ task.cantidad_final|floatformat:0 }} unid.
-                                                    {% endif %}
-                                                    {% endwith %}
+                                                    <span style="color: #00f2ff; font-weight: bold;">{{ task.cantidad_producida|floatformat:0 }}</span> / {{ task.cantidad_final|floatformat:0 }} piezas
                                                 </div>
                                             </div>
                                             <div class="col-6">
@@ -3868,24 +3858,33 @@
 
         function populateList() {
             var listEl = document.getElementById('op-filter-list');
-            if (!listEl) return;
+            if (!listEl || populated) return;
             var projects = collectProjects();
             listEl.innerHTML = '';
             
             projects.forEach(function(proj) {
                 var item = document.createElement('label');
                 item.className = 'op-filter-item';
+                var isChecked = true;
+                
                 item.innerHTML = 
-                    '<input type="checkbox" checked data-project-name="' + proj.name + '" onchange="window.applyProjectFilter(\'' + proj.name + '\', this.checked)">' +
+                    '<input type="checkbox" ' + (isChecked ? 'checked' : '') + ' data-project-name="' + proj.name + '" onchange="window.applyProjectFilter(\'' + proj.name + '\', this.checked)">' +
                     '<span class="color-dot" style="background:' + proj.color + ';flex-shrink:0;width:10px;height:10px;border-radius:50%;display:inline-block;"></span>' +
                     '<span style="font-size:0.75rem;color:#334155;font-weight:500;flex:1;">' + 
                         'PROJECT ' + proj.name + 
                         '<br><small style="color:#94a3b8;font-size:0.65rem;">' + proj.opCount + ' OPs asociadas</small>' +
                     '</span>';
                 listEl.appendChild(item);
+                
+                // Force sync visibility immediately
+                window.applyProjectFilter(proj.name, isChecked);
             });
             populated = true;
         }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            setTimeout(populateList, 300);
+        });
 
         window.toggleOpFilterSidebar = function() {
             var sidebar = document.getElementById('op-filter-sidebar');
@@ -3924,6 +3923,68 @@
                 item.style.display = item.textContent.toLowerCase().includes(q) ? '' : 'none';
             });
         };
+
+        // ============================================================
+        // HARD RESET: Clear visual cache when no projects selected
+        // This prevents "old data" from showing after cleanup
+        // ============================================================
+        (function() {
+            const ganttNeedsClear = {% if gantt_needs_clear %}true{% else %}false{% endif %};
+            const proyectosInput = document.getElementById('proyectos');
+            const currentProyectos = proyectosInput ? proyectosInput.value.trim() : '';
+            
+            console.log('GanttEngine: Initialization check - gantt_needs_clear:', ganttNeedsClear, 'proyectos:', currentProyectos);
+            
+            // If clear flag is set OR no proyectos in URL → HARD RESET
+            if (ganttNeedsClear || currentProyectos === '') {
+                console.log('GanttEngine: 🚫 HARD RESET - Clearing visual state');
+                
+                // 1. Clear all task blocks visually
+                document.querySelectorAll('.task-block').forEach(function(el) {
+                    el.style.display = 'none';
+                });
+                
+                // 2. Clear dependency lines
+                const depLayer = document.getElementById('dependency-layer');
+                if (depLayer) {
+                    depLayer.innerHTML = '';
+                }
+                
+                // 3. Show empty state message
+                const timelineArea = document.querySelector('.timeline-area');
+                if (timelineArea) {
+                    let emptyMsg = timelineArea.querySelector('.gantt-empty-message');
+                    if (!emptyMsg) {
+                        emptyMsg = document.createElement('div');
+                        emptyMsg.className = 'gantt-empty-message';
+                        emptyMsg.style.cssText = 'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#999;font-size:1.2rem;z-index:100;';
+                        emptyMsg.textContent = 'No hay proyectos seleccionados. Seleccione proyectos para ver la planificación.';
+                        timelineArea.appendChild(emptyMsg);
+                    }
+                }
+                
+                // 4. Update session storage to prevent re-fetching old data
+                sessionStorage.setItem('gantt_last_proyectos', '');
+            }
+            
+            // STOP CONDITION: Prevent auto-fetch if no projects
+            // This stops the "loop" of loading old projects
+            const originalFetch = window.fetch;
+            window.fetch = function() {
+                const url = arguments[0];
+                if (typeof url === 'string' && (url.includes('/planificacion/visual') || url.includes('get_gantt'))) {
+                    // Check if proyectos param is empty or missing
+                    const urlParams = new URLSearchParams(url.split('?')[1] || '');
+                    const projParam = urlParams.get('proyectos');
+                    if (!projParam || projParam.trim() === '') {
+                        console.log('GanttEngine: BLOCKED - Empty proyectos fetch');
+                        // Return empty response
+                        return Promise.resolve(new Response(JSON.stringify({tasks: [], machines: []}), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+                    }
+                }
+                return originalFetch.apply(this, arguments);
+            };
+        })();
     })();
     </script>
 

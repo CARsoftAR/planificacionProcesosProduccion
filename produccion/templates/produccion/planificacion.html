@@ -429,6 +429,7 @@
                                 <th>Máquina</th>
                                 <th class="bg-warning-subtle">Tiempo</th>
                                 <th class="bg-warning-subtle">Tiempo Logrado</th>
+                                <th class="bg-success-subtle text-dark">Eficiencia (KPI)</th>
                                 <th>Cantidad</th>
                                 <th>Cantidad Producida</th>
                                 <th class="bg-warning-subtle">Cantidades Pendientes</th>
@@ -486,7 +487,28 @@
                                     </button>
                                 </td>
                                 <td class="text-end bg-warning-lighter">{{ item.Tiempo|floatformat:3 }}</td>
-                                <td class="text-end bg-warning-lighter">{{ item.Tiempo_Logrado|floatformat:2 }}</td>
+                                <td class="text-end bg-warning-lighter" title="Raw Logged: {{ item.Total_Horas_Fichadas|floatformat:2 }} hrs">{{ item.Tiempo_Logrado|floatformat:2 }}</td>
+                                <td class="text-center align-middle">
+                                    {% if item.KPI_Eficiencia == 'green' %}
+                                        <span class="badge bg-success" title="Desvío: {{ item.Desvio_Porcentaje|floatformat:1 }}% (Dentro de lo previsto)">
+                                            <i class="fas fa-check-circle"></i> Óptimo
+                                        </span>
+                                    {% elif item.KPI_Eficiencia == 'yellow' %}
+                                        <span class="badge bg-warning text-dark" title="Desvío: {{ item.Desvio_Porcentaje|floatformat:1 }}% (Retraso leve)">
+                                            <i class="fas fa-exclamation-triangle"></i> Normal
+                                        </span>
+                                    {% elif item.KPI_Eficiencia == 'orange' %}
+                                        <span class="badge bg-orange text-white" style="background-color: #fd7e14;" title="Desvío: {{ item.Desvio_Porcentaje|floatformat:1 }}% (Retraso moderado)">
+                                            <i class="fas fa-exclamation-circle"></i> Alerta
+                                        </span>
+                                    {% elif item.KPI_Eficiencia == 'red' %}
+                                        <span class="badge bg-danger" title="Desvío: {{ item.Desvio_Porcentaje|floatformat:1 }}% (Retraso grave)">
+                                            <i class="fas fa-times-circle"></i> Crítico
+                                        </span>
+                                    {% else %}
+                                        <span class="badge bg-secondary opacity-50" title="Sin datos suficientes">S/D</span>
+                                    {% endif %}
+                                </td>
                                 <td class="text-end">{{ item.Cantidad|floatformat }}</td>
                                 <td class="text-end fw-bold editable-cantidad" 
                                     contenteditable="true"

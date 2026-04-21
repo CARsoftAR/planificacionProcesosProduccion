@@ -452,8 +452,24 @@ def planificacion_list(request):
 
         # NEW: Selective planning. Only show tasks that are explicitly in PlannedTask for this scenario.
         # We fetch the IDs from SQLite but the data from SQL Server (ERP).
-        planned_ids = list(PlannedTask.objects.using('default').filter(scenario=active_scenario).values_list('id_orden', flat=True))
+        planned_tasks_qs = PlannedTask.objects.using('default').filter(scenario=active_scenario)
+        planned_ids = list(planned_tasks_qs.values_list('id_orden', flat=True))
         
+        # MERGE LOGIC: Ensure that any project already in PlannedTask is included in the filter.
+        # This prevents "A disappearing when searching for B".
+        url_projs = [p.strip() for p in (proyectos or "").split(',') if p.strip()]
+        planned_projs = list(planned_tasks_qs.values_list('proyecto_code', flat=True).distinct())
+        
+        # Combined set of projects (keeping URL order if possible)
+        combined_projs = url_projs.copy()
+        for p in planned_projs:
+            if p and p not in combined_projs:
+                combined_projs.append(p)
+        
+        if combined_projs:
+            proyectos = ",".join(combined_projs)
+            filtros['proyectos'] = combined_projs
+
         # We always set this filter to ensure only selected tasks appear
         filtros['id_orden_in'] = planned_ids
 
@@ -643,6 +659,33 @@ def planificacion_list(request):
                 item['CantidadManualFlag'] = False
 
             item['CantidadesPendientes'] = max(0, item['Cantidad'] - item['Cantidadpp'])
+
+            # Auditoria de Tiempos y Desvios (KPI)
+            t_std = float(item.get('Tiempo') or 0.0)
+            t_fichado_total = float(item.get('Total_Horas_Fichadas') or 0.0)
+            c_prod = float(item['Cantidadpp'])
+            
+            t_real_unitario = 0.0
+            if c_prod > 0:
+                t_real_unitario = t_fichado_total / c_prod
+                
+            desvio_pct = 0.0
+            if t_std > 0 and t_real_unitario > 0:
+                desvio_pct = ((t_real_unitario - t_std) / t_std) * 100.0
+                
+            item['Tiempo_Real_Unitario'] = t_real_unitario
+            item['Desvio_Porcentaje'] = desvio_pct
+            
+            if t_real_unitario <= 0 or t_std <= 0:
+                item['KPI_Eficiencia'] = 'gray'
+            elif desvio_pct <= 0:
+                item['KPI_Eficiencia'] = 'green'
+            elif desvio_pct <= 15.0:
+                item['KPI_Eficiencia'] = 'yellow'
+            elif desvio_pct <= 20.0:
+                item['KPI_Eficiencia'] = 'orange'
+            else:
+                item['KPI_Eficiencia'] = 'red'
 
 
         # 2. Initialize Grouping using MACHINE NAMES
@@ -1020,24 +1063,39 @@ def planificacion_visual_OLD(request):
     start_simulation = start_simulation.replace(hour=7, minute=0, second=0, microsecond=0)
     
     # 3. Check for Local Manual Priorities/Group Assignments & Time Overrides
+    active_scenario = get_active_scenario(request)
+
+    # --------------------------------------------------------------------------
+    # FILTER: Determine active projects EXCLUSIVELY from URL parameters.
+    #
+    # REGLA ABSOLUTA: El Gantt NO lee sesiones antiguas.
+    # Si el usuario no pasó ?proyectos=... en la URL → pantalla vacía.
+    # La sesión es propiedad del Tablero Azul, no del Gantt.
+    # --------------------------------------------------------------------------
+    proyectos_val = request.GET.get('proyectos', '').strip()
+    proyectos_activos = [p.strip() for p in proyectos_val.split(',') if p.strip()]
+
+    # HARD RESET: If table is empty or projects param is explicitly empty string, clear all cached data
+    # This prevents the system from "remembering" old projects
+    clear_flag = request.GET.get('clear', '0') == '1'
+    if clear_flag or proyectos_val == '':
+        # Signal frontend to clear visual cache
+        request.session['gantt_needs_clear'] = True
+
     # Using PrioridadManual table to override positions and machines locally (Virtual Moves)
-    # Map: id_orden -> { 'maquina': machine_id, 'prioridad': val, 'tiempo_manual': val }
+    # CRITICAL: Only pull overrides for the ACTIVE SCENARIO.
     virtual_overrides = {}
-    
-    manual_entries = PrioridadManual.objects.using('default').all()
+    manual_entries = PrioridadManual.objects.using('default').filter(scenario=active_scenario)
     for entry in manual_entries:
-        # If there are duplicates for id_orden (shouldn't be with new logic, but historically maybe), take latest?
-        # New logic ensures unique id_orden in PrioridadManual roughly (by deleting old).
         virtual_overrides[entry.id_orden] = {
             'maquina': entry.maquina,
             'prioridad': entry.prioridad,
             'tiempo_manual': entry.tiempo_manual,
             'nivel_manual': entry.nivel_manual,
-            'manual_start': entry.fecha_inicio_manual # New field for Pinning
+            'manual_start': entry.fecha_inicio_manual
         }
 
     # Create a set of IDs that are moved TO a machine locally
-    # machine_id -> list of order_ids
     tasks_moved_in_map = {}
     for oid, override_data in virtual_overrides.items():
         mid = override_data['maquina']
@@ -1046,8 +1104,8 @@ def planificacion_visual_OLD(request):
         tasks_moved_in_map[mid].append(oid)
     
     # --- HIDDEN TASKS ---
-    # Fetch list of hidden task IDs to exclude them from the Gantt
-    hidden_ids = set(HiddenTask.objects.using('default').values_list('id_orden', flat=True))
+    # Fetch list of hidden task IDs for THIS SCENARIO ONLY to exclude them from the Gantt
+    hidden_ids = set(HiddenTask.objects.using('default').filter(scenario=active_scenario).values_list('id_orden', flat=True))
 
     # EXECUTION MODE CHECK
     # User requested: "Cuando presione VER GANTT, solo ingrese... pero si procesar nada."
@@ -1077,16 +1135,56 @@ def planificacion_visual_OLD(request):
 #    print("🔢 OPCIÓN B: Dependencias Automáticas por Nivel (Mayor a Menor)")
 #    print("=" * 70)
 
-    # 1. Fetch relevant tasks to build the map (Scope to Current Project filter)
+    # -----------------------------------------------------------------------
+    # PLANNED IDs - SQLite-native project filter via proyecto_code
+    #
+    # RULE: El Gantt es REACTIVO. Solo muestra lo que se buscó explícitamente.
+    #       Si no hay proyectos activos → retorna vacio inmediatamente.
+    #       NUNCA carga el historial acumulado por default.
+    # -----------------------------------------------------------------------
+    if not proyectos_activos:
+        # Sin filtro de proyectos = pantalla vacía. Retornamos de inmediato.
+        for maquina in maquinas:
+            timeline_data.append({'machine': maquina, 'tasks': []})
+        context = {
+            'timeline_data': timeline_data,
+            'today': start_simulation,
+            'time_columns': range(7, 22),
+            'total_width': 15 * 40,
+            'dependencies_json': '[]',
+            'plan_mode': request.GET.get('plan_mode', request.session.get('last_plan_mode', 'manual')),
+            'active_scenario_id': active_scenario.id if active_scenario else None,
+            'all_scenarios': Scenario.objects.using('default').all(),
+            'proyectos_value': proyectos_val or '',
+            'gantt_empty_reason': 'no_projects',
+            'gantt_needs_clear': True,
+        }
+        return render(request, 'produccion/planificacion_visual.html', context)
+
+    # Hay proyectos activos: filtrar planned_ids estrictamente por proyecto_code en SQLite.
+    planned_ids = list(
+        PlannedTask.objects.using('default')
+        .filter(scenario=active_scenario, proyecto_code__in=proyectos_activos)
+        .values_list('id_orden', flat=True)
+    )
+
+    # Fallback para registros legacy sin proyecto_code: filtramos por ERP proyectos
+    # pero NO cargamos todo el acumulado sin filtro.
     deps_filter = {}
-    if request.GET.get('proyectos'):
-         raw_proyectos = request.GET.get('proyectos')
-         deps_filter['proyectos'] = [p.strip() for p in raw_proyectos.split(',') if p.strip()]
-    if request.GET.get('id_orden'):
+    deps_filter['proyectos'] = proyectos_activos  # Siempre filtramos por proyecto activo
+
+    if planned_ids:
+        deps_filter['id_orden_in'] = planned_ids
+    elif request.GET.get('id_orden'):
         deps_filter['id_orden'] = request.GET.get('id_orden')
+        
+    # search_active = True si hay proyectos activos (ya garantizado arriba)
+    search_active = bool(planned_ids or proyectos_activos or request.GET.get('id_orden'))
     
-    # If no filter used, fallback to empty (all/defaults)
-    all_tasks_for_deps = get_planificacion_data(deps_filter) 
+    if search_active:
+        all_tasks_for_deps = get_planificacion_data(deps_filter) 
+    else:
+        all_tasks_for_deps = []
     
     # DEBUG: Trace specific IDs
     debug_ids = [46762, 46759]
@@ -1241,11 +1339,19 @@ def planificacion_visual_OLD(request):
         
         machine_filter = {'machine_ids': [machine_id]}
         
-        if request.GET.get('proyectos'):
-             raw_proyectos = request.GET.get('proyectos')
-             machine_filter['proyectos'] = [p.strip() for p in raw_proyectos.split(',') if p.strip()]
+        # Merge URL/Session specific projects
+        if proyectos_val:
+             machine_filter['proyectos'] = [p.strip() for p in proyectos_val.split(',') if p.strip()]
+             
+        if planned_ids:
+            machine_filter['id_orden_in'] = planned_ids
+        elif request.GET.get('id_orden'):
+            machine_filter['id_orden'] = request.GET.get('id_orden')
 
-        native_tasks = get_planificacion_data(machine_filter) 
+        if search_active:
+            native_tasks = get_planificacion_data(machine_filter) 
+        else:
+            native_tasks = []
         
         # 2. Filter OUT tasks that were virtually moved AWAY
         # --------------------------------------------------------------------------------
@@ -1291,11 +1397,15 @@ def planificacion_visual_OLD(request):
         
         if moved_in_ids:
             inbound_filter = {}
-            if request.GET.get('proyectos'):
-                 inbound_filter['proyectos'] = machine_filter['proyectos']
+            if proyectos_val:
+                 inbound_filter['proyectos'] = machine_filter.get('proyectos', [])
+
+            if planned_ids:
+                inbound_filter['id_orden_in'] = moved_in_ids
+            else:
+                inbound_filter['id_orden_in'] = moved_in_ids
             
-            inbound_filter['id_orden_in'] = moved_in_ids
-            
+            # Since moved_in_ids means we have data
             extra_tasks = get_planificacion_data(inbound_filter)
             
             # Merge unique tasks (avoid duplicates if native query somehow caught them)
@@ -1696,8 +1806,13 @@ def maquina_config_create_update(request, pk=None):
 def maquina_config_delete(request, pk):
     if request.method == 'POST':
         maquina = get_object_or_404(MaquinaConfig.objects.using('default'), pk=pk)
+        maquina_name = maquina.nombre
         maquina.delete(using='default')
-        messages.success(request, "MÃ¡quina eliminada")
+        
+        # Signal frontend to CLEAR visual Gantt state
+        request.session['gantt_needs_clear'] = True
+        messages.success(request, f"Máquina {maquina_name} eliminada. Gantt limpiado.")
+        
     return redirect('maquina_config_list')
 
 def horario_maquina_create(request, maquina_id):
@@ -2114,17 +2229,23 @@ def planificacion_visual(request):
     time_columns_data = []
     last_date = None
     total_gaps = 0
-    for dt in time_columns:
-        curr_date = dt.date()
-        is_day_start = (curr_date != last_date)
-        if is_day_start and last_date is not None:
-            total_gaps += 1
-        
-        time_columns_data.append({
-            'datetime': dt,
-            'is_day_start': is_day_start
-        })
-        last_date = curr_date
+    
+    # Handle empty or non-datetime time_columns (e.g., range object from early return)
+    if not time_columns or not isinstance(time_columns[0] if time_columns else None, datetime):
+        # Return empty structure
+        time_columns_data = [{'datetime': None, 'is_day_start': True}]
+    else:
+        for dt in time_columns:
+            curr_date = dt.date()
+            is_day_start = (curr_date != last_date)
+            if is_day_start and last_date is not None:
+                total_gaps += 1
+            
+            time_columns_data.append({
+                'datetime': dt,
+                'is_day_start': is_day_start
+            })
+            last_date = curr_date
 
     # Build dependencies list for JSON
     # To handle hidden tasks, we need to find the "first visible predecessor" for each visible task
@@ -2179,6 +2300,7 @@ def planificacion_visual(request):
         'all_scenarios': all_scenarios,
         'active_scenario': data.get('active_scenario', None),
         'plan_mode': data.get('plan_mode', 'manual'),
+        'gantt_needs_clear': data.get('gantt_needs_clear', False),
     }
 
 
@@ -3330,12 +3452,18 @@ def api_confirm_selected_tasks(request):
         with transaction.atomic(using='default'):
             # 1. Si tenemos el código de proyecto, borramos solo sus OPs de este escenario
             if project_code:
-                # Obtenemos todas las OPs que pertenecen a este proyecto en el ERP
-                # Nota: En este ERP, el código de proyecto se guarda en el campo 'Formula'
+                # Generamos las variaciones del código (25-001 vs 25.001) para ser robustos
+                v1 = project_code
+                v2 = project_code.replace('-', '.')
+                v3 = project_code.replace('.', '-')
+                codes = list({v1, v2, v3})
+                ps = [f"%{c}%" for c in codes]
+
                 from django.db import connections
                 with connections['production'].cursor() as cursor:
-                    search_pattern = f"%{project_code}%"
-                    cursor.execute("SELECT Idorden FROM Tman050 WHERE Formula LIKE %s", [search_pattern])
+                    where_clauses = " OR ".join(["Formula LIKE %s"] * len(ps))
+                    sql = f"SELECT Idorden FROM Tman050 WHERE ({where_clauses})"
+                    cursor.execute(sql, ps)
                     project_op_ids = [str(row[0]) for row in cursor.fetchall()]
                 
                 if project_op_ids:
@@ -3343,14 +3471,9 @@ def api_confirm_selected_tasks(request):
                         scenario=active_scenario,
                         id_orden__in=project_op_ids
                     ).delete()
-            else:
-                # Si no se pasó proyecto (fallback), borramos todo como antes
-                PlannedTask.objects.using('default').filter(
-                    scenario=active_scenario
-                ).delete()
             
-            # 2. Borramos prioridades manuales previas de las OPs seleccionadas
-            # (Así vuelven a su máquina original según ERP)
+            # 2. Borramos prioridades manuales previas de las OPs que estamos guardando ahora
+            # (Para que arranquen en su máquina original del ERP)
             PrioridadManual.objects.using('default').filter(
                 id_orden__in=id_ordens, 
                 scenario=active_scenario
@@ -3358,10 +3481,19 @@ def api_confirm_selected_tasks(request):
 
             # 3. Registramos las OPs que el usuario seleccionó ahora
             planned_tasks = [
-                PlannedTask(id_orden=oid, scenario=active_scenario)
+                PlannedTask(id_orden=oid, scenario=active_scenario, proyecto_code=project_code)
                 for oid in id_ordens
             ]
             PlannedTask.objects.using('default').bulk_create(planned_tasks)
+
+            # --- SYNC: Actualizamos el campo 'proyectos' del escenario para persistencia ---
+            if project_code and active_scenario:
+                current_p = active_scenario.proyectos or ""
+                p_list = [p.strip() for p in current_p.split(",") if p.strip()]
+                if project_code not in p_list:
+                    p_list.append(project_code)
+                    active_scenario.proyectos = ",".join(p_list)
+                    active_scenario.save(using='default')
                 
         return JsonResponse({'status': 'ok', 'count': len(id_ordens)})
     except Exception as e:
@@ -3397,3 +3529,114 @@ def api_clear_all_planning(request):
         print(traceback.format_exc())
         return JsonResponse({'error': str(e)}, status=500)
 
+
+def estadisticas_produccion(request):
+    """
+    Dashboard de auditoría de tiempos ERP vs Realidades.
+    Construye gráficos y sugerencias de ajuste para tiempos desviados consistentemente.
+    """
+    from .services import get_planificacion_data
+    from collections import defaultdict
+
+    # Fetch data but we might need past completed items too, or just the current plan
+    # using get_planificacion_data
+    try:
+        data = get_planificacion_data({}, exclude_completed=False)
+    except Exception as e:
+        data = []
+
+    from .models import PrioridadManual, PlannedTask
+    # get_active_scenario is natively available in views.py
+    active_scenario = get_active_scenario(request)
+    
+    planned_task_ids = list(PlannedTask.objects.using('default').filter(scenario=active_scenario).values_list('id_orden', flat=True))
+    
+    if not planned_task_ids:
+        data = []
+    else:
+        try:
+            data = get_planificacion_data({'id_orden_in': planned_task_ids}, exclude_completed=False)
+        except Exception as e:
+            data = []
+
+    overrides = PrioridadManual.objects.using('default').filter(
+        scenario=active_scenario, cantidad_producida_manual__isnull=False
+    )
+    manual_qty_map = {o.id_orden: o.cantidad_producida_manual for o in overrides}
+
+    # Grouping structure
+    machines_chart = defaultdict(lambda: defaultdict(lambda: {'std': 0.0, 'real': 0.0}))
+    history = defaultdict(list)
+
+    for item in data:
+        t_id = int(item.get('Idorden', 0))
+        qty_prod = manual_qty_map.get(t_id)
+        
+        if qty_prod is None:
+            qty_prod = float(item.get('Cantidadpp') or 0.0)
+
+        t_fichado_total = float(item.get('Total_Horas_Fichadas') or 0.0)
+        t_std = float(item.get('Tiempo') or 0.0)
+        
+        # Lo graficamos siempre que tenga Tiempo STD o alguna Fichada, incluso si la cantidad prod es 0 aún
+        # ya que la auditoría debe visualizar el plan vs la realidad.
+        # Cantidad para la barra de standard = usa la cantidad lograda o si no 1 como proyeccion
+        qty_used_for_std = qty_prod if qty_prod > 0 else float(item.get('cantidad_final') or 1.0)
+        
+        if t_std > 0 or t_fichado_total > 0:
+            m_name = str(item.get('MAQUINAD', 'SIN ASIGNAR')).strip()
+            articulo = str(item.get('Descri', '')).strip()
+            # Combinar OP y Descri para evitar que se pisen en el grafico si son de misma descripcion
+            proceso_label = f"OP {t_id} - {articulo}"
+            
+            std_time_total = t_std * qty_used_for_std
+            
+            machines_chart[m_name][proceso_label]['std'] += std_time_total
+            machines_chart[m_name][proceso_label]['real'] += t_fichado_total
+            
+            if qty_prod > 0 and t_std > 0:
+                t_real_unit = t_fichado_total / qty_prod
+                desvio_pct = ((t_real_unit - t_std) / t_std) * 100.0
+                history[(articulo, m_name)].append({'id': t_id, 'desvio': desvio_pct})
+
+    # Prepare chart data (e.g. top 10 items per machine)
+    chart_data_out = {}
+    for m_name, items in machines_chart.items():
+        labels = []
+        std_data = []
+        real_data = []
+        for art, times in items.items():
+            labels.append(art)
+            std_data.append(round(times['std'], 2))
+            real_data.append(round(times['real'], 2))
+        
+        chart_data_out[m_name] = {
+            'labels': labels,
+            'std': std_data,
+            'real': real_data
+        }
+
+    # Generate suggestions
+    sugerencias = []
+    for k, ops in history.items():
+        articulo, m_name = k
+        ops_sorted = sorted(ops, key=lambda x: x['id'])
+        
+        if len(ops_sorted) >= 3:
+            # Check last 3
+            last_3 = ops_sorted[-3:]
+            all_positive = all(o['desvio'] > 15.0 for o in last_3)
+            all_negative = all(o['desvio'] < -15.0 for o in last_3)
+            
+            if all_positive:
+                avg_desv = sum(o['desvio'] for o in last_3) / 3.0
+                sugerencias.append(f"El proceso '{articulo}' en la máquina '{m_name}' tardó constantemente MÁS de lo previsto en las últimas 3 OPs. Se sugiere aumentar el tiempo estándar un {avg_desv:.1f}%.")
+            elif all_negative:
+                avg_desv = abs(sum(o['desvio'] for o in last_3) / 3.0)
+                sugerencias.append(f"El estándar para '{articulo}' en '{m_name}' está holgado durante las últimas 3 OPs. Se sugiere reducir el tiempo estándar un {avg_desv:.1f}%.")
+
+    return render(request, 'produccion/estadisticas.html', {
+        'chart_data_json': json.dumps(chart_data_out),
+        'sugerencias': sugerencias,
+        'active_menu': 'estadisticas'
+    })

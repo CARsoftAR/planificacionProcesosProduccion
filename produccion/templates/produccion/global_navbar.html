@@ -65,6 +65,7 @@
     .btn-cyan    { background-color: #00d1ff !important; color: #1e293b !important; } /* Prioridades */
     .btn-green   { background-color: #1a8754 !important; } /* Gantt */
     .btn-blue    { background-color: #3b82f6 !important; } /* Config */
+    .btn-purple  { background-color: #8b5cf6 !important; color: white !important; } /* Estadisticas */
 
     .navbar-logo {
         display: flex;
@@ -101,15 +102,15 @@
 
         <!-- 1. Planificación -->
         {% if url_name != 'planificacion_view' %}
-        <a href="{% url 'planificacion_view' %}" class="btn-nav btn-plan">
+        <a href="#" class="btn-nav btn-plan" onclick="navigateWithParams(event, '{% url 'planificacion_view' %}')">
             <i class="fas fa-tasks"></i>
             <span>Planificación</span>
         </a>
         {% endif %}
         
-        <!-- 2. Planillas Diarias (Always visible or hide if on specific list?) -->
+        <!-- 2. Planillas Diarias -->
         {% if url_name != 'planillas_diarias' %}
-        <a href="{% url 'planillas_diarias' %}" class="btn-nav btn-yellow">
+        <a href="#" class="btn-nav btn-yellow" onclick="navigateWithParams(event, '{% url 'planillas_diarias' %}')">
             <i class="fas fa-file-invoice"></i>
             <span>Planillas Diarias</span>
         </a>
@@ -117,7 +118,7 @@
         
         <!-- 3. Prioridades -->
         {% if url_name != 'proyectos_prioridades' %}
-        <a href="{% url 'proyectos_prioridades' %}" class="btn-nav btn-cyan">
+        <a href="#" class="btn-nav btn-cyan" onclick="navigateWithParams(event, '{% url 'proyectos_prioridades' %}')">
             <i class="fas fa-sort-amount-down"></i>
             <span>Prioridades de Proyecto</span>
         </a>
@@ -125,9 +126,51 @@
         
         <!-- 4. Ver Gantt -->
         {% if url_name != 'planificacion_visual' %}
-        <a href="{% url 'planificacion_visual' %}" class="btn-nav btn-green">
+        <a href="#" id="btn-ver-gantt" class="btn-nav btn-green" onclick="navigateWithParams(event, '{% url 'planificacion_visual' %}', true)">
             <i class="fas fa-chart-gantt"></i>
             <span>Ver Gantt</span>
+        </a>
+        {% endif %}
+
+        <script>
+        /**
+         * Navega a una URL preservando los parámetros de filtrado actuales
+         * @param {Event} e - Evento de click
+         * @param {string} baseUrl - URL base de destino
+         * @param {boolean} forceRun - Si se debe agregar &run=1 (usado para Gantt)
+         */
+        function navigateWithParams(e, baseUrl, forceRun = false) {
+            e.preventDefault();
+            var params = new URLSearchParams();
+            
+            // 1. Leer parámetros de la URL actual
+            var currentParams = new URLSearchParams(window.location.search);
+            var proyectos = currentParams.get('proyectos') || '';
+            var scenarioId = currentParams.get('scenario_id') || '';
+            var planMode  = currentParams.get('plan_mode') || 'manual';
+            
+            // 2. Intentar leer del input de proyectos si existe en la página actual
+            var inputEl = document.getElementById('proyectos');
+            if (inputEl && inputEl.value.trim()) {
+                proyectos = inputEl.value.trim();
+            }
+            
+            // 3. Construir nuevos parámetros
+            if (proyectos) params.set('proyectos', proyectos);
+            if (scenarioId) params.set('scenario_id', scenarioId);
+            params.set('plan_mode', planMode);
+            if (forceRun) params.set('run', '1');
+            
+            var finalUrl = baseUrl + (params.toString() ? '?' + params.toString() : '');
+            window.location.href = finalUrl;
+        }
+        </script>
+
+        <!-- 4.5. Estadisticas -->
+        {% if url_name != 'estadisticas_produccion' %}
+        <a href="{% url 'estadisticas_produccion' %}" class="btn-nav btn-purple">
+            <i class="fas fa-chart-line"></i>
+            <span>Auditoría de Tiempos</span>
         </a>
         {% endif %}
         
