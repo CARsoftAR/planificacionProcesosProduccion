@@ -20,6 +20,15 @@
         gap: 10px;
     }
 
+    /* Colors and Transitions */
+    .btn-plan    { background-color: #0d6efd !important; }
+    .btn-yellow  { background-color: #ffb800 !important; color: #1e293b !important; }
+    .btn-cyan    { background-color: #00d1ff !important; color: #1e293b !important; }
+    .btn-green   { background-color: #1a8754 !important; }
+    .btn-blue    { background-color: #3b82f6 !important; }
+    .btn-purple  { background-color: #8b5cf6 !important; color: white !important; }
+
+    /* UX Enhancements: Fade and Active state */
     .btn-nav {
         border-radius: 8px;
         padding: 0.55rem 1.1rem;
@@ -29,17 +38,27 @@
         align-items: center;
         gap: 8px;
         border: none;
-        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        transition: background-color 0.4s ease, opacity 0.4s ease, transform 0.4s ease, box-shadow 0.4s ease;
         text-decoration: none !important;
         color: white !important;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
         white-space: nowrap;
+        opacity: 0.5; /* Fade Off for inactive */
+        position: relative;
     }
 
-    .btn-nav:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 15px rgba(0,0,0,0.1);
-        filter: brightness(1.05);
+    .btn-nav:hover:not(.nav-active) {
+        opacity: 0.8;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+
+    .btn-nav.nav-active {
+        opacity: 1 !important; /* Fade On */
+        pointer-events: none;  /* Block interaction */
+        cursor: default;
+        filter: brightness(1.2); 
+        /* Glow/Internal lighting effect */
+        box-shadow: inset 0 0 12px rgba(255, 255, 255, 0.3), 0 0 15px rgba(255, 255, 255, 0.2);
     }
 
     .btn-nav:active {
@@ -51,21 +70,12 @@
         color: #64748b !important;
         box-shadow: none;
         padding-left: 0;
+        opacity: 0.7;
     }
     .btn-nav-home:hover {
-        background: transparent;
+        opacity: 1;
         color: #1e293b !important;
-        transform: none;
-        box-shadow: none;
     }
-
-    /* Colors */
-    .btn-plan    { background-color: #0d6efd !important; } /* Planificación - Dark Blue */
-    .btn-yellow  { background-color: #ffb800 !important; color: #1e293b !important; } /* Planillas */
-    .btn-cyan    { background-color: #00d1ff !important; color: #1e293b !important; } /* Prioridades */
-    .btn-green   { background-color: #1a8754 !important; } /* Gantt */
-    .btn-blue    { background-color: #3b82f6 !important; } /* Config */
-    .btn-purple  { background-color: #8b5cf6 !important; color: white !important; } /* Estadisticas */
 
     .navbar-logo {
         display: flex;
@@ -101,36 +111,28 @@
         </a>
 
         <!-- 1. Planificación -->
-        {% if url_name != 'planificacion_view' %}
-        <a href="#" class="btn-nav btn-plan" onclick="navigateWithParams(event, '{% url 'planificacion_view' %}')">
+        <a href="#" class="btn-nav btn-plan {% if url_name == 'planificacion_view' %}nav-active{% endif %}" onclick="navigateWithParams(event, '{% url 'planificacion_view' %}')">
             <i class="fas fa-tasks"></i>
             <span>Planificación</span>
         </a>
-        {% endif %}
         
         <!-- 2. Planillas Diarias -->
-        {% if url_name != 'planillas_diarias' %}
-        <a href="#" class="btn-nav btn-yellow" onclick="navigateWithParams(event, '{% url 'planillas_diarias' %}')">
+        <a href="#" class="btn-nav btn-yellow {% if url_name == 'planillas_diarias' %}nav-active{% endif %}" onclick="navigateWithParams(event, '{% url 'planillas_diarias' %}')">
             <i class="fas fa-file-invoice"></i>
             <span>Planillas Diarias</span>
         </a>
-        {% endif %}
         
         <!-- 3. Prioridades -->
-        {% if url_name != 'proyectos_prioridades' %}
-        <a href="#" class="btn-nav btn-cyan" onclick="navigateWithParams(event, '{% url 'proyectos_prioridades' %}')">
+        <a href="#" class="btn-nav btn-cyan {% if url_name == 'proyectos_prioridades' %}nav-active{% endif %}" onclick="navigateWithParams(event, '{% url 'proyectos_prioridades' %}')">
             <i class="fas fa-sort-amount-down"></i>
             <span>Prioridades de Proyecto</span>
         </a>
-        {% endif %}
         
         <!-- 4. Ver Gantt -->
-        {% if url_name != 'planificacion_visual' %}
-        <a href="#" id="btn-ver-gantt" class="btn-nav btn-green" onclick="navigateWithParams(event, '{% url 'planificacion_visual' %}', true)">
+        <a href="#" id="btn-ver-gantt" class="btn-nav btn-green {% if url_name == 'planificacion_visual' %}nav-active{% endif %}" onclick="navigateWithParams(event, '{% url 'planificacion_visual' %}', true)">
             <i class="fas fa-chart-gantt"></i>
             <span>Ver Gantt</span>
         </a>
-        {% endif %}
 
         <script>
         /**
@@ -167,20 +169,16 @@
         </script>
 
         <!-- 4.5. Estadisticas -->
-        {% if url_name != 'estadisticas_produccion' %}
-        <a href="{% url 'estadisticas_produccion' %}" class="btn-nav btn-purple">
+        <a href="{% url 'estadisticas_produccion' %}" class="btn-nav btn-purple {% if url_name == 'estadisticas_produccion' %}nav-active{% endif %}">
             <i class="fas fa-chart-line"></i>
             <span>Auditoría de Tiempos</span>
         </a>
-        {% endif %}
         
         <!-- 5. Configurar Máquinas -->
-        {% if url_name != 'maquina_config_list' and url_name != 'maquina_config_create' and url_name != 'maquina_config_update' %}
-        <a href="{% url 'maquina_config_list' %}" class="btn-nav btn-blue">
+        <a href="{% url 'maquina_config_list' %}" class="btn-nav btn-blue {% if url_name == 'maquina_config_list' or url_name == 'maquina_config_create' or url_name == 'maquina_config_update' %}nav-active{% endif %}">
             <i class="fas fa-cog"></i>
             <span>Configurar Máquinas</span>
         </a>
-        {% endif %}
     </div>
 
     <!-- Theme / User Group -->

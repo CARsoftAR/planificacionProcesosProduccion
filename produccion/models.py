@@ -3,7 +3,7 @@ from datetime import date, datetime
 
 class VTman(models.Model):
     idorden = models.BigIntegerField(db_column='IDORDEN', primary_key=True)
-    idop = models.CharField(db_column='IDOP', max_length=10)
+#    idop = models.CharField(db_column='IDOP', max_length=10)
     op_idcliente = models.CharField(db_column='Op_idcliente', max_length=6, blank=True, null=True)
     macropk = models.CharField(db_column='MacroPK', max_length=50, blank=True, null=True)
     ismacro = models.BooleanField(db_column='IsMacro', blank=True, null=True)
@@ -280,6 +280,13 @@ class PlannedTask(models.Model):
         on_delete=models.CASCADE, 
         related_name='planned_tasks',
         verbose_name='Escenario'
+    )
+    proyecto_code = models.CharField(
+        max_length=50, 
+        blank=True, 
+        null=True, 
+        verbose_name='Código de Proyecto',
+        help_text='Código del proyecto al que pertenece esta OP (ej: 26-018)'
     )
     fecha_seleccion = models.DateTimeField(auto_now_add=True)
 

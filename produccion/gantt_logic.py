@@ -223,12 +223,18 @@ def get_gantt_data(request, force_run=False):
     from .models import Scenario, TaskDependency # Import here to avoid circular
     
     # --- PERSISTENCE LOGIC (Remember last selection) ---
-    # Projects
-    raw_proyectos = request.GET.get('proyectos')
-    if raw_proyectos is not None:
+    # Projects - ONLY use session if explicitly provided in URL
+    raw_proyectos = request.GET.get('proyectos', '').strip()
+    
+    # HARD RESET: If no projects in URL or clear flag set, ignore all cached data
+    clear_flag = request.GET.get('clear', '0') == '1'
+    if clear_flag or raw_proyectos == '':
+        # Force empty - no fallback to session
+        raw_proyectos = None
+        # Signal frontend to clear visual state
+        request.session['gantt_needs_clear'] = True
+    elif raw_proyectos:
         request.session['last_proyectos_filter'] = raw_proyectos
-    elif 'proyectos' not in request.GET:
-        raw_proyectos = request.session.get('last_proyectos_filter')
 
     # ID Orden
     id_orden = request.GET.get('id_orden')
@@ -287,9 +293,40 @@ def get_gantt_data(request, force_run=False):
         if active_scenario and not request.session.get('last_scenario_id'):
             request.session['last_scenario_id'] = str(active_scenario.id)
             
-    # FALLBACK: If no projects in URL or Session, use the Scenario's defaults
-    if not raw_proyectos and active_scenario and active_scenario.proyectos:
-        raw_proyectos = active_scenario.proyectos
+    # NO FALLBACK: The Gantt is reactive. Only shows what was explicitly requested.
+    # If no projects in URL AND no projects in scenario → return empty immediately 
+    # (no old session data - this stops the "old projects loop" issue)
+    if not raw_proyectos:
+        # Only use scenario defaults if explicitly requested (user selected this scenario)
+        # Don't use old session data
+        if active_scenario and active_scenario.proyectos:
+            raw_proyectos = active_scenario.proyectos
+        else:
+            # No proyectos at all - return empty
+            raw_proyectos = None
+            for maquina in maquinas:
+                timeline_data.append({
+                    'machine': maquina,
+                    'tasks': []
+                })
+            return {
+                'timeline_data': timeline_data,
+                'start_simulation': start_simulation,
+                'time_columns': [],
+                'valid_dates': [],
+                'dependency_map': {},
+                'global_min_h': 7,
+                'global_max_h': 22,
+                'ran_calculation': False,
+                'active_scenario': active_scenario,
+                'analysis': {'machines': [], 'project_alerts': [], 'adaptive_alerts': []},
+                'system_alerts': [],
+                'day_max_hours': {},
+                'date_start_col': {},
+                'plan_mode': plan_mode,
+                'gantt_needs_clear': True,
+                'gantt_empty_reason': 'no_projects_specified',
+            }
 
         
     virtual_overrides = {}
@@ -337,12 +374,26 @@ def get_gantt_data(request, force_run=False):
     # EXECUTION CHECK: Default to True to allow automatic loading from Global Navbar
     run_calculation = True 
     
-    # --- AUTOMATIC DEPENDENCIES ---
+    # --- AUTOMATIC DEPENDENCIES & SELECTIVE PLANNING ---
+    from .models import PlannedTask
     deps_filter = {}
+    proyectos_list = []
     if raw_proyectos:
-         deps_filter['proyectos'] = [p.strip() for p in raw_proyectos.split(',') if p.strip()]
+         proyectos_list = [p.strip() for p in raw_proyectos.split(',') if p.strip()]
+         deps_filter['proyectos'] = proyectos_list
     if id_orden:
         deps_filter['id_orden'] = id_orden
+
+    # NEW: Respect manual selections from the article selector (PlannedTask)
+    if proyectos_list and active_scenario:
+        planned_ids = list(PlannedTask.objects.using('default').filter(
+            scenario=active_scenario,
+            proyecto_code__in=proyectos_list
+        ).values_list('id_orden', flat=True))
+        
+        if planned_ids:
+            # Shift to strict ID-based filtering
+            deps_filter = {'id_orden_in': planned_ids}
 
     
     all_tasks_raw = get_planificacion_data(deps_filter)
@@ -879,5 +930,6 @@ def get_gantt_data(request, force_run=False):
         'active_scenario': active_scenario,
         'analysis': {'machines': machine_analysis, 'project_alerts': project_alerts, 'adaptive_alerts': get_adaptive_capacity_alerts(timeline_data, maquinas)},
         'system_alerts': system_alerts, 'day_max_hours': day_max_hours, 'date_start_col': date_start_col,
-        'plan_mode': plan_mode
+        'plan_mode': plan_mode,
+        'gantt_needs_clear': request.session.pop('gantt_needs_clear', False)
     }

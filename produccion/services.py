@@ -105,6 +105,15 @@ def get_planificacion_data(filtros=None, exclude_completed=True):
                 0
             END 
         AS FLOAT) AS Tiempo_Logrado,
+        Isnull((
+            SELECT
+                Sum(T4.Tiempo_minutos) / 60
+            FROM
+                v_tman T4
+            WHERE
+                T.Sucursal = T4.Sucursal AND
+                T.IdOrden = T4.IdOrden
+        ) , 0) AS Total_Horas_Fichadas,
         Isnull(Q.Cantidad_Final, 0) AS cantidad_final,
         (Isnull(Q.Cantidad_Final, 0) - Isnull(T.Cantidadpp, 0)) AS cantidad_pendiente,
         T.Lote,
@@ -150,7 +159,7 @@ def get_planificacion_data(filtros=None, exclude_completed=True):
         T.Idestado = Oe.Idestado
 
     LEFT JOIN Tman010 MAC ON 
-        T.Idmaquina = MAC.Idmaquina
+        T3.IdMaquina = MAC.Idmaquina
 
     WHERE 1=1
     """
@@ -206,10 +215,10 @@ def get_planificacion_data(filtros=None, exclude_completed=True):
             where_clauses.append(" AND (" + " OR ".join(clauses) + ")")
 
     if 'machine_ids' in filtros and filtros['machine_ids']:
-        # machine_ids matches T.IdMaquina (or MAC.IdMaquina)
+        # machine_ids matches T3.IdMaquina (Engineering BOM assignment)
         m_ids = filtros['machine_ids']
         placeholders_m = ', '.join(['%s'] * len(m_ids))
-        where_clauses.append(f" AND (T.IdMaquina IN ({placeholders_m}) OR T.IdMaquina IS NULL OR T.IdMaquina = '')")
+        where_clauses.append(f" AND (T3.IdMaquina IN ({placeholders_m}) OR T3.IdMaquina IS NULL OR T3.IdMaquina = '')")
         params.extend(m_ids)
     else:
         # Filter out excluded machines
@@ -224,6 +233,8 @@ def get_planificacion_data(filtros=None, exclude_completed=True):
         # '3'=COMPLETA, '4'=ANULADO, '5'=CERRADA
         where_clauses.append(" AND T.Idestado NOT IN ('3', '4', '5')")
         where_clauses.append(" AND T2.Idestado NOT IN ('3', '4', '5')")
+        # Ensure we only pull tasks that have pending pieces (avoid finished saldo)
+        where_clauses.append(" AND (Isnull(Q.Cantidad_Final, 0) - Isnull(T.Cantidadpp, 0)) > 0")
     
     # Unir todo
     final_sql = base_sql + "".join(where_clauses)

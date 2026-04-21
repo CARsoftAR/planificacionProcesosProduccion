@@ -3412,6 +3412,8 @@ def api_get_article_processes(request):
     # Buscamos las operaciones vinculadas al MacroPK. 
     # Filtramos IsMacro = 0 para que no se traiga el artículo padre, solo los procesos.
     # Join con Tman010 para traer el nombre de la máquina.
+    # Consultamos procesos vinculados al MacroPK (Principal) 
+    # MÁS procesos que compartan la misma "Madre" (MSTNMBR) pero que no tengan MacroPK (Huérfanos/Fallback)
     sql = """
     SELECT 
         T.Idorden as IdOrden,
@@ -3424,11 +3426,27 @@ def api_get_article_processes(request):
     LEFT JOIN Tman010 M ON T.Idmaquina = M.Idmaquina
     WHERE T.MacroPK = %s
     AND T.IsMacro = 0
-    ORDER BY T.Idorden
+
+    UNION
+
+    SELECT 
+        T.Idorden as IdOrden,
+        T.Descri as Proceso,
+        (T.Cantidad - T.Cantidadpp) as Pendiente,
+        T.Cantidad as Cantidad,
+        T.Cantidadpp as Finalizado,
+        ISNULL(M.MAQUINAD, T.Idmaquina) as MaquinaNombre
+    FROM Tman050 T
+    LEFT JOIN Tman010 M ON T.Idmaquina = M.Idmaquina
+    WHERE T.MSTNMBR IN (SELECT IdOrden FROM Tman050 WHERE MacroPK = %s AND IsMacro = 1)
+    AND (T.MacroPK IS NULL OR T.MacroPK = '')
+    AND T.IsMacro = 0
+    
+    ORDER BY IdOrden
     """
     
     with connections['production'].cursor() as cursor:
-        cursor.execute(sql, [macro_pk])
+        cursor.execute(sql, [macro_pk, macro_pk])
         columns = [col[0] for col in cursor.description]
         results = [dict(zip(columns, row)) for row in cursor.fetchall()]
         
