@@ -413,15 +413,10 @@ def get_gantt_data(request, force_run=False):
             extra_tasks = get_planificacion_data(extra_filtros, exclude_completed=True)
             if extra_tasks:
                 all_tasks_raw.extend(extra_tasks)
-                all_tasks_for_deps.extend(extra_tasks)
     
 
-    # Exclude tasks with no machine assigned from the Gantt entirely.
-    all_tasks_for_deps = [
-        t for t in all_tasks_raw
-        if str(t.get('Idmaquina', '')).strip() != ''
-        and str(t.get('MAQUINAD', '')).strip().upper() != 'SIN ASIGNAR'
-    ]
+    # Include all tasks for dependencies and simulation, including unassigned ones (MAC00)
+    all_tasks_for_deps = all_tasks_raw
     
     # Pre-group tasks by machine for internal loop efficiency
     all_tasks_by_machine = defaultdict(list)
@@ -485,48 +480,10 @@ def get_gantt_data(request, force_run=False):
         except (ValueError, TypeError):
             return 0.0
 
-    for formula, tasks_in_order in orders_map.items():
-        def get_dep_key(t):
-            desc = str(t.get('Descri', '')).strip().upper()
-            prefixes_to_ignore = ["ARMADO ", "MATERIAL ", "COMPRA ", "RECEPCION ", "SERVICIO ", "TERCERO "]
-            trimmed_desc = desc
-            for p in prefixes_to_ignore:
-                if trimmed_desc.startswith(p):
-                    trimmed_desc = trimmed_desc[len(p):].strip()
-
-            if " - " in trimmed_desc:
-                parts = trimmed_desc.split(" - ")
-                if len(parts) > 1:
-                    return " - ".join(parts[:-1]).strip()
-            
-            if trimmed_desc:
-                return trimmed_desc
-            return f"DEFAULT_GROUP_{t.get('ProyectoCode', 'UNKNOWN')}"
-
-        project_tasks_raw = [t for t in all_tasks_raw if t.get('ProyectoCode') == formula]
-        parts_groups = defaultdict(list)
-        for t in project_tasks_raw:
-            key = get_dep_key(t)
-            parts_groups[key].append(t)
-
-        for part_key, part_tasks in parts_groups.items():
-            p_tasks_sorted = sorted(part_tasks, key=get_nivel, reverse=False)
-            for j in range(len(p_tasks_sorted) - 1):
-                predecessor = p_tasks_sorted[j]
-                successor = p_tasks_sorted[j+1]
-                def clean_id(val):
-                    try: return str(int(float(val)))
-                    except: return str(val)
-
-                pred_id = clean_id(predecessor.get('Idorden'))
-                succ_id = clean_id(successor.get('Idorden'))
-                if pred_id and succ_id and pred_id != succ_id:
-                    if succ_id not in dependency_map:
-                        dependency_map[succ_id] = []
-                    if pred_id not in dependency_map[succ_id]:
-                        dependency_map[succ_id].append(pred_id)
-
-    print(f"DEBUG [dependencies]: dependency_map tiene {sum(len(v) for v in dependency_map.values())} vínculos en {len(dependency_map)} sucesores.")
+    # --- DEPENDENCIES (Explicit Only) ---
+    # We no longer generate automatic level-based dependencies to favor parallelism.
+    # Level is now interpreted as Dispatch Priority within the machine.
+    dependency_map = {}
 
     global_task_end_dates = {}
     unassigned_tasks = [
@@ -726,9 +683,8 @@ def get_gantt_data(request, force_run=False):
                      target_start = force_start_times[tid]
                      is_pinned = 1
                  
-                 # PRIORIDAD ABSOLUTA: Reflejar el orden de la tabla (OrdenVisual)
-                 # El Nivel_Planificacion ya está embebido en el OrdenVisual inicial del SQL
-                 return (t.get('OrdenVisual', 999999), get_nivel(t), target_start)
+                 # PRIORIDAD ABSOLUTA: Despacho por Nivel (Mayor es primero) y luego OrdenVisual o disponibilidad.
+                 return (-get_nivel(t), t.get('OrdenVisual', 999999), target_start)
             
             tasks.sort(key=get_sort_key)
             recalc = calculate_timeline(maquina, tasks, start_date=start_simulation, 

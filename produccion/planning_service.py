@@ -150,25 +150,10 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
              elif current_time:
                  current_time = timezone.make_aware(current_time)
 
+             # El inicio forzado (Pin) es respetado, pero ya no forzamos secuencialidad artificial.
+             current_time = forced_time
 
-             # En la fila SIN ASIGNAR, forzamos que sea secuencial 
-             if is_unassigned_row:
-                 if forced_time < current_time:
-                     # No buffer between processes - Magnetism/Snap
-                     current_time = current_time
-                 else:
-                     current_time = forced_time
-             else:
-                 # En máquinas normales respetamos el solapamiento manual si existe
-                 current_time = forced_time
-             
-             print(f"DEBUG: Task {task.get('Idorden')} en fila {'MAC00' if is_unassigned_row else 'NORMAL'} -> {current_time}")
-
-        # Check for dependencies / constraints (Soft Limits)
-        # En la fila SIN ASIGNAR, aunque no haya PIN, forzamos que espere a la anterior + buffer
-        if is_unassigned_row and not forced_time:
-             # No buffer between processes - Magnetism/Snap
-             current_time = current_time
+        # No constraints, current_time remains as is (or machine availability)
 
         # ONLY IF NOT FORCED (Manual override wins over Physics)
         if not forced_time and task_min_start_times:
