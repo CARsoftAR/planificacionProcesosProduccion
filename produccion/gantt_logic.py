@@ -493,7 +493,8 @@ def get_gantt_data(request, force_run=False):
 
     for ut in sorted(unassigned_tasks, key=get_nivel, reverse=True):
         tid = str(ut.get('Idorden'))
-        duration = float(ut.get('Tiempo_Proceso', 0.1) or 0.1)
+        duration = float(ut.get('Tiempo_Proceso', 0) or 0)
+        if duration <= 0: continue
         v_start = start_simulation
         if tid in dependency_map:
             preds = dependency_map[tid]
@@ -523,11 +524,14 @@ def get_gantt_data(request, force_run=False):
         if override.get('maquina'):
             tasks_moved_in_map[str(override['maquina']).strip().upper()].append(tid)
             
-    # Deduplicate maquinas list
+    # Deduplicate maquinas list - EXCLUIR SIN ASIGNAR/MAC00
     unique_maquinas_list = []
     seen_machine_ids = set()
     for m in maquinas:
-        m_id = str(m.id_maquina).strip()
+        m_id = str(m.id_maquina).strip().upper()
+        # EXCLUIR MAC00 y SIN ASIGNAR
+        if m_id in ['MAC00', 'SIN ASIGNAR'] or 'SIN ASIGNAR' in str(m.nombre).upper():
+            continue
         if m_id not in seen_machine_ids:
             unique_maquinas_list.append(m)
             seen_machine_ids.add(m_id)
@@ -546,6 +550,10 @@ def get_gantt_data(request, force_run=False):
         
         active_tasks = []
         for t in native_tasks:
+            # FILTRO CRÍTICO: Si el tiempo es despreciable o cero, ignorar
+            if float(t.get('Tiempo_Proceso', 0) or 0) <= 0.01:
+                continue
+
             try:
                 oid = str(int(float(t.get('Idorden'))))
             except:
@@ -579,11 +587,15 @@ def get_gantt_data(request, force_run=False):
 
                 task_found = next((tx for tx in all_tasks_raw if str(int(float(tx['Idorden']))) == tid_s), None)
                 if task_found and str(int(float(task_found['Idorden']))) not in hidden_ids:
-                     # IMPORTANT: copy the dict to avoid mutating the original object
-                     task_copy = dict(task_found)
-                     task_copy['is_moved'] = True
-                     task_copy['original_machine_name'] = task_found.get('MAQUINAD', 'S/M')
-                     active_tasks.append(task_copy)
+                    # FILTRO CRÍTICO para tareas movidas
+                    if float(task_found.get('Tiempo_Proceso', 0) or 0) <= 0.01:
+                        continue
+
+                    # IMPORTANT: copy the dict to avoid mutating the original object
+                    task_copy = dict(task_found)
+                    task_copy['is_moved'] = True
+                    task_copy['original_machine_name'] = task_found.get('MAQUINAD', 'S/M')
+                    active_tasks.append(task_copy)
         
         unique_tasks_map = {}
         for t in active_tasks:
@@ -754,6 +766,14 @@ def get_gantt_data(request, force_run=False):
                 if e: g_max_h = max(g_max_h, e.hour + (1 if e.minute > 0 else 0))
     
     if not has_sch: g_min_h, g_max_h = 7, 18
+    
+    # Force grid to 22:00 if MAC00 has tasks (Strict Grid)
+    for row in timeline_data:
+        m = row['machine']
+        if (m.id_maquina == 'MAC00' or 'SIN ASIGNAR' in str(m.nombre).upper()) and row['tasks']:
+            g_max_h = max(g_max_h, 22)
+            g_min_h = min(g_min_h, 7)
+
     if g_max_h <= g_min_h: g_min_h, g_max_h = 0, 23
     
     calc_max = start_simulation + timedelta(hours=48)

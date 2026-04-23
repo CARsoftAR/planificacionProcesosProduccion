@@ -52,13 +52,15 @@
         opacity: 1 !important;
         pointer-events: none;
         cursor: default;
-        z-index: 100; /* Asegura que el zoom flote sobre los demás */
-        transform: scale(1.15); /* Efecto Zoom solicitado */
-        box-shadow: 0 10px 25px rgba(0,0,0,0.25);
-        /* Letra oscura profunda para el activo */
+        z-index: 100;
+        background-color: color-mix(in srgb, var(--btn-color, #0d6efd), transparent 85%) !important;
+        border-left: 4px solid var(--btn-color, #0d6efd) !important;
+        box-shadow: 0 0 8px color-mix(in srgb, var(--btn-color, #0d6efd), transparent 50%);
+        /* Dinamismo de texto: Usamos la variable de texto oscuro del sistema */
         color: var(--dark-text) !important;
         font-weight: 900;
-        margin: 0 5px; /* Espacio extra para que el zoom no choque */
+        transform: scale(1.05); /* Reducimos el zoom para dar espacio al borde */
+        margin: 0 5px;
     }
 
     .nav-button.inactive {
@@ -66,36 +68,49 @@
         box-shadow: none;
     }
 
-    /* 🎨 Sistema Monocromático de Fuentes */
+    /* 🎨 Sistema Monocromático de Fuentes con Variables de Color Base */
     .btn-plan { 
-        background-color: #0d6efd !important; 
+        --btn-color: #0d6efd;
+        background-color: var(--btn-color) !important; 
         --dark-text: #03285a;   /* Azul muy oscuro */
         --soft-text: #b8d4ff;   /* Azul muy claro */
     }
     .btn-yellow { 
-        background-color: #ffb800 !important; 
+        --btn-color: #ffb800;
+        background-color: var(--btn-color) !important; 
         --dark-text: #5c4200;   /* Amarillo barro */
         --soft-text: #fff0c7;   /* Crema */
     }
     .btn-cyan { 
-        background-color: #00d1ff !important; 
+        --btn-color: #00d1ff;
+        background-color: var(--btn-color) !important; 
         --dark-text: #005a6e;   /* Cian petroleo */
         --soft-text: #c0f3ff;   /* Cian hielo */
     }
     .btn-green { 
-        background-color: #1a8754 !important; 
+        --btn-color: #1a8754;
+        background-color: var(--btn-color) !important; 
         --dark-text: #08311e;   /* Verde bosque */
         --soft-text: #c0e6d4;   /* Verde menta */
     }
     .btn-blue { 
-        background-color: #3b82f6 !important; 
+        --btn-color: #3b82f6;
+        background-color: var(--btn-color) !important; 
         --dark-text: #1138a1;   /* Azul noche */
         --soft-text: #dbeafe;   /* Azul glaciar */
     }
     .btn-purple { 
-        background-color: #8b5cf6 !important; 
+        --btn-color: #8b5cf6;
+        background-color: var(--btn-color) !important; 
         --dark-text: #371777;   /* Púrpura uva */
         --soft-text: #ddd6fe;   /* Lavanda */
+    }
+    /* Clase genérica para Atrasos/Rojo solicitada */
+    .btn-red, .btn-atrasos {
+        --btn-color: #ef4444;
+        background-color: var(--btn-color) !important;
+        --dark-text: #450a0a;
+        --soft-text: #fee2e2;
     }
 
     /* Pequeño pulido adicional para visibilidad de iconos */
@@ -105,7 +120,8 @@
     }
 
     .btn-nav-home {
-        background-color: #334155 !important; /* Slate Dark */
+        --btn-color: #334155;
+        background-color: var(--btn-color) !important; /* Slate Dark */
         --dark-text: #0f172a;
         --soft-text: #cbd5e1;
     }
@@ -146,19 +162,19 @@
     </div>
 
     <div class="nav-buttons-group">
-        <a href="{% url 'home' %}" class="nav-button btn-nav-home {% if url_name == 'home' %}active{% else %}inactive{% endif %}" onclick="navigateWithParams(event, '{% url 'home' %}')">
+        <a href="{% url 'home' %}" class="nav-button btn-nav-home btn-menu {% if url_name == 'home' %}active{% else %}inactive{% endif %}" onclick="navigateWithParams(event, '{% url 'home' %}')">
             <i class="fas fa-home"></i>
             <span>Menú</span>
         </a>
 
         <!-- 1. Planificación -->
-        <a href="#" class="nav-button btn-plan {% if url_name == 'planificacion_view' %}active{% else %}inactive{% endif %}" onclick="navigateWithParams(event, '{% url 'planificacion_view' %}')">
+        <a href="#" class="nav-button btn-plan btn-planificacion {% if url_name == 'planificacion_view' %}active{% else %}inactive{% endif %}" onclick="navigateWithParams(event, '{% url 'planificacion_view' %}')">
             <i class="fas fa-tasks"></i>
             <span>Planificación</span>
         </a>
         
         <!-- 2. Planillas Diarias -->
-        <a href="#" class="nav-button btn-yellow {% if url_name == 'planillas_diarias' %}active{% else %}inactive{% endif %}" onclick="navigateWithParams(event, '{% url 'planillas_diarias' %}')">
+        <a href="#" class="nav-button btn-yellow btn-produccion {% if url_name == 'planillas_diarias' %}active{% else %}inactive{% endif %}" onclick="navigateWithParams(event, '{% url 'planillas_diarias' %}')">
             <i class="fas fa-file-invoice"></i>
             <span>Planillas Diarias</span>
         </a>

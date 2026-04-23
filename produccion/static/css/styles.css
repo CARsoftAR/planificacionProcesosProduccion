@@ -209,12 +209,13 @@ tbody tr:hover {
 }
 
 .nav-link.active {
-    background: var(--card-bg);
-    border-color: var(--border-color) var(--border-color) var(--card-bg);
-    color: #ef4444; /* Back to Red as requested */
-    border-top: 4px solid #ef4444; /* Red selector highlight */
+    background-color: color-mix(in srgb, var(--active-color, #ef4444), transparent 85%) !important;
+    border: 1px solid var(--border-color) !important;
+    border-left: 4px solid var(--active-color, #ef4444) !important;
+    color: var(--active-color, #ef4444) !important;
     font-weight: 800;
-    box-shadow: 0 -4px 10px rgba(239, 68, 68, 0.1);
+    box-shadow: 0 4px 12px color-mix(in srgb, var(--active-color, #ef4444), transparent 80%);
+    transition: all 0.3s ease;
 }
 
 /* Custom Large Switch */

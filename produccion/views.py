@@ -2152,7 +2152,7 @@ def planificacion_visual(request):
     # Regla: visual_left = max(posición_por_tiempo, fin_anterior + 6px)
     # Para OPs con atraso, garantizamos un ancho visual de 100px.
     # =========================================================
-    COL_WIDTH = 100
+    COL_WIDTH = 100  # px por hora — debe coincidir con .time-hour { width: 100px } en el CSS
     DAY_GAP = 10
     
     # Mapa de fechas a índice visual
@@ -2172,6 +2172,7 @@ def planificacion_visual(request):
             
             time_left = (day_col_start + hour_diff) * COL_WIDTH + (day_idx * DAY_GAP)
             duration_px = t.get('duration_real', 0) * COL_WIDTH
+            if duration_px <= 0: continue
             elements.append({'obj': t, 'time_left': time_left, 'duration_px': duration_px, 'is_maint': False})
 
         for m in row.get('maintenances', []):
@@ -2185,27 +2186,37 @@ def planificacion_visual(request):
             time_left = (day_col_start + hour_diff) * COL_WIDTH + (day_idx * DAY_GAP)
             elements.append({'obj': m, 'time_left': time_left, 'duration_px': m_dur_px, 'is_maint': True})
 
-        # Ordenar por tiempo de inicio real
-        elements.sort(key=lambda x: x['time_left'])
+        # --- No ordenamos 'elements' --- 
+        # Al no ordenar, respetamos EXACTAMENTE el orden en que las tareas vinieron de la tabla
+        # (que a su vez está dictado por el backend y OrdenVisual original).
 
-        # --- Paso 2: Posicionamiento Temporal Estricto con Escalonamiento de Badges ---
-        cursor_card_end = -9999.0
+        # --- Paso 2: Posicionamiento Acumulativo Estricto (Cascada) ---
+        cursor_card_end = 0.0   # La fila arranca en 0px
         cursor_badge_end = -9999.0
-        stagger_level = 0 # 0=normal, 1=alto
+        stagger_level = 0
         
         for el in elements:
             obj = el['obj']
-            # Normalización robusta del ID para el frontend
             try:
                 obj['Idorden'] = str(int(float(obj.get('Idorden', 0))))
             except:
                 obj['Idorden'] = str(obj.get('Idorden', ''))
 
-            # 1. Ancho NATURAL (mínimo 24px para ser accionable)
-            natural_w = max(24, el['duration_px']) 
-            
-            # 2. El inicio (left) solo se empuja si las CARDS físicas colisionan (overlap real)
-            final_left = max(el['time_left'], cursor_card_end + 3)
+            m_id = str(row['machine'].id_maquina).strip()
+            m_name = str(row['machine'].nombre).strip().upper()
+            is_mac00 = (m_id == 'MAC00' or 'SIN ASIGNAR' in m_name)
+
+            # Ancho mínimo visible (ej. procesos muy cortos como 0.03hs)
+            # Para MAC00 respetamos el ancho exacto sin mínimos para no desfasar el grid
+            if is_mac00:
+                natural_w = el['duration_px']
+            else:
+                natural_w = max(24, el['duration_px']) 
+
+
+            # Posicionamiento exacto basado en el motor de planificación (sin cascadas artificiales)
+            final_left = el['time_left']
+            cursor_card_end = final_left + el['duration_px']
             
             obj['visual_left']  = round(final_left, 2)
             obj['visual_width'] = round(natural_w, 2)
@@ -2221,8 +2232,13 @@ def planificacion_visual(request):
                 obj['badge_stagger'] = stagger_level
                 cursor_badge_end = final_left + 95
             
-            # El cursor de tiempo solo avanza con la tarjeta física
-            cursor_card_end = final_left + natural_w
+            # El cursor físico ya fue adelantado en base a duration_px
+            # (No actualizamos por natural_w para evitar inyectar aire matemático)
+
+        # Forzar el reordenamiento del diccionario original para que el HTML Render ({% for task in row.tasks %})
+        # recorra las tareas y mantenimientos exactamente en nuestra subsecuencia correcta sumada
+        row['tasks'] = [el['obj'] for el in elements if not el['is_maint']]
+        row['maintenances'] = [el['obj'] for el in elements if el['is_maint']]
 
 
     # Build time columns with gap info
@@ -3463,9 +3479,28 @@ def api_confirm_selected_tasks(request):
         id_ordens = body.get('id_ordens', [])
         scenario_id = body.get('scenario_id')
         project_code = body.get('project_code')
+        force = body.get('force', False)
         
         active_scenario = get_active_scenario(request, scenario_id=scenario_id)
         
+        # Backend Security Layer: Check if already planned unless forced
+        if not force and project_code:
+            v1 = project_code
+            v2 = project_code.replace('-', '.')
+            v3 = project_code.replace('.', '-')
+            codes = list({v1, v2, v3})
+            
+            exists = PlannedTask.objects.using('default').filter(
+                proyecto_code__in=codes,
+                scenario=active_scenario
+            ).exists()
+            if exists:
+                return JsonResponse({
+                    'status': 'warning', 
+                    'message': f'El proyecto {project_code} ya está planificado.',
+                    'already_exists': True
+                })
+
         # REPLACE: Borramos solo lo que pertenece al proyecto actual (para permitir acumulación)
         with transaction.atomic(using='default'):
             # 1. Si tenemos el código de proyecto, borramos solo sus OPs de este escenario
@@ -3518,6 +3553,38 @@ def api_confirm_selected_tasks(request):
         import traceback
         print(traceback.format_exc())
         return JsonResponse({'error': str(e)}, status=500)
+
+def check_project_planning(request):
+    """
+    API to check if a project code already has planned tasks in a scenario.
+    Used for security warnings before re-planning.
+    """
+    project_code = request.GET.get('proyecto', '').strip()
+    scenario_id = request.GET.get('scenario_id')
+    
+    if not project_code:
+        return JsonResponse({'exists': False})
+        
+    try:
+        active_scenario = get_active_scenario(request, scenario_id=scenario_id)
+        
+        # Robust check: variations of the code (26-028 vs 26.028)
+        v1 = project_code
+        v2 = project_code.replace('-', '.')
+        v3 = project_code.replace('.', '-')
+        codes = list({v1, v2, v3})
+        
+        exists = PlannedTask.objects.using('default').filter(
+            proyecto_code__in=codes,
+            scenario=active_scenario
+        ).exists()
+        
+        print(f"DEBUG: check_project_planning - Proj: {project_code}, Codes: {codes}, Scenario: {active_scenario.nombre}, Exists: {exists}")
+        
+        return JsonResponse({'exists': exists, 'proyecto': project_code, 'scenario': active_scenario.nombre})
+    except Exception as e:
+        print(f"ERROR check_project_planning: {e}")
+        return JsonResponse({'exists': False, 'error': str(e)})
 
 @csrf_exempt
 def api_clear_all_planning(request):

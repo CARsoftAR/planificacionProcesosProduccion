@@ -179,7 +179,7 @@
             <form method="GET" id="plan-filter-form" class="d-flex align-items-center gap-3 flex-grow-1">
                 <div class="d-flex align-items-center gap-2">
                     <label for="proyectos" class="smaller fw-bold text-muted mb-0"><i class="fas fa-search"></i> Proyectos:</label>
-                    <input type="text" name="proyectos" id="proyectos" class="form-control form-control-sm rounded-pill" style="width: 250px;" value="{{ proyectos_value|default:'' }}" placeholder="Ej: 25-001, 23-145">
+                    <input type="text" name="proyectos" id="proyectos" class="form-control form-control-sm rounded-pill" style="width: 250px;" value="" placeholder="Ej: 25-001, 23-145">
                     <button type="submit" class="btn btn-sm btn-primary rounded-pill px-3">Filtrar</button>
                     {% if request.GET.proyectos %}
                     <a href="{% url 'planificacion_view' %}?plan_mode={{ request.GET.plan_mode|default:'manual' }}" class="btn btn-sm btn-outline-secondary rounded-pill px-2" title="Limpiar Filtros">
@@ -627,18 +627,65 @@
 
         document.addEventListener('DOMContentLoaded', function() {
             // --- SELECTIVE PLANNING FLOW ---
-            const planForm = document.getElementById('plan-filter-form');
+             const planForm = document.getElementById('plan-filter-form');
             if (planForm) {
-                planForm.addEventListener('submit', function(e) {
+                planForm.addEventListener('submit', async function(e) {
                     const projectsInput = document.getElementById('proyectos');
                     const projValue = projectsInput ? projectsInput.value.trim() : "";
                     
-                    if (projValue && !projValue.includes(',')) {
+                    if (!projValue) return; // Si está vacío, sigue el flujo normal (limpiar filtros)
+
+                     if (!projValue.includes(',')) {
+                         // SINGLE PROJECT FLOW
                          e.preventDefault();
-                         openProductionSelector(projValue);
+                         e.stopPropagation();
+                         
+                         const urlParams = new URLSearchParams(window.location.search);
+                         const scenarioId = urlParams.get('scenario_id') || "";
+                         
+                         try {
+                             const checkResp = await fetch(`/api/check_project_planning/?proyecto=${encodeURIComponent(projValue)}&scenario_id=${scenarioId}`);
+                             const checkData = await checkResp.json();
+                             
+                             if (checkData.exists) {
+                                 const result = await Swal.fire({
+                                     title: 'Proyecto ya planificado',
+                                     text: `El proyecto ${projValue} ya cuenta con una planificación activa en "${checkData.scenario}". ¿Desea planificarlo nuevamente?`,
+                                     icon: 'warning',
+                                     showCancelButton: true,
+                                     confirmButtonText: 'Sí, planificar otra vez',
+                                     cancelButtonText: 'Cancelar',
+                                     confirmButtonColor: '#3b82f6',
+                                     customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm', cancelButton: 'premium-cancel' }
+                                 });
+                                 if (!result.isConfirmed) return;
+                             }
+                             
+                             openProductionSelector(projValue);
+                             projectsInput.value = ""; 
+                             projectsInput.focus(); // Recuperar foco
+                         } catch (err) {
+                             console.error("Error checking planning state:", err);
+                             openProductionSelector(projValue); 
+                             projectsInput.value = "";
+                             projectsInput.focus();
+                         }
+                    } else {
+                        // MULTI PROJECT FLOW (Comma separated)
+                        e.preventDefault();
+                        const params = new URLSearchParams(window.location.search);
+                        params.set('proyectos', projValue);
+                        params.set('run', '1');
+                        
+                        projectsInput.value = ""; 
+                        window.location.href = window.location.pathname + "?" + params.toString();
                     }
                 });
             }
+
+            // Enfocar automáticamente el input de proyectos al cargar la página
+            const projectsInput = document.getElementById('proyectos');
+            if (projectsInput) projectsInput.focus();
 
             async function openProductionSelector(projectCode) {
                 currentProjectToSelect = projectCode;
@@ -651,6 +698,12 @@
                 modal.show();
                 
                 backToArticles();
+                
+                const selectorModalEl = document.getElementById('selectorProduccionModal');
+                selectorModalEl.addEventListener('hidden.bs.modal', function () {
+                    const projectsInput = document.getElementById('proyectos');
+                    if (projectsInput) projectsInput.focus();
+                }, { once: true }); // Only for this session of the modal
                 
                 const tbody = document.getElementById('tbodyArticles');
                 tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4"><i class="fas fa-sync fa-spin me-2"></i> Cargando artículos...</td></tr>';
@@ -898,7 +951,8 @@
                         body: JSON.stringify({
                             id_ordens: finalSelection,
                             scenario_id: scenarioId,
-                            project_code: currentProjectToSelect
+                            project_code: currentProjectToSelect,
+                            force: true
                         })
                     });
                     
@@ -1679,13 +1733,26 @@
                                 itemEl.dataset.priority = newPriority;
                             } else {
                                 const data = await response.json();
-                                alert("Error al guardar la nueva posición: " + (data.error || response.statusText));
-                                window.location.reload(); 
-                            }
+                                Swal.fire({
+                                    title: 'Error',
+                                    text: "Error al guardar la nueva posición: " + (data.error || response.statusText),
+                                    icon: 'error',
+                                    confirmButtonText: 'Cerrar',
+                                    customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                                }).then(() => {
+                                    window.location.reload();
+                                });                            }
                         } catch (e) {
                             console.error(e);
-                            alert("Error de conexión al guardar posición: " + e.message);
-                            window.location.reload();
+                            Swal.fire({
+                                title: 'Error de Conexión',
+                                text: "No se pudo guardar la posición: " + e.message,
+                                icon: 'error',
+                                confirmButtonText: 'Cerrar',
+                                customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                            }).then(() => {
+                                window.location.reload();
+                            });
                         }
                     }
                 });
@@ -1715,7 +1782,15 @@
                                 headers: { 'X-CSRFToken': '{{ csrf_token }}' }
                             });
                             if (resp.ok) window.location.reload();
-                            else alert("Error al publicar");
+                            else {
+                                Swal.fire({
+                                    title: 'Error',
+                                    text: 'Hubo un problema al publicar el escenario.',
+                                    icon: 'error',
+                                    confirmButtonText: 'Cerrar',
+                                    customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                                });
+                            }
                         } catch(e) { console.error(e); }
                     }
                 });
@@ -1727,11 +1802,25 @@
                 btnDeleteScen.addEventListener('click', async () => {
                     const sel = document.getElementById('scenario-selector');
                     const id = sel.value;
-                    if (!id) return alert("Seleccione un escenario primero.");
+                    if (!id) {
+                        return Swal.fire({
+                            title: 'Atención',
+                            text: 'Seleccione un escenario primero.',
+                            icon: 'info',
+                            confirmButtonText: 'Aceptar',
+                            customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                        });
+                    }
                     
                     const opt = sel.options[sel.selectedIndex];
                     if (opt.dataset.principal === '1') {
-                        return alert("No se puede eliminar el escenario principal.");
+                        return Swal.fire({
+                            title: 'Acción No Permitida',
+                            text: 'No se puede eliminar el escenario principal (Oficial).',
+                            icon: 'error',
+                            confirmButtonText: 'Entendido',
+                            customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                        });
                     }
 
                     const result = await Swal.fire({
@@ -1751,7 +1840,15 @@
                                 headers: { 'X-CSRFToken': '{{ csrf_token }}' }
                             });
                             if (resp.ok) window.location.href = window.location.pathname;
-                            else alert("Error al eliminar");
+                            else {
+                                Swal.fire({
+                                    title: 'Error',
+                                    text: 'No se pudo eliminar el escenario.',
+                                    icon: 'error',
+                                    confirmButtonText: 'Cerrar',
+                                    customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                                });
+                            }
                         } catch(e) { console.error(e); }
                     }
                 });
@@ -1875,10 +1972,16 @@
                                 body: JSON.stringify({ scenario_id: scenarioIdSelection })
                             });
                             
-                            if (response.ok) {
+                             if (response.ok) {
                                 window.location.reload();
                             } else {
-                                alert("Error al vaciar la planificación");
+                                Swal.fire({
+                                    title: 'Error',
+                                    text: 'Hubo un problema al vaciar la planificación.',
+                                    icon: 'error',
+                                    confirmButtonText: 'Cerrar',
+                                    customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                                });
                             }
                         } catch (e) { console.error(e); }
                     }
@@ -1929,16 +2032,26 @@
                             const nameInput = document.getElementById('newScenarioName');
                             const name = nameInput ? nameInput.value.trim() : '';
                             if (!name) { 
-                                alert("Por favor, ingrese un nombre para el nuevo escenario."); 
-                                return; 
+                                return Swal.fire({
+                                    title: 'Campo Requerido',
+                                    text: 'Por favor, ingrese un nombre para el nuevo escenario.',
+                                    icon: 'warning',
+                                    confirmButtonText: 'Aceptar',
+                                    customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                                });
                             }
                             payload.nombre = name;
                         } else {
                             const updateSelect = document.getElementById('existingScenarioSelect');
                             const updateId = updateSelect ? updateSelect.value : '';
                             if (!updateId) { 
-                                alert("Por favor, seleccione un escenario para sobrescribir."); 
-                                return; 
+                                return Swal.fire({
+                                    title: 'Selección Requerida',
+                                    text: 'Por favor, seleccione un escenario para sobrescribir.',
+                                    icon: 'warning',
+                                    confirmButtonText: 'Aceptar',
+                                    customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                                });
                             }
                             payload.id = updateId; // Set 'id' for the backend
                             payload.update_id = updateId; // Keep 'update_id' for compatibility
@@ -1986,7 +2099,13 @@
                             console.error(e);
                             this.disabled = false;
                             this.innerHTML = '<i class="fas fa-check me-1"></i>Confirmar Guardado';
-                            alert("Error de red o conexión.");
+                            Swal.fire({
+                                title: 'Error de Red',
+                                text: 'No se pudo comunicar con el servidor.',
+                                icon: 'error',
+                                confirmButtonText: 'Cerrar',
+                                customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                            });
                         }
                     });
                 }

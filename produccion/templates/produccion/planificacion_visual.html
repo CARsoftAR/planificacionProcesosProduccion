@@ -255,7 +255,7 @@
         }
 
         .machine-header-cell {
-            height: 50px;
+            height: 65px;
             border-bottom: 1px solid var(--border);
             display: flex;
             align-items: center;
@@ -290,7 +290,7 @@
         
         /* Time Header */
         .time-header-row {
-            height: 50px;
+            height: 65px;
             display: flex;
             background: var(--bg-header);
             border-bottom: 1px solid var(--border);
@@ -305,7 +305,7 @@
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            font-size: 0.7rem;
+            font-size: 0.85rem;
             color: var(--text-muted);
             transition: background-color 0.2s;
         }
@@ -983,10 +983,43 @@
             transform: translateY(-1px);
         }
         
+        /* Dynamic active states - preserve original button color */
+        .btn-glass[data-color="red"].active, 
+        .active-glass.color-attention {
+            background: rgba(239, 68, 68, 0.15) !important;
+            border-left: 4px solid #ef4444 !important;
+            box-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
+            color: #991b1b !important;
+        }
+        
+        .btn-glass[data-color="green"].active,
+        .active-glass.color-success {
+            background: rgba(16, 185, 129, 0.15) !important;
+            border-left: 4px solid #10b981 !important;
+            box-shadow: 0 0 8px rgba(16, 185, 129, 0.4);
+            color: #065f46 !important;
+        }
+        
+        .btn-glass[data-color="yellow"].active,
+        .active-glass.color-warning {
+            background: rgba(245, 158, 11, 0.15) !important;
+            border-left: 4px solid #f59e0b !important;
+            box-shadow: 0 0 8px rgba(245, 158, 11, 0.4);
+            color: #92400e !important;
+        }
+        
+        .btn-glass[data-color="blue"].active,
+        .active-glass.color-info {
+            background: rgba(59, 130, 246, 0.15) !important;
+            border-left: 4px solid #3b82f6 !important;
+            box-shadow: 0 0 8px rgba(59, 130, 246, 0.4);
+            color: #1d4ed8 !important;
+        }
+
         .active-glass {
             background: rgba(59, 130, 246, 0.1) !important;
-            border-color: #3b82f6 !important;
-            box-shadow: 0 0 10px rgba(59, 130, 246, 0.2);
+            border-left: 4px solid #3b82f6 !important;
+            box-shadow: 0 0 8px rgba(59, 130, 246, 0.3);
             color: #1d4ed8 !important;
         }
 
@@ -1164,13 +1197,13 @@
                               title="Ver Dependencias">
                           <i class="fas fa-project-diagram"></i>
                       </button>
-                      <button id="btn-toggle-cp" class="btn-modern glass rounded-pill px-2 active-glass" style="height: 34px; border-color: #e2e8f0; color: #475569;" onclick="toggleCriticalPath();" title="Toggle Ruta Crítica">
+                      <button id="btn-toggle-cp" class="btn-modern glass rounded-pill px-2 btn-glass" data-color="red" style="height: 34px; border-color: #e2e8f0; color: #475569;" onclick="toggleCriticalPath();" title="Toggle Ruta Crítica">
                           <i class="fas fa-fire text-danger"></i>
                       </button>
-                      <button id="btn-toggle-delays" class="btn-modern glass rounded-pill px-2 active-glass" style="height: 34px; border-color: #e2e8f0; color: #475569;" onclick="toggleDelayIndicators();" title="Toggle Atrasos">
+                      <button id="btn-toggle-delays" class="btn-modern glass rounded-pill px-2 btn-glass" data-color="yellow" style="height: 34px; border-color: #e2e8f0; color: #475569;" onclick="toggleDelayIndicators();" title="Toggle Atrasos">
                           <i class="fas fa-clock text-warning"></i>
                       </button>
-                      <button id="btn-toggle-tooltips" class="btn-modern glass rounded-pill px-2 active-glass" style="height: 34px; border-color: #e2e8f0; color: #475569;" onclick="toggleTooltips();" title="Toggle Tooltips">
+                      <button id="btn-toggle-tooltips" class="btn-modern glass rounded-pill px-2 btn-glass" data-color="blue" style="height: 34px; border-color: #e2e8f0; color: #475569;" onclick="toggleTooltips();" title="Toggle Tooltips">
                           <i class="fas fa-comment text-primary"></i>
                       </button>
                       <button id="btn-filter-ops" 
@@ -1866,11 +1899,11 @@
                                     {% endif %}
                                     <div class="time-hour {% if col.is_day_start %}day-start{% endif %}" style="position: relative;">
                                         {% if col.is_day_start %}
-                                        <div style="position: absolute; top: 4px; left: 6px; font-size: 0.6rem; font-weight: 800; color: var(--accent); white-space: nowrap; text-transform: uppercase;">
+                                        <div style="position: absolute; top: 6px; left: 8px; font-size: 0.85rem; font-weight: 800; color: var(--accent); white-space: nowrap; text-transform: uppercase;">
                                             {{ col.datetime|date:"d M" }} <span class="opacity-50">• {{ col.datetime|date:"D" }}</span>
                                         </div>
                                         {% endif %}
-                                        <span style="margin-top: 14px; font-weight: 500;">{{ col.datetime|date:"H" }}</span>
+                                        <span style="margin-top: 20px; font-weight: 600;">{{ col.datetime|date:"H" }}</span>
                                     </div>
                                 {% endfor %}
                             </div>
@@ -1919,6 +1952,7 @@
 
                                 <!-- Task blocks -->
                                 {% for task in row.tasks %}
+                                {% if task.visual_width > 0 %}
                                 {% with proj_color=task.ProyectoCode|string_to_color %}
                                 <div id="op-{{ task.Idorden }}-{{ task.segment_index }}" 
                                      class="task-block {% if task.segment_index > 0 %}task-continuation{% endif %}{% if task.is_critical %} critical-task{% endif %}"
@@ -2077,6 +2111,7 @@
                                 </div>
                             </div>
                             {% endwith %}
+                            {% endif %}
                         {% endfor %}
 
                         <!-- Maintenance Blocks -->
@@ -2175,10 +2210,10 @@
         const btn = document.getElementById('btn-toggle-cp');
         if (!window.cpVisible) {
             body.classList.remove('show-cp');
-            if (btn) btn.classList.remove('active-glass');
+            if (btn) btn.classList.remove('active');
         } else {
             body.classList.add('show-cp');
-            if (btn) btn.classList.add('active-glass');
+            if (btn) btn.classList.add('active');
         }
     };
 
@@ -2188,10 +2223,22 @@
         const btn = document.getElementById('btn-toggle-delays');
         if (!window.delaysVisible) {
             body.classList.remove('show-delays');
-            if (btn) btn.classList.remove('active-glass');
+            if (btn) btn.classList.remove('active');
         } else {
             body.classList.add('show-delays');
-            if (btn) btn.classList.add('active-glass');
+            if (btn) btn.classList.add('active');
+        }
+    };
+
+    window.toggleTooltips = function() {
+        window.tooltipsVisible = !window.tooltipsVisible;
+        const btn = document.getElementById('btn-toggle-tooltips');
+        if (btn) {
+            if (window.tooltipsVisible) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
         }
     };
 

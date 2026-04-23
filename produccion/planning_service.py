@@ -67,16 +67,29 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
             start_date = timezone.make_aware(start_date)
 
 
-    # 1. Load Schedule into a usable format
     # format: {'LV': [{'start': time, 'end': time}, ...], 'SA': [...]}
     from collections import defaultdict
     schedules = defaultdict(list)
-    for h in maquina.horarios.all().order_by('hora_inicio'):
-        schedules[h.dia].append({'start': h.hora_inicio, 'end': h.hora_fin})
+    
+    # Detection of 'SIN ASIGNAR' row (MAC00)
+    if isinstance(maquina, dict):
+        m_id = str(maquina.get('id_maquina', '')).strip()
+        m_name = str(maquina.get('nombre', '')).strip().upper()
+    else:
+        m_id = str(getattr(maquina, 'id_maquina', '')).strip()
+        m_name = str(getattr(maquina, 'nombre', '')).strip().upper()
+    is_unassigned_row = (m_id == 'MAC00') or ('SIN ASIGNAR' in m_name)
 
-    if not schedules:
-        # Fallback 07:00 - 16:00 LV
-        schedules['LV'] = [{'start': datetime.strptime("07:00", "%H:%M").time(), 'end': datetime.strptime("16:00", "%H:%M").time()}]
+    if is_unassigned_row:
+        # MAC00 strict schedule: 07:00 - 22:00 LV
+        schedules['LV'] = [{'start': datetime.strptime("07:00", "%H:%M").time(), 'end': datetime.strptime("22:00", "%H:%M").time()}]
+    else:
+        for h in maquina.horarios.all().order_by('hora_inicio'):
+            schedules[h.dia].append({'start': h.hora_inicio, 'end': h.hora_fin})
+
+        if not schedules:
+            # Fallback 07:00 - 16:00 LV
+            schedules['LV'] = [{'start': datetime.strptime("07:00", "%H:%M").time(), 'end': datetime.strptime("16:00", "%H:%M").time()}]
 
         
     active_maints = []
@@ -120,10 +133,6 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
             m_name = str(getattr(maquina, 'nombre', '')).strip().upper()
         
         is_unassigned_row = (m_id == 'MAC00') or ('SIN ASIGNAR' in m_name)
-
-        # Safety check for minimal duration
-        if duration_hours < 0.001:
-            duration_hours = 0.001 # Minimum visibility
 
         remaining_hours = duration_hours
         
