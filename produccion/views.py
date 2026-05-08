@@ -2138,6 +2138,20 @@ def planificacion_visual(request):
     
     # Extract data for context
     timeline_data = data['timeline_data']
+    
+    # --- 4. RENDERING OPTIMIZATION (OpenCode Fix) ---
+    # User requested: "Limitá la cantidad de bloques que el frontend intenta dibujar simultáneamente si el sistema detecta una inconsistencia masiva de fechas."
+    MAX_BLOCKS_PER_MACHINE = 150 # Safety cap
+    total_blocks = 0
+    for row in timeline_data:
+        if len(row['tasks']) > MAX_BLOCKS_PER_MACHINE:
+            print(f"DEBUG: [Optimization] Capping tasks for machine {row['machine'].id_maquina} from {len(row['tasks'])} to {MAX_BLOCKS_PER_MACHINE}")
+            row['tasks'] = row['tasks'][:MAX_BLOCKS_PER_MACHINE]
+            row['rendering_capped'] = True
+        total_blocks += len(row['tasks'])
+    
+    if total_blocks > 2000: # Total global cap
+        print(f"DEBUG: [Optimization] Massive block count detected ({total_blocks}). UI performance might be degraded.")
     time_columns = data['time_columns']
     valid_dates = data['valid_dates']
     start_simulation = data['start_simulation']
@@ -2317,6 +2331,7 @@ def planificacion_visual(request):
         'active_scenario': data.get('active_scenario', None),
         'plan_mode': data.get('plan_mode', 'manual'),
         'gantt_needs_clear': data.get('gantt_needs_clear', False),
+        'any_rendering_capped': any(row.get('rendering_capped') for row in timeline_data),
     }
 
 
@@ -2694,7 +2709,7 @@ def create_scenario(request):
                     # Clone Planned Tasks
                     planned = PlannedTask.objects.using('default').filter(scenario=source)
                     new_planned = [
-                        PlannedTask(id_orden=p.id_orden, scenario=scenario)
+                        PlannedTask(id_orden=p.id_orden, scenario=scenario, proyecto_code=p.proyecto_code)
                         for p in planned
                     ]
                     PlannedTask.objects.using('default').bulk_create(new_planned)
@@ -2736,7 +2751,7 @@ def create_scenario(request):
                     # Clone Planned Tasks
                     planned = PlannedTask.objects.using('default').filter(scenario=source)
                     new_planned = [
-                        PlannedTask(id_orden=p.id_orden, scenario=new_scenario)
+                        PlannedTask(id_orden=p.id_orden, scenario=new_scenario, proyecto_code=p.proyecto_code)
                         for p in planned
                     ]
                     PlannedTask.objects.using('default').bulk_create(new_planned)
@@ -3525,10 +3540,15 @@ def api_confirm_selected_tasks(request):
                         id_orden__in=project_op_ids
                     ).delete()
             
-            # 2. Borramos prioridades manuales previas de las OPs que estamos guardando ahora
-            # (Para que arranquen en su máquina original del ERP)
+            # 2. Borramos prioridades manuales y estado 'oculto' previo de las OPs que estamos guardando ahora
+            # (Para que aparezcan y arranquen en su máquina original del ERP)
             PrioridadManual.objects.using('default').filter(
                 id_orden__in=id_ordens, 
+                scenario=active_scenario
+            ).delete()
+            
+            HiddenTask.objects.using('default').filter(
+                id_orden__in=id_ordens,
                 scenario=active_scenario
             ).delete()
 

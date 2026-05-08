@@ -293,40 +293,9 @@ def get_gantt_data(request, force_run=False):
         if active_scenario and not request.session.get('last_scenario_id'):
             request.session['last_scenario_id'] = str(active_scenario.id)
             
-    # NO FALLBACK: The Gantt is reactive. Only shows what was explicitly requested.
-    # If no projects in URL AND no projects in scenario → return empty immediately 
-    # (no old session data - this stops the "old projects loop" issue)
-    if not raw_proyectos:
-        # Only use scenario defaults if explicitly requested (user selected this scenario)
-        # Don't use old session data
-        if active_scenario and active_scenario.proyectos:
-            raw_proyectos = active_scenario.proyectos
-        else:
-            # No proyectos at all - return empty
-            raw_proyectos = None
-            for maquina in maquinas:
-                timeline_data.append({
-                    'machine': maquina,
-                    'tasks': []
-                })
-            return {
-                'timeline_data': timeline_data,
-                'start_simulation': start_simulation,
-                'time_columns': [],
-                'valid_dates': [],
-                'dependency_map': {},
-                'global_min_h': 7,
-                'global_max_h': 22,
-                'ran_calculation': False,
-                'active_scenario': active_scenario,
-                'analysis': {'machines': [], 'project_alerts': [], 'adaptive_alerts': []},
-                'system_alerts': [],
-                'day_max_hours': {},
-                'date_start_col': {},
-                'plan_mode': plan_mode,
-                'gantt_needs_clear': True,
-                'gantt_empty_reason': 'no_projects_specified',
-            }
+    # SYNC: If no projects in URL, fallback to scenario projects
+    if not raw_proyectos and active_scenario and active_scenario.proyectos:
+        raw_proyectos = active_scenario.proyectos
 
         
     virtual_overrides = {}
@@ -385,19 +354,69 @@ def get_gantt_data(request, force_run=False):
         deps_filter['id_orden'] = id_orden
 
     # NEW: Respect manual selections from the article selector (PlannedTask)
-    if proyectos_list and active_scenario:
+    # We fetch ALL planned IDs for the scenario. The get_planificacion_data call 
+    # will later filter them by proyecto if proyectos_list is present in deps_filter.
+    if active_scenario:
         planned_ids = list(PlannedTask.objects.using('default').filter(
-            scenario=active_scenario,
-            proyecto_code__in=proyectos_list
+            scenario=active_scenario
         ).values_list('id_orden', flat=True))
         
         if planned_ids:
-            # Shift to strict ID-based filtering
-            deps_filter = {'id_orden_in': planned_ids}
+            # Shift to strict ID-based filtering (will be ANDed with proyectos if present)
+            deps_filter['id_orden_in'] = planned_ids
 
+    # Match spreadsheet logic: in manual/scenario mode, we often want to see 
+    # what we planned even if the ERP thinks it is completed (e.g. for audits or manual overrides)
+    show_completed = (plan_mode != 'original')
     
-    all_tasks_raw = get_planificacion_data(deps_filter)
+    # --- 1. ENTRANCE VALIDATION (OpenCode Fix) ---
+    # User requested: "verificá si la lista de proyectos a planificar está vacía. Si no hay proyectos seleccionados, el sistema debe mostrar un aviso y no ejecutar nada."
+    has_selection = bool(proyectos_list or id_orden or (active_scenario and PlannedTask.objects.using('default').filter(scenario=active_scenario).exists()))
     
+    if not has_selection and not force_run:
+        print("DEBUG: [Validation] No projects or tasks selected. Aborting planning execution.")
+        return {
+            'timeline_data': [{'machine': m, 'tasks': [], 'maintenances': []} for m in maquinas],
+            'time_columns': [],
+            'valid_dates': [],
+            'start_simulation': start_simulation,
+            'dependency_map': {},
+            'global_min_h': 7,
+            'global_max_h': 22,
+            'gantt_empty_reason': 'no_selection',
+            'system_alerts': [{'type': 'info', 'message': 'Seleccione proyectos para iniciar la planificación.'}]
+        }
+
+    # --- 2. AUTOMATIC CACHE CLEANUP (OpenCode Fix) ---
+    # User requested: "función automática que limpie la tabla de PlanificacionTemporal antes de cada corrida"
+    # We use PlannedTask and PrioridadManual as the "Temporal" state.
+    if request.GET.get('clear_cache') == '1':
+        from django.db import transaction
+        with transaction.atomic(using='default'):
+            PlannedTask.objects.using('default').filter(scenario=active_scenario).delete()
+            PrioridadManual.objects.using('default').filter(scenario=active_scenario).delete()
+            print(f"DEBUG: [Cleanup] Cache cleared for scenario {active_scenario.id}")
+
+    all_tasks_raw = get_planificacion_data(deps_filter, exclude_completed=not show_completed)
+    
+    # --- 3. ORPHAN FILTER (OpenCode Fix) ---
+    # User requested: "solo intente graficar procesos que tengan un Proyecto y una Máquina válidos asignados."
+    def is_valid_task(t):
+        p_code = t.get('ProyectoCode')
+        m_name = t.get('MAQUINAD')
+        # We exclude tasks without project or without machine name (not even SIN ASIGNAR if it's null)
+        if not p_code or not m_name:
+            return False
+        # Also exclude tasks with 0 duration as they cause "ghost" rendering
+        if float(t.get('Tiempo_Proceso', 0) or 0) <= 0.001:
+            return False
+        return True
+
+    original_count = len(all_tasks_raw)
+    all_tasks_raw = [t for t in all_tasks_raw if is_valid_task(t)]
+    if len(all_tasks_raw) < original_count:
+        print(f"DEBUG: [Orphans] Filtered {original_count - len(all_tasks_raw)} tasks with invalid project/machine or zero duration.")
+
     # --- FIX: Asegurar que tareas con override manual (redistribuciones) se carguen aunque no coincidan con el filtro ---
     if virtual_overrides:
         existing_ids = {str(int(float(t.get('Idorden')))) for t in all_tasks_raw if t.get('Idorden')}
@@ -410,7 +429,7 @@ def get_gantt_data(request, force_run=False):
             if 'proyectos' in deps_filter:
                 extra_filtros['proyectos'] = deps_filter['proyectos']
                 
-            extra_tasks = get_planificacion_data(extra_filtros, exclude_completed=True)
+            extra_tasks = get_planificacion_data(extra_filtros, exclude_completed=not show_completed)
             if extra_tasks:
                 all_tasks_raw.extend(extra_tasks)
     
@@ -480,10 +499,41 @@ def get_gantt_data(request, force_run=False):
         except (ValueError, TypeError):
             return 0.0
 
-    # --- DEPENDENCIES (Explicit Only) ---
-    # We no longer generate automatic level-based dependencies to favor parallelism.
-    # Level is now interpreted as Dispatch Priority within the machine.
+    # --- DEPENDENCIES ---
     dependency_map = {}
+
+    # 1. AUTO-DEPENDENCIAS POR NIVEL (Mismo Proyecto)
+    # Regla: Nivel N depende de N+1 (Jerarquía de ensamble)
+    for formula, p_tasks in orders_map.items():
+        by_level = defaultdict(list)
+        for t in p_tasks:
+            lvl = int(get_nivel(t))
+            by_level[lvl].append(str(t['Idorden']))
+        
+        sorted_lvls = sorted(by_level.keys(), reverse=True) 
+        for i in range(len(sorted_lvls)-1):
+            upper_lvl = sorted_lvls[i]
+            lower_lvl = sorted_lvls[i+1]
+            # Si son niveles correlativos, creamos el vínculo
+            if upper_lvl == lower_lvl + 1:
+                for succ in by_level[lower_lvl]:
+                    if succ not in dependency_map: dependency_map[succ] = []
+                    for pred in by_level[upper_lvl]:
+                        if pred not in dependency_map[succ]:
+                            dependency_map[succ].append(pred)
+
+    # 2. DEPENDENCIAS MANUALES (Sobrescriben o complementan)
+    def clean_id(val):
+        try: return str(int(float(val)))
+        except: return str(val)
+
+    from .models import TaskDependency
+    db_deps = TaskDependency.objects.all()
+    for dep in db_deps:
+        s_succ = clean_id(dep.successor_id)
+        s_pred = clean_id(dep.predecessor_id)
+        if s_succ not in dependency_map: dependency_map[s_succ] = []
+        if s_pred not in dependency_map[s_succ]: dependency_map[s_succ].append(s_pred)
 
     global_task_end_dates = {}
     unassigned_tasks = [
@@ -506,16 +556,6 @@ def get_gantt_data(request, force_run=False):
             v_start = max_p_end
         global_task_end_dates[tid] = v_start + timedelta(hours=duration)
 
-    def clean_id(val):
-        try: return str(int(float(val)))
-        except: return str(val)
-
-    db_deps = TaskDependency.objects.all()
-    for dep in db_deps:
-        s_succ = clean_id(dep.successor_id)
-        s_pred = clean_id(dep.predecessor_id)
-        if s_succ not in dependency_map: dependency_map[s_succ] = []
-        if s_pred not in dependency_map[s_succ]: dependency_map[s_succ].append(s_pred)
 
     # --- SIMULATION ---
     machine_tasks_map = {}
@@ -541,17 +581,27 @@ def get_gantt_data(request, force_run=False):
         machine_id = str(maquina.id_maquina).strip()
         current_machine_name = str(maquina.nombre).strip().upper()
         
+        if machine_id == 'MAC06':
+            print(f"DEBUG: Processing Machine {current_machine_name} (ID: {machine_id})")
+
         if machine_id == 'MAC00' or 'SIN ASIGNAR' in current_machine_name:
             native_tasks = [t for t in all_tasks_for_deps if str(t.get('Idmaquina', '')).strip() in ['', 'MAC00'] or str(t.get('MAQUINAD', '')).strip().upper() == 'SIN ASIGNAR']
         else:
             native_tasks = all_tasks_by_machine.get(machine_id, [])
             if not native_tasks and current_machine_name in all_tasks_by_machine:
                 native_tasks = all_tasks_by_machine[current_machine_name]
+            
+            if machine_id == 'MAC06':
+                print(f"DEBUG: MAC06 native_tasks count: {len(native_tasks)}")
         
         active_tasks = []
         for t in native_tasks:
             # FILTRO CRÍTICO: Si el tiempo es despreciable o cero, ignorar
-            if float(t.get('Tiempo_Proceso', 0) or 0) <= 0.01:
+            tp = float(t.get('Tiempo_Proceso', 0) or 0)
+            if machine_id == 'MAC06':
+                print(f"DEBUG: MAC06 task {t.get('Idorden')} Tiempo_Proceso: {tp}")
+            
+            if tp <= 0.01:
                 continue
 
             try:
@@ -702,6 +752,10 @@ def get_gantt_data(request, force_run=False):
             recalc = calculate_timeline(maquina, tasks, start_date=start_simulation, 
                                       task_min_start_times=min_start_times, task_force_start_times=force_start_times,
                                       non_working_days=non_working_days, half_day_holidays=half_day_holidays)
+            
+            if machine_id == 'MAC06' and pass_idx == 4:
+                 print(f"DEBUG: Final pass for MAC06: {len(recalc)} segments calculated.")
+
             final_timeline_map[machine_id] = {'machine': maquina, 'tasks': recalc}
             for ct in recalc:
                  tid = str(ct.get('Idorden'))
@@ -907,5 +961,7 @@ def get_gantt_data(request, force_run=False):
         'analysis': {'machines': machine_analysis, 'project_alerts': project_alerts, 'adaptive_alerts': get_adaptive_capacity_alerts(timeline_data, maquinas)},
         'system_alerts': system_alerts, 'day_max_hours': day_max_hours, 'date_start_col': date_start_col,
         'plan_mode': plan_mode,
+        'proyectos_value': raw_proyectos if raw_proyectos else '',
+        'id_orden_value': id_orden if id_orden else '',
         'gantt_needs_clear': request.session.pop('gantt_needs_clear', False)
     }

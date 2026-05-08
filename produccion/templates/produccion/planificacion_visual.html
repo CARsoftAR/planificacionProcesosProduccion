@@ -1179,6 +1179,8 @@
 
     {% include "produccion/global_navbar.html" %}
     <div class="container-fluid p-0">
+
+        <div class="gantt-header">
         <div class="top-bar d-flex justify-content-end align-items-center">
              <div class="d-flex align-items-center gap-2">
 
@@ -1231,6 +1233,12 @@
                           <li>
                               <a class="dropdown-item dropdown-item-premium" href="#" id="btnExport">
                                   <i class="fas fa-file-excel me-2 text-success"></i> Exportar Excel
+                              </a>
+                          </li>
+                          <li><hr class="dropdown-divider"></li>
+                          <li>
+                              <a class="dropdown-item dropdown-item-premium text-danger" href="#" onclick="window.confirmClearPlanning()">
+                                  <i class="fas fa-trash-alt me-2"></i> Limpiar Planificación
                               </a>
                           </li>
                       </ul>
@@ -1463,6 +1471,51 @@
         <script>
             // Global State
             const ACTIVE_SCENARIO_ID = "{{ active_scenario.id|default:'' }}";
+
+            // Cleanup function for OpenCode Fix
+            window.confirmClearPlanning = function() {
+                Swal.fire({
+                    title: '¿Limpiar Planificación?',
+                    text: 'Se eliminarán todas las OPs seleccionadas y sus movimientos manuales en este escenario. Esta acción no se puede deshacer.',
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonText: 'Sí, limpiar todo',
+                    cancelButtonText: 'Cancelar',
+                    customClass: {
+                        popup: 'premium-swal',
+                        confirmButton: 'premium-confirm',
+                        cancelButton: 'premium-cancel'
+                    },
+                    buttonsStyling: false
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        fetch('/produccion/api/clear_all_planning/', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRFToken': '{{ csrf_token }}'
+                            },
+                            body: JSON.stringify({ scenario_id: ACTIVE_SCENARIO_ID })
+                        })
+                        .then(response => response.json())
+                        .then(data => {
+                            if (data.status === 'ok') {
+                                Swal.fire({
+                                    title: '¡Limpiado!',
+                                    text: 'La planificación se ha vaciado correctamente.',
+                                    icon: 'success',
+                                    timer: 2000,
+                                    showConfirmButton: false
+                                }).then(() => {
+                                    window.location.reload();
+                                });
+                            } else {
+                                Swal.fire('Error', data.error || 'No se pudo limpiar la planificación', 'error');
+                            }
+                        });
+                    }
+                });
+            };
 
             // Toggle detail rows in analysis cards
             window.toggleDetail = function(id) {
@@ -1884,6 +1937,15 @@
     </div>
 
         <div class="gantt-container {% if plan_mode == 'original' %}gantt-expanded{% endif %}">
+            <!-- Warning: Rendering Capped -->
+            {% if any_rendering_capped %}
+            <div class="alert alert-warning m-2 p-2 smaller d-flex align-items-center gap-2 border-warning shadow-sm" style="background: #fffbeb; position: sticky; left: 0; z-index: 1000;">
+                <i class="fas fa-exclamation-triangle text-warning"></i>
+                <div>
+                    <strong>Vista optimizada:</strong> Se ha limitado el número de bloques por máquina debido a la alta saturación.
+                </div>
+            </div>
+            {% endif %}
             <div id="gantt-body-scroll" style="flex: 1; overflow: auto; display: flex; flex-direction: column; position: relative;">
                 <div style="min-width: calc(200px + {{ total_width }}px); position: relative; display: flex; flex-direction: column; flex: 1;">
                     <!-- 1. HEADER ROW (Sticky Top) -->
@@ -3857,6 +3919,59 @@
 </script>
     <!-- Portal Tooltip Global -->
     <div id="global-tooltip" style="display: none; position: absolute; z-index: 10000;"></div>
+
+    <!-- Notification Center Offcanvas -->
+    <div class="offcanvas offcanvas-end border-0 shadow" tabindex="-1" id="notificationCenter" aria-labelledby="notificationCenterLabel" style="width: 400px; background: #f8fafc;">
+        <div class="offcanvas-header bg-white border-bottom py-3">
+            <h5 class="offcanvas-title fw-bold" id="notificationCenterLabel">
+                <i class="fas fa-bell text-primary me-2"></i>Centro de Notificaciones
+            </h5>
+            <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+        </div>
+        <div class="offcanvas-body p-0">
+            <!-- System Alerts Section -->
+            <div class="p-4 border-bottom bg-white">
+                <h6 class="fw-bold smaller text-uppercase text-muted mb-3">Estado del Sistema</h6>
+                {% for alert in system_alerts %}
+                <div class="alert alert-{{ alert.type|default:'info' }} border-0 shadow-sm rounded-3 mb-2 smaller d-flex gap-2">
+                    <i class="fas {% if alert.type == 'danger' %}fa-exclamation-circle{% elif alert.type == 'warning' %}fa-exclamation-triangle{% else %}fa-info-circle{% endif %} mt-1"></i>
+                    <div>{{ alert.message }}</div>
+                </div>
+                {% empty %}
+                <div class="text-center py-3">
+                    <i class="fas fa-check-circle text-success fs-3 mb-2 opacity-25"></i>
+                    <p class="text-muted smaller mb-0">No hay alertas activas</p>
+                </div>
+                {% endfor %}
+            </div>
+
+            <!-- Project Alerts Section -->
+            <div class="p-4">
+                <h6 class="fw-bold smaller text-uppercase text-muted mb-3">Avisos de Proyectos</h6>
+                {% for alert in analysis.project_alerts %}
+                <div class="card border-0 shadow-sm rounded-3 mb-3 overflow-hidden">
+                    <div class="card-body p-3 border-start border-4 border-danger">
+                        <div class="d-flex justify-content-between align-items-start mb-2">
+                            <span class="fw-bold text-dark small">Proyecto {{ alert.proyecto }}</span>
+                            <span class="badge bg-danger rounded-pill smaller">+{{ alert.delay_days }}d</span>
+                        </div>
+                        <div class="smaller text-muted mb-2">
+                            Fin: {{ alert.max_end|date:"d/m/Y" }} | Vto: {{ alert.vto|date:"d/m/Y" }}
+                        </div>
+                        <button class="btn btn-sm btn-outline-danger w-100 smaller py-1" onclick="scrollToProject('{{ alert.proyecto }}')">
+                            Ver en Gantt
+                        </button>
+                    </div>
+                </div>
+                {% empty %}
+                <div class="text-center py-5 opacity-50">
+                    <i class="fas fa-clipboard-check fs-1 mb-2"></i>
+                    <p class="smaller mb-0">Todos los proyectos en término</p>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
 
     <!-- OP Visibility Filter Sidebar -->
     <div id="op-filter-overlay" onclick="window.toggleOpFilterSidebar()"></div>

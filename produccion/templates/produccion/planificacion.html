@@ -179,7 +179,7 @@
             <form method="GET" id="plan-filter-form" class="d-flex align-items-center gap-3 flex-grow-1">
                 <div class="d-flex align-items-center gap-2">
                     <label for="proyectos" class="smaller fw-bold text-muted mb-0"><i class="fas fa-search"></i> Proyectos:</label>
-                    <input type="text" name="proyectos" id="proyectos" class="form-control form-control-sm rounded-pill" style="width: 250px;" value="" placeholder="Ej: 25-001, 23-145">
+                    <input type="text" name="proyectos" id="proyectos" class="form-control form-control-sm rounded-pill" style="width: 250px;" value="{{ proyectos_value|default:'' }}" placeholder="Ej: 25-001, 23-145">
                     <button type="submit" class="btn btn-sm btn-primary rounded-pill px-3">Filtrar</button>
                     {% if request.GET.proyectos %}
                     <a href="{% url 'planificacion_view' %}?plan_mode={{ request.GET.plan_mode|default:'manual' }}" class="btn btn-sm btn-outline-secondary rounded-pill px-2" title="Limpiar Filtros">
