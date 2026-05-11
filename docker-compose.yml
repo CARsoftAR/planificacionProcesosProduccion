@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    container_name: opencode_planner
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+      # Volumen específico para asegurar que el archivo SQLite persista fuera del ciclo de vida del contenedor
+      - db_data:/app/database
+    environment:
+      - DEBUG=0
+      - ALLOWED_HOSTS=localhost,127.0.0.1
+    restart: always
+
+volumes:
+  db_data:

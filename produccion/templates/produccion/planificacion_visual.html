@@ -234,7 +234,7 @@
             border-bottom: 2px solid var(--border);
             position: sticky;
             top: 0;
-            z-index: 10;
+            z-index: 1050; /* Changed from 10 to 1050 to keep dropdowns above the Gantt inner header (z-100) */
         }
 
         .gantt-body {
@@ -469,12 +469,16 @@
             border-right: 1px solid rgba(239,68,68,0.4) !important;
             border-bottom: 1px solid rgba(239,68,68,0.4) !important;
             animation: criticalPulse 2.5s ease-in-out infinite;
+            /* CRITICAL UX: Hardware acceleration to fix Chromium backdrop-filter bug when offcanvas opens */
+            transform: translateZ(0);
+            will-change: box-shadow, border-color, transform;
             /* NO override de background para mantener el fondo blanco de la card */
         }
 
         .task-block.critical-task:hover {
             box-shadow: 0 0 25px rgba(239, 68, 68, 0.7), 0 0 50px rgba(239, 68, 68, 0.3);
             border-color: #f97316 !important;
+            transform: translateY(-4px) scale(1.02) translateZ(0) !important; /* Mantener translateZ en hover */
         }
 
         /* =========================================
@@ -1728,7 +1732,7 @@
     </div>
 
     <!-- Notification Center Offcanvas -->
-    <div class="offcanvas offcanvas-end glass" tabindex="-1" id="notificationCenter" aria-labelledby="notificationCenterLabel" style="width: 400px; border-left: 1px solid rgba(255,255,255,0.2);">
+    <div class="offcanvas offcanvas-end glass" data-bs-backdrop="false" tabindex="-1" id="notificationCenter" aria-labelledby="notificationCenterLabel" style="width: 400px; border-left: 1px solid rgba(255,255,255,0.2);">
         <div class="offcanvas-header bg-primary text-white">
             <h5 class="offcanvas-title fw-bold" id="notificationCenterLabel">
                 <i class="fas fa-bell me-2"></i>Centro de Notificaciones
@@ -3920,58 +3924,7 @@
     <!-- Portal Tooltip Global -->
     <div id="global-tooltip" style="display: none; position: absolute; z-index: 10000;"></div>
 
-    <!-- Notification Center Offcanvas -->
-    <div class="offcanvas offcanvas-end border-0 shadow" tabindex="-1" id="notificationCenter" aria-labelledby="notificationCenterLabel" style="width: 400px; background: #f8fafc;">
-        <div class="offcanvas-header bg-white border-bottom py-3">
-            <h5 class="offcanvas-title fw-bold" id="notificationCenterLabel">
-                <i class="fas fa-bell text-primary me-2"></i>Centro de Notificaciones
-            </h5>
-            <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
-        </div>
-        <div class="offcanvas-body p-0">
-            <!-- System Alerts Section -->
-            <div class="p-4 border-bottom bg-white">
-                <h6 class="fw-bold smaller text-uppercase text-muted mb-3">Estado del Sistema</h6>
-                {% for alert in system_alerts %}
-                <div class="alert alert-{{ alert.type|default:'info' }} border-0 shadow-sm rounded-3 mb-2 smaller d-flex gap-2">
-                    <i class="fas {% if alert.type == 'danger' %}fa-exclamation-circle{% elif alert.type == 'warning' %}fa-exclamation-triangle{% else %}fa-info-circle{% endif %} mt-1"></i>
-                    <div>{{ alert.message }}</div>
-                </div>
-                {% empty %}
-                <div class="text-center py-3">
-                    <i class="fas fa-check-circle text-success fs-3 mb-2 opacity-25"></i>
-                    <p class="text-muted smaller mb-0">No hay alertas activas</p>
-                </div>
-                {% endfor %}
-            </div>
-
-            <!-- Project Alerts Section -->
-            <div class="p-4">
-                <h6 class="fw-bold smaller text-uppercase text-muted mb-3">Avisos de Proyectos</h6>
-                {% for alert in analysis.project_alerts %}
-                <div class="card border-0 shadow-sm rounded-3 mb-3 overflow-hidden">
-                    <div class="card-body p-3 border-start border-4 border-danger">
-                        <div class="d-flex justify-content-between align-items-start mb-2">
-                            <span class="fw-bold text-dark small">Proyecto {{ alert.proyecto }}</span>
-                            <span class="badge bg-danger rounded-pill smaller">+{{ alert.delay_days }}d</span>
-                        </div>
-                        <div class="smaller text-muted mb-2">
-                            Fin: {{ alert.max_end|date:"d/m/Y" }} | Vto: {{ alert.vto|date:"d/m/Y" }}
-                        </div>
-                        <button class="btn btn-sm btn-outline-danger w-100 smaller py-1" onclick="scrollToProject('{{ alert.proyecto }}')">
-                            Ver en Gantt
-                        </button>
-                    </div>
-                </div>
-                {% empty %}
-                <div class="text-center py-5 opacity-50">
-                    <i class="fas fa-clipboard-check fs-1 mb-2"></i>
-                    <p class="smaller mb-0">Todos los proyectos en término</p>
-                </div>
-                {% endfor %}
-            </div>
-        </div>
-    </div>
+    <!-- Duplicate Notification Center Removed -->
 
     <!-- OP Visibility Filter Sidebar -->
     <div id="op-filter-overlay" onclick="window.toggleOpFilterSidebar()"></div>
