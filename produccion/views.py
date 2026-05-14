@@ -3433,7 +3433,7 @@ def api_get_article_processes(request):
         (T.Cantidad - T.Cantidadpp) as Pendiente,
         T.Cantidad as Cantidad,
         T.Cantidadpp as Finalizado,
-        T.Nivel_Planificacion as Nivel_Planificacion,
+        0 as Nivel_Planificacion,
         ISNULL(M.MAQUINAD, T.Idmaquina) as MaquinaNombre
     FROM Tman050 T
     LEFT JOIN Tman010 M ON T.Idmaquina = M.Idmaquina
@@ -3450,7 +3450,7 @@ def api_get_article_processes(request):
         (T.Cantidad - T.Cantidadpp) as Pendiente,
         T.Cantidad as Cantidad,
         T.Cantidadpp as Finalizado,
-        T.Nivel_Planificacion as Nivel_Planificacion,
+        0 as Nivel_Planificacion,
         ISNULL(M.MAQUINAD, T.Idmaquina) as MaquinaNombre
     FROM Tman050 T
     LEFT JOIN Tman010 M ON T.Idmaquina = M.Idmaquina
@@ -3461,12 +3461,35 @@ def api_get_article_processes(request):
     ORDER BY IdOrden
     """
     
-    with connections['production'].cursor() as cursor:
-        cursor.execute(sql, [macro_pk, macro_pk])
-        columns = [col[0] for col in cursor.description]
-        results = [dict(zip(columns, row)) for row in cursor.fetchall()]
-        
-    return JsonResponse({'processes': results})
+    try:
+        with connections['production'].cursor() as cursor:
+            cursor.execute(sql, [macro_pk, macro_pk])
+            columns = [col[0] for col in cursor.description]
+            results = [dict(zip(columns, row)) for row in cursor.fetchall()]
+            
+        # 3. Aplicar Overrides de Nivel desde SQLite (PrioridadManual)
+        if results:
+            op_ids = [r['IdOrden'] for r in results]
+            scenario_id = request.GET.get('scenario_id')
+            active_scenario = get_active_scenario(request, scenario_id=scenario_id)
+            
+            p_manual_db = PrioridadManual.objects.using('default').filter(
+                scenario=active_scenario,
+                id_orden__in=op_ids
+            ).values('id_orden', 'nivel_manual')
+            
+            op_to_nivel = {p['id_orden']: p['nivel_manual'] for p in p_manual_db if p['nivel_manual'] is not None}
+            
+            for r in results:
+                oid = r['IdOrden']
+                if oid in op_to_nivel:
+                    r['Nivel_Planificacion'] = op_to_nivel[oid]
+
+        return JsonResponse({'processes': results})
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        return JsonResponse({'processes': [], 'error': str(e)}, status=500)
 
 @csrf_exempt
 def api_confirm_selected_tasks(request):
