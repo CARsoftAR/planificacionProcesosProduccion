@@ -565,8 +565,7 @@ def planificacion_list(request):
             except:
                 t_id_val = 0
 
-            # Attach piece priority from metadata
-            item['prioridad_pieza'] = planned_metadata.get(t_id_val, 1)
+            # Attach piece priority removed (unified with nivel_manual)
 
             # Update Machine Name based on Local Config if active
             native_code = str(item.get('Idmaquina', '')).strip()
@@ -720,10 +719,9 @@ def planificacion_list(request):
                     # Let's use a per-machine index to keep priorities clean.
                     m_item['OrdenVisual'] = (idx + 1) * 5000.0 # Wide spacing for default
 
-            # 2. Sort by Nivel_Planificacion DESCENDING (Primary), prioridad_pieza ASCENDING (Secondary) and OrdenVisual ASCENDING (Tertiary)
+            # 2. Sort by Nivel_Planificacion DESCENDING (Primary) and OrdenVisual ASCENDING (Secondary)
             machine_items.sort(key=lambda x: (
                 -int(x.get('Nivel_Planificacion') or 0), 
-                int(x.get('prioridad_pieza') or 1),
                 x.get('OrdenVisual', 999999.0)
             ))
             
@@ -3387,26 +3385,23 @@ def api_get_project_articles(request):
                     planned_state[m_pk] = []
                 planned_state[m_pk].append(oid_s)
 
-        # 3. Consultamos las prioridades de pieza guardadas en SQLite para este escenario
-        piece_priorities_map = {}
+        # 3. Consultamos los niveles manuales guardados en SQLite para este escenario
         if planned_ids:
-            piece_priorities_db = PlannedTask.objects.using('default').filter(
+            # Consultamos PrioridadManual para traer el nivel_manual
+            p_manual_db = PrioridadManual.objects.using('default').filter(
                 scenario=active_scenario,
                 id_orden__in=planned_ids
-            ).values('id_orden', 'prioridad_pieza')
+            ).values('id_orden', 'nivel_manual')
             
-            # Como la prioridad es por Pieza (MacroPK), pero se guarda en la OP, 
-            # necesitamos mapear IdOrden -> Prioridad y luego asociarla al MacroPK en el loop de artículos
-            op_to_prio = {p['id_orden']: p['prioridad_pieza'] for p in piece_priorities_db}
+            op_to_nivel = {p['id_orden']: p['nivel_manual'] for p in p_manual_db if p['nivel_manual'] is not None}
             
-            # Enriquecemos los artículos con su prioridad actual
+            # Enriquecemos los artículos con su nivel actual
             for art in articles:
                 m_pk = art.get('MacroPK')
                 if m_pk in planned_state:
-                    # Buscamos la prioridad de cualquiera de sus OPs (debería ser la misma)
                     for oid_s in planned_state[m_pk]:
-                        if int(oid_s) in op_to_prio:
-                            art['prioridad_pieza'] = op_to_prio[int(oid_s)]
+                        if int(oid_s) in op_to_nivel:
+                            art['prioridad_pieza'] = op_to_nivel[int(oid_s)]
                             break
 
     return JsonResponse({
@@ -3432,10 +3427,13 @@ def api_get_article_processes(request):
     sql = """
     SELECT 
         T.Idorden as IdOrden,
+        T.Articulo as Articulo,
+        T.Formula as Denominacion,
         T.Descri as Proceso,
         (T.Cantidad - T.Cantidadpp) as Pendiente,
         T.Cantidad as Cantidad,
         T.Cantidadpp as Finalizado,
+        T.Nivel_Planificacion as Nivel_Planificacion,
         ISNULL(M.MAQUINAD, T.Idmaquina) as MaquinaNombre
     FROM Tman050 T
     LEFT JOIN Tman010 M ON T.Idmaquina = M.Idmaquina
@@ -3446,10 +3444,13 @@ def api_get_article_processes(request):
 
     SELECT 
         T.Idorden as IdOrden,
+        T.Articulo as Articulo,
+        T.Formula as Denominacion,
         T.Descri as Proceso,
         (T.Cantidad - T.Cantidadpp) as Pendiente,
         T.Cantidad as Cantidad,
         T.Cantidadpp as Finalizado,
+        T.Nivel_Planificacion as Nivel_Planificacion,
         ISNULL(M.MAQUINAD, T.Idmaquina) as MaquinaNombre
     FROM Tman050 T
     LEFT JOIN Tman010 M ON T.Idmaquina = M.Idmaquina
@@ -3538,25 +3539,40 @@ def api_confirm_selected_tasks(request):
                 scenario=active_scenario
             ).delete()
 
-            # 3. Guardamos las nuevas OPs
-            # Mapeo invertido para saber qué prioridad le toca a cada ID
-            op_prio_lookup = {}
-            for m_pk, ops in selected_ops_by_article.items():
-                prio = piece_priorities.get(m_pk, 1)
-                for oid in ops:
-                    op_prio_lookup[int(oid)] = prio
-
+            # 3. Guardamos las nuevas OPs en PlannedTask
             tasks_to_create = []
             for oid in id_ordens:
                 tasks_to_create.append(PlannedTask(
                     id_orden=oid,
                     scenario=active_scenario,
-                    proyecto_code=project_code,
-                    prioridad_pieza=op_prio_lookup.get(int(oid), 1)
+                    proyecto_code=project_code
                 ))
             
             if tasks_to_create:
                 PlannedTask.objects.using('default').bulk_create(tasks_to_create)
+
+            # 4. Sincronizamos el Nivel Planificación en PrioridadManual
+            # Necesitamos saber la máquina de cada OP para actualizar PrioridadManual correctamente
+            from django.db import connections
+            with connections['production'].cursor() as cursor:
+                placeholders = ', '.join(['%s'] * len(id_ordens))
+                sql = f"SELECT Idorden, Idmaquina FROM Tman050 WHERE Idorden IN ({placeholders})"
+                cursor.execute(sql, id_ordens)
+                op_maquina_map = {row[0]: row[1] for row in cursor.fetchall()}
+
+            for m_pk, ops in selected_ops_by_article.items():
+                nivel = piece_priorities.get(m_pk)
+                if nivel is not None:
+                    for oid in ops:
+                        oid_int = int(oid)
+                        maquina_id = op_maquina_map.get(oid_int)
+                        if maquina_id:
+                            PrioridadManual.objects.using('default').update_or_create(
+                                id_orden=oid_int,
+                                maquina=maquina_id,
+                                scenario=active_scenario,
+                                defaults={'nivel_manual': int(nivel)}
+                            )
 
             # --- SYNC: Actualizamos el campo 'proyectos' del escenario para persistencia ---
             if project_code and active_scenario:

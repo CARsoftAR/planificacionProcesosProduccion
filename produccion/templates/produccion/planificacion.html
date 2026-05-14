@@ -343,15 +343,15 @@
                                 <table class="table table-hover align-middle mb-0" id="tableArticles">
                                     <thead class="bg-light">
                                         <tr>
-                                            <th class="ps-4 text-center">Planificar</th>
-                                            <th class="text-center">OP</th>
-                                            <th>Artículo</th>
-                                            <th>Denominación (Articulo D.)</th>
-                                            <th class="text-center">Solicitado</th>
-                                            <th class="text-center">Finalizado</th>
-                                            <th class="text-center">Seleccionados</th>
-                                            <th class="text-center" style="width: 100px;">Prioridad</th>
-                                            <th class="pe-4 text-center">Acción</th>
+                                            <th class="ps-4 text-center" style="white-space: normal;">Planificar</th>
+                                            <th class="text-center" style="white-space: normal;">OP</th>
+                                            <th class="text-center" style="white-space: normal;">Artículo</th>
+                                            <th class="text-center" style="white-space: normal;">Denominación</th>
+                                            <th class="text-center" style="white-space: normal;">Solicitado</th>
+                                            <th class="text-center" style="white-space: normal;">Finalizado</th>
+                                            <th class="text-center" style="white-space: normal;">Seleccionados</th>
+                                            <th class="text-center" style="white-space: normal; width: 100px;">Prioridad Pieza</th>
+                                            <th class="pe-4 text-center" style="white-space: normal;">Acción</th>
                                         </tr>
                                     </thead>
                                     <tbody id="tbodyArticles">
@@ -384,16 +384,17 @@
                                 <table class="table table-hover align-middle mb-0" id="tableProcesses">
                                     <thead class="bg-light">
                                         <tr>
-                                            <th class="ps-4 text-center" style="width: 80px;">
-                                                <div class="form-check form-switch form-switch-lg d-inline-block">
-                                                    <input class="form-check-input" type="checkbox" id="checkAllProcesses" onclick="toggleAllProcesses(this)">
-                                                </div>
-                                            </th>
-                                            <th class="text-center">Nivel Planif.</th>
-                                            <th>Descripción del Proceso</th>
-                                            <th class="text-center">Máquina</th>
-                                            <th class="text-center">Cant. Lote</th>
-                                            <th class="pe-4 text-center">Cant. Pendiente</th>
+                                            <th class="ps-4 text-center" style="white-space: normal; width: 80px;">Planificar</th>
+                                            <th class="text-center" style="white-space: normal;">ID Orden</th>
+                                            <th class="text-center" style="white-space: normal;">Articulo</th>
+                                            <th class="text-center" style="white-space: normal;">Denominación</th>
+                                            <th class="text-center" style="white-space: normal;">Solicitado</th>
+                                            <th class="text-center" style="white-space: normal;">Finalizado</th>
+                                            <th class="text-center" style="white-space: normal;">Pendiente</th>
+                                            <th class="text-center" style="white-space: normal;">Proceso</th>
+                                            <th class="text-center" style="white-space: normal;">Maquina</th>
+                                            <th class="text-center" style="white-space: normal;">Nivel Planificación</th>
+                                            <th class="pe-4 text-center" style="white-space: normal;">Acción</th>
                                         </tr>
                                     </thead>
                                     <tbody id="tbodyProcesses">
@@ -451,22 +452,22 @@
                     <table class="table table-bordered table-hover table-sm align-middle">
                         <thead class="table-info text-center sticky-top">
                             <tr>
-                                <th>Acciones</th>
-                                <th>Proyecto</th>
-                                <th>Denominación</th>
-                                <th>N° de OP</th>
-                                <th>Descripción</th>
-                                <th>Prioridad</th>
-                                <th>Nivel Planificación</th>
-                                <th>Máquina</th>
-                                <th class="bg-warning-subtle">Tiempo</th>
-                                <th class="bg-warning-subtle">Tiempo Logrado</th>
-                                <th class="bg-success-subtle text-dark">Eficiencia (KPI)</th>
-                                <th>Cantidad</th>
-                                <th>Cantidad Producida</th>
-                                <th class="bg-warning-subtle">Cantidades Pendientes</th>
-                                 <th class="bg-info-subtle">% Solapamiento</th>
-                                 <th>Tiempo Proceso</th>
+                                <th style="white-space: normal;">Acciones</th>
+                                <th style="white-space: normal;">Proyecto</th>
+                                <th style="white-space: normal;">Denominación</th>
+                                <th style="white-space: normal;">N° de OP</th>
+                                <th style="white-space: normal;">Descripción</th>
+                                <th style="white-space: normal;">Prioridad</th>
+                                <th style="white-space: normal;">Nivel Planificación</th>
+                                <th style="white-space: normal;">Máquina</th>
+                                <th class="bg-warning-subtle" style="white-space: normal;">Tiempo</th>
+                                <th class="bg-warning-subtle" style="white-space: normal;">Tiempo Logrado</th>
+                                <th class="bg-success-subtle text-dark" style="white-space: normal;">Eficiencia (KPI)</th>
+                                <th style="white-space: normal;">Cantidad</th>
+                                <th style="white-space: normal;">Cantidad Producida</th>
+                                <th class="bg-warning-subtle" style="white-space: normal;">Cantidades Pendientes</th>
+                                <th class="bg-info-subtle" style="white-space: normal;">% Solapamiento</th>
+                                <th style="white-space: normal;">Tiempo Proceso</th>
                              </tr>
                         </thead>
                         <tbody>
@@ -827,7 +828,7 @@
                     
                     if (data.processes && data.processes.length > 0) {
                         // Ordenar por Nivel de mayor a menor (Descendente)
-                        data.processes.sort((a, b) => (parseInt(b.Nivel) || 0) - (parseInt(a.Nivel) || 0));
+                        data.processes.sort((a, b) => (parseInt(b.Nivel_Planificacion) || 0) - (parseInt(a.Nivel_Planificacion) || 0));
                         
                         tbody.innerHTML = "";
                         
@@ -855,11 +856,20 @@
                                                onchange="updateProcessSelection('${macroPk}', this)">
                                     </div>
                                 </td>
-                                <td class="fw-bold text-center">${proc.Nivel || '0'}</td>
+                                <td class="text-center small">${proc.IdOrden}</td>
+                                <td class="text-center">${proc.Articulo || '-'}</td>
+                                <td class="text-center small">${proc.Denominacion || '-'}</td>
+                                <td class="text-center">${parseFloat(proc.Cantidad || 0).toFixed(0)}</td>
+                                <td class="text-center">${parseFloat(proc.Finalizado || 0).toFixed(0)}</td>
+                                <td class="text-center fw-bold ${isCompleted ? 'text-muted' : 'text-danger'}">${pendiente.toFixed(2)}</td>
                                 <td>${proc.Proceso}</td>
                                 <td class="text-center"><span class="badge bg-light text-dark border">${proc.MaquinaNombre || '-'}</span></td>
-                                <td class="text-center">${parseFloat(proc.Cantidad || 0).toFixed(0)}</td>
-                                <td class="pe-4 text-center fw-bold ${isCompleted ? 'text-muted' : 'text-danger'}">${pendiente.toFixed(2)}</td>
+                                <td class="text-center fw-bold">${proc.Nivel_Planificacion || '0'}</td>
+                                <td class="pe-4 text-center">
+                                    <button class="btn btn-sm btn-link text-muted" disabled>
+                                        <i class="fas fa-info-circle"></i>
+                                    </button>
+                                </td>
                             `;
                             tbody.appendChild(row);
                         });

@@ -288,11 +288,6 @@ class PlannedTask(models.Model):
         verbose_name='Código de Proyecto',
         help_text='Código del proyecto al que pertenece esta OP (ej: 26-018)'
     )
-    prioridad_pieza = models.IntegerField(
-        default=1, 
-        verbose_name='Prioridad de Pieza',
-        help_text='Nivel de precedencia de la pieza dentro del proyecto'
-    )
     fecha_seleccion = models.DateTimeField(auto_now_add=True)
 
     class Meta:

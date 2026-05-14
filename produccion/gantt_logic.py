@@ -357,10 +357,9 @@ def get_gantt_data(request, force_run=False):
     # will later filter them by proyecto if proyectos_list is present in deps_filter.
         planned_metadata_qs = PlannedTask.objects.using('default').filter(
             scenario=active_scenario
-        ).values('id_orden', 'prioridad_pieza')
+        ).values('id_orden')
         
         planned_ids = [p['id_orden'] for p in planned_metadata_qs]
-        planned_prio_map = {p['id_orden']: p['prioridad_pieza'] for p in planned_metadata_qs}
         
         if planned_ids:
             # Shift to strict ID-based filtering (will be ANDed with proyectos if present)
@@ -451,9 +450,6 @@ def get_gantt_data(request, force_run=False):
                  t['Idorden'] = int(float(t_id_raw))
         except:
              pass
-
-        # Attach piece priority from metadata
-        t['prioridad_pieza'] = planned_prio_map.get(t.get('Idorden'), 1) if 'planned_prio_map' in locals() else 1
 
         mid_code = str(t.get('Idmaquina', '')).strip()
         if mid_code in name_to_id:
@@ -683,7 +679,6 @@ def get_gantt_data(request, force_run=False):
                   
         tasks.sort(key=lambda x: (
             -int(x.get('Nivel_Planificacion') or 0), 
-            int(x.get('prioridad_pieza', 1)),
             x.get('OrdenVisual', 999999)
         ))
         machine_tasks_map[machine_id] = {'maquina': maquina, 'tasks': tasks}
@@ -753,8 +748,8 @@ def get_gantt_data(request, force_run=False):
                      target_start = force_start_times[tid]
                      is_pinned = 1
                  
-                 # PRIORIDAD ABSOLUTA: Despacho por Nivel (Mayor es primero), Prioridad de Pieza (Menor es primero) y luego OrdenVisual o disponibilidad.
-                 return (-get_nivel(t), int(t.get('prioridad_pieza', 1)), t.get('OrdenVisual', 999999), target_start)
+                 # PRIORIDAD ABSOLUTA: Despacho por Nivel (Mayor es primero) y luego OrdenVisual o disponibilidad.
+                 return (-get_nivel(t), t.get('OrdenVisual', 999999), target_start)
             
             tasks.sort(key=get_sort_key)
             recalc = calculate_timeline(maquina, tasks, start_date=start_simulation, 
