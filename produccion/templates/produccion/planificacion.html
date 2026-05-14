@@ -404,17 +404,12 @@
                                 <table class="table table-hover align-middle mb-0" id="tableProcesses">
                                     <thead class="bg-light">
                                         <tr>
-                                            <th class="ps-4 text-center" style="white-space: normal; width: 80px;">Planificar</th>
-                                            <th class="text-center" style="white-space: normal;">ID Orden</th>
-                                            <th class="text-center" style="white-space: normal;">Articulo</th>
-                                            <th class="text-center" style="white-space: normal;">Denominación</th>
-                                            <th class="text-center" style="white-space: normal;">Solicitado</th>
-                                            <th class="text-center" style="white-space: normal;">Finalizado</th>
-                                            <th class="text-center" style="white-space: normal;">Pendiente</th>
-                                            <th class="text-center" style="white-space: normal;">Proceso</th>
-                                            <th class="text-center" style="white-space: normal;">Maquina</th>
-                                            <th class="text-center" style="white-space: normal;">Nivel Planificación</th>
-                                            <th class="pe-4 text-center" style="white-space: normal;">Acción</th>
+                                            <th class="ps-4 text-center" style="width: 80px;">Planificar</th>
+                                            <th class="text-center" style="width: 100px;">Nivel Planif.</th>
+                                            <th class="text-center">Descripción del Proceso</th>
+                                            <th class="text-center">Máquina</th>
+                                            <th class="text-center">Cant. Lote</th>
+                                            <th class="pe-4 text-center">Cant. Pendiente</th>
                                         </tr>
                                     </thead>
                                     <tbody id="tbodyProcesses">
@@ -778,7 +773,7 @@
                                     <input type="number" 
                                            class="form-control form-control-sm article-priority-input" 
                                            data-macropk="${art.MacroPK}"
-                                           value="${art.prioridad_pieza || 1}" 
+                                           value="${art.nivel_planificacion || 1}" 
                                            min="1">
                                 </td>
                                 <td class="pe-4 text-center">
@@ -844,7 +839,7 @@
                 document.getElementById('btnConfirmSelect').style.display = 'none';
                 
                 const tbody = document.getElementById('tbodyProcesses');
-                tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4"><i class="fas fa-sync fa-spin me-2"></i> Cargando procesos...</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4"><i class="fas fa-sync fa-spin me-2"></i> Cargando procesos...</td></tr>';
                 
                 try {
                     const response = await fetch(`/api/get_article_processes/?macro_pk=${macroPk}`);
@@ -880,20 +875,16 @@
                                                onchange="updateProcessSelection('${macroPk}', this)">
                                     </div>
                                 </td>
-                                <td class="text-center small">${proc.IdOrden}</td>
-                                <td class="text-center">${proc.Articulo || '-'}</td>
-                                <td class="text-center small">${proc.Denominacion || '-'}</td>
-                                <td class="text-center">${parseFloat(proc.Cantidad || 0).toFixed(0)}</td>
-                                <td class="text-center">${parseFloat(proc.Finalizado || 0).toFixed(0)}</td>
-                                <td class="text-center fw-bold ${isCompleted ? 'text-muted' : 'text-danger'}">${pendiente.toFixed(2)}</td>
-                                <td>${proc.Proceso}</td>
-                                <td class="text-center"><span class="badge bg-light text-dark border">${proc.MaquinaNombre || '-'}</span></td>
-                                <td class="text-center fw-bold">${proc.Nivel_Planificacion || '0'}</td>
-                                <td class="pe-4 text-center">
-                                    <button class="btn btn-sm btn-link text-muted" disabled>
-                                        <i class="fas fa-info-circle"></i>
-                                    </button>
+                                <td class="text-center">
+                                    <input type="number" class="form-control form-control-sm text-center fw-bold mx-auto article-priority-input" 
+                                           style="width: 70px;"
+                                           value="${proc.Nivel_Planificacion || 0}" 
+                                           onchange="updateProcessPriority('${proc.IdOrden}', this.value)">
                                 </td>
+                                <td class="small">${proc.Proceso}</td>
+                                <td class="text-center"><span class="badge bg-light text-dark border">${proc.MaquinaNombre || '-'}</span></td>
+                                <td class="text-center">${parseFloat(proc.Cantidad || 0).toFixed(0)}</td>
+                                <td class="pe-4 text-center fw-bold ${isCompleted ? 'text-muted' : 'text-danger'}">${pendiente.toFixed(2)}</td>
                             `;
                             tbody.appendChild(row);
                         });
@@ -903,10 +894,10 @@
                         // Check if all are selected to sync master checkbox
                         syncMasterCheckbox();
                     } else {
-                        tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-muted">No hay procesos abiertos para este artículo.</td></tr>';
+                        tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-muted">No hay procesos abiertos para este artículo.</td></tr>';
                     }
                 } catch (e) {
-                    tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-danger">Error al cargar procesos.</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-danger">Error al cargar procesos.</td></tr>';
                 }
             };
 
@@ -949,6 +940,24 @@
                         badge.classList.add('bg-secondary');
                     }
                 }
+            };
+
+            window.updateProcessPriority = function(idOrden, nivel) {
+                const scenarioId = new URLSearchParams(window.location.search).get('scenario_id');
+                fetch('/api/update_manual_nivel/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        id_orden: idOrden,
+                        nivel_manual: nivel,
+                        scenario_id: scenarioId
+                    })
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.error) console.error("Error saving priority:", data.error);
+                })
+                .catch(err => console.error("Network error saving priority:", err));
             };
 
             window.updateAllCounters = function() {

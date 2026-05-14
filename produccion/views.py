@@ -507,11 +507,11 @@ def planificacion_list(request):
                 if hidden_ids:
                     data = [d for d in data if d.get('Idorden') not in hidden_ids]
 
-        # 0. Fetch PlannedTask metadata (prioridad_pieza) to merge into data
+        # 0. Fetch PrioridadManual levels to merge into data
         planned_metadata = {}
         if active_scenario:
-            pm_list = PlannedTask.objects.using('default').filter(scenario=active_scenario).values('id_orden', 'prioridad_pieza')
-            planned_metadata = {p['id_orden']: p['prioridad_pieza'] for p in pm_list}
+            pm_list = PrioridadManual.objects.using('default').filter(scenario=active_scenario).values('id_orden', 'nivel_manual')
+            planned_metadata = {p['id_orden']: p['nivel_manual'] for p in pm_list if p['nivel_manual'] is not None}
 
         
         # Determine response format
@@ -3401,7 +3401,7 @@ def api_get_project_articles(request):
                 if m_pk in planned_state:
                     for oid_s in planned_state[m_pk]:
                         if int(oid_s) in op_to_nivel:
-                            art['prioridad_pieza'] = op_to_nivel[int(oid_s)]
+                            art['nivel_planificacion'] = op_to_nivel[int(oid_s)]
                             break
 
     return JsonResponse({
@@ -3433,7 +3433,7 @@ def api_get_article_processes(request):
         (T.Cantidad - T.Cantidadpp) as Pendiente,
         T.Cantidad as Cantidad,
         T.Cantidadpp as Finalizado,
-        T.Nivel_Planificacion as Nivel_Planificacion,
+        0 as Nivel_Planificacion,
         ISNULL(M.MAQUINAD, T.Idmaquina) as MaquinaNombre
     FROM Tman050 T
     LEFT JOIN Tman010 M ON T.Idmaquina = M.Idmaquina
@@ -3450,7 +3450,7 @@ def api_get_article_processes(request):
         (T.Cantidad - T.Cantidadpp) as Pendiente,
         T.Cantidad as Cantidad,
         T.Cantidadpp as Finalizado,
-        T.Nivel_Planificacion as Nivel_Planificacion,
+        0 as Nivel_Planificacion,
         ISNULL(M.MAQUINAD, T.Idmaquina) as MaquinaNombre
     FROM Tman050 T
     LEFT JOIN Tman010 M ON T.Idmaquina = M.Idmaquina
@@ -3461,12 +3461,35 @@ def api_get_article_processes(request):
     ORDER BY IdOrden
     """
     
-    with connections['production'].cursor() as cursor:
-        cursor.execute(sql, [macro_pk, macro_pk])
-        columns = [col[0] for col in cursor.description]
-        results = [dict(zip(columns, row)) for row in cursor.fetchall()]
-        
-    return JsonResponse({'processes': results})
+    try:
+        with connections['production'].cursor() as cursor:
+            cursor.execute(sql, [macro_pk, macro_pk])
+            columns = [col[0] for col in cursor.description]
+            results = [dict(zip(columns, row)) for row in cursor.fetchall()]
+            
+        # 3. Aplicar Overrides de Nivel desde SQLite (PrioridadManual)
+        if results:
+            op_ids = [r['IdOrden'] for r in results]
+            scenario_id = request.GET.get('scenario_id')
+            active_scenario = get_active_scenario(request, scenario_id=scenario_id)
+            
+            p_manual_db = PrioridadManual.objects.using('default').filter(
+                scenario=active_scenario,
+                id_orden__in=op_ids
+            ).values('id_orden', 'nivel_manual')
+            
+            op_to_nivel = {p['id_orden']: p['nivel_manual'] for p in p_manual_db if p['nivel_manual'] is not None}
+            
+            for r in results:
+                oid = r['IdOrden']
+                if oid in op_to_nivel:
+                    r['Nivel_Planificacion'] = op_to_nivel[oid]
+
+        return JsonResponse({'processes': results})
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        return JsonResponse({'processes': [], 'error': str(e)}, status=500)
 
 @csrf_exempt
 def api_confirm_selected_tasks(request):
