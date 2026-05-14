@@ -731,6 +731,10 @@
                 document.getElementById('selectorSub').innerText = "Proyecto: " + projectCode;
                 
                 const scenarioId = new URLSearchParams(window.location.search).get('scenario_id');
+                const dialog = document.getElementById('selectorDialog');
+                dialog.style.maxWidth = "850px";
+                dialog.style.width = "auto";
+                
                 const modal = new bootstrap.Modal(document.getElementById('selectorProduccionModal'));
                 modal.show();
                 
@@ -828,8 +832,10 @@
             window.showProcesses = async function(macroPk, artName, artCode) {
                 currentLevel2MacroPk = macroPk; // Set global tracker
                 
-                // Expand modal for Level 2
-                document.getElementById('selectorDialog').classList.add('modal-nivel-2');
+                // FORCE EXPANSION (JavaScript Direct Style)
+                const dialog = document.getElementById('selectorDialog');
+                dialog.style.maxWidth = "1500px";
+                dialog.style.width = "95%";
                 
                 document.getElementById('level1-articles').style.display = 'none';
                 document.getElementById('level2-processes').style.display = 'block';
@@ -904,8 +910,10 @@
             };
 
             window.backToArticles = function() {
-                // Shrink modal for Level 1
-                document.getElementById('selectorDialog').classList.remove('modal-nivel-2');
+                // FORCE SHRINK (JavaScript Direct Style)
+                const dialog = document.getElementById('selectorDialog');
+                dialog.style.maxWidth = "850px";
+                dialog.style.width = "auto";
                 
                 document.getElementById('level1-articles').style.display = 'block';
                 document.getElementById('level2-processes').style.display = 'none';
