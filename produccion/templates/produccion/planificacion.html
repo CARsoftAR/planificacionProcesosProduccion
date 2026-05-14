@@ -845,8 +845,8 @@
                     const data = await response.json();
                     
                     if (data.processes && data.processes.length > 0) {
-                        // Ordenar por Nivel de mayor a menor (Descendente)
-                        data.processes.sort((a, b) => (parseInt(b.Nivel_Planificacion) || 0) - (parseInt(a.Nivel_Planificacion) || 0));
+                        // Ordenar por Nivel de menor a menor (Ascendente) para seguir secuencia ERP
+                        data.processes.sort((a, b) => (parseInt(a.Nivel_Planificacion) || 0) - (parseInt(b.Nivel_Planificacion) || 0));
                         
                         tbody.innerHTML = "";
                         

@@ -3433,10 +3433,15 @@ def api_get_article_processes(request):
         (T.Cantidad - T.Cantidadpp) as Pendiente,
         T.Cantidad as Cantidad,
         T.Cantidadpp as Finalizado,
-        0 as Nivel_Planificacion,
+        ISNULL(T3.Nivel_Planificacion, 0) as Nivel_Planificacion,
         ISNULL(M.MAQUINAD, T.Idmaquina) as MaquinaNombre
     FROM Tman050 T
     LEFT JOIN Tman010 M ON T.Idmaquina = M.Idmaquina
+    LEFT JOIN Tman050 T2 ON T.MSTNMBR = T2.IdOrden
+    LEFT JOIN TMAN002 T3 ON 
+        T.Articulo = T3.ArticuloH AND 
+        T.Formula = T3.Formula AND 
+        T2.Articulo = T3.ArticuloP
     WHERE T.MacroPK = %s
     AND T.IsMacro = 0
 
@@ -3450,10 +3455,15 @@ def api_get_article_processes(request):
         (T.Cantidad - T.Cantidadpp) as Pendiente,
         T.Cantidad as Cantidad,
         T.Cantidadpp as Finalizado,
-        0 as Nivel_Planificacion,
+        ISNULL(T3.Nivel_Planificacion, 0) as Nivel_Planificacion,
         ISNULL(M.MAQUINAD, T.Idmaquina) as MaquinaNombre
     FROM Tman050 T
     LEFT JOIN Tman010 M ON T.Idmaquina = M.Idmaquina
+    LEFT JOIN Tman050 T2 ON T.MSTNMBR = T2.IdOrden
+    LEFT JOIN TMAN002 T3 ON 
+        T.Articulo = T3.ArticuloH AND 
+        T.Formula = T3.Formula AND 
+        T2.Articulo = T3.ArticuloP
     WHERE T.MSTNMBR IN (SELECT IdOrden FROM Tman050 WHERE MacroPK = %s AND IsMacro = 1)
     AND (T.MacroPK IS NULL OR T.MacroPK = '')
     AND T.IsMacro = 0
