@@ -507,11 +507,11 @@ def planificacion_list(request):
                 if hidden_ids:
                     data = [d for d in data if d.get('Idorden') not in hidden_ids]
 
-        # 0. Fetch PlannedTask metadata (prioridad_pieza) to merge into data
+        # 0. Fetch PrioridadManual levels to merge into data
         planned_metadata = {}
         if active_scenario:
-            pm_list = PlannedTask.objects.using('default').filter(scenario=active_scenario).values('id_orden', 'prioridad_pieza')
-            planned_metadata = {p['id_orden']: p['prioridad_pieza'] for p in pm_list}
+            pm_list = PrioridadManual.objects.using('default').filter(scenario=active_scenario).values('id_orden', 'nivel_manual')
+            planned_metadata = {p['id_orden']: p['nivel_manual'] for p in pm_list if p['nivel_manual'] is not None}
 
         
         # Determine response format
