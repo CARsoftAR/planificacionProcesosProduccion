@@ -82,7 +82,7 @@
                     </tr>
                 </thead>
                 <tbody id="projectsTableBody">
-                    {% for item in proyectos_data %}
+                    {% for item in proyectos %}
                     <tr>
                         <td>
                             <div class="d-flex align-items-center">
@@ -140,7 +140,9 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         function changeScenario(scenarioId) {
-            window.location.href = `?scenario_id=${scenarioId}`;
+            const params = new URLSearchParams(window.location.search);
+            params.set('scenario_id', scenarioId);
+            window.location.href = `?` + params.toString();
         }
         
         function savePriorities() {
@@ -190,6 +192,38 @@
                 alert("Error de red: " + err);
             });
         }
+    <script>
+        // 🚀 CLIENT-SIDE HARD PURGE (Refined: Only runs if filters are active)
+        document.addEventListener("DOMContentLoaded", function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const proyectosUrl = urlParams.get('proyectos');
+
+            // CONDICIÓN CRÍTICA: Solo filtrar si el usuario ingresó proyectos en la URL
+            if (proyectosUrl && proyectosUrl.trim() !== "") {
+                const validos = proyectosUrl.split(',').map(p => p.trim()).filter(p => p !== "");
+
+                if (validos.length > 0) {
+                    const tableBody = document.getElementById('projectsTableBody');
+                    if (tableBody) {
+                        const filas = tableBody.querySelectorAll('tr');
+
+                        filas.forEach(row => {
+                            const texto = row.innerText || "";
+                            
+                            // Detectamos si la fila contiene un patrón de proyecto
+                            if (texto.includes("26-") || texto.match(/\d{2}-\d{3}/)) {
+                                const contieneValido = validos.some(v => texto.includes(v));
+                                if (!contieneValido) {
+                                    row.remove(); // Se elimina físicamente del navegador
+                                }
+                            }
+                        });
+                    }
+                }
+            } else {
+                console.log("URL limpia al inicio: se preservan los proyectos iniciales del sistema.");
+            }
+        });
     </script>
 </body>
 </html>

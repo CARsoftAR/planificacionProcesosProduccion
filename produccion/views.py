@@ -415,15 +415,8 @@ def planificacion_list(request):
     elif 'id_orden' not in request.GET:
         id_orden = request.session.get('last_id_orden_filter')
 
-    proyectos = request.GET.get('proyectos')
-    if proyectos is not None:
-        request.session['last_proyectos_filter'] = proyectos
-    elif 'proyectos' not in request.GET:
-        proyectos = request.session.get('last_proyectos_filter')
-
-    # FALLBACK: If no projects in URL or Session, use the Scenario's defaults
-    if not proyectos and active_scenario and active_scenario.proyectos:
-        proyectos = active_scenario.proyectos
+    # Strict Filtering: Only use projects from the current GET request
+    proyectos = request.GET.get('proyectos', '')
 
     # Build filtros for the SQL query
     filtros = {}
@@ -514,6 +507,12 @@ def planificacion_list(request):
                 if hidden_ids:
                     data = [d for d in data if d.get('Idorden') not in hidden_ids]
 
+        # 0. Fetch PlannedTask metadata (prioridad_pieza) to merge into data
+        planned_metadata = {}
+        if active_scenario:
+            pm_list = PlannedTask.objects.using('default').filter(scenario=active_scenario).values('id_orden', 'prioridad_pieza')
+            planned_metadata = {p['id_orden']: p['prioridad_pieza'] for p in pm_list}
+
         
         # Determine response format
         if request.GET.get('format') == 'json':
@@ -565,6 +564,9 @@ def planificacion_list(request):
                 item['Idorden'] = t_id_val # Actualizar en el item
             except:
                 t_id_val = 0
+
+            # Attach piece priority from metadata
+            item['prioridad_pieza'] = planned_metadata.get(t_id_val, 1)
 
             # Update Machine Name based on Local Config if active
             native_code = str(item.get('Idmaquina', '')).strip()
@@ -718,8 +720,12 @@ def planificacion_list(request):
                     # Let's use a per-machine index to keep priorities clean.
                     m_item['OrdenVisual'] = (idx + 1) * 5000.0 # Wide spacing for default
 
-            # 2. Sort by the finalized OrdenVisual
-            machine_items.sort(key=lambda x: x.get('OrdenVisual', 999999.0))
+            # 2. Sort by Nivel_Planificacion DESCENDING (Primary), prioridad_pieza ASCENDING (Secondary) and OrdenVisual ASCENDING (Tertiary)
+            machine_items.sort(key=lambda x: (
+                -int(x.get('Nivel_Planificacion') or 0), 
+                int(x.get('prioridad_pieza') or 1),
+                x.get('OrdenVisual', 999999.0)
+            ))
             
             # 3. Solo re-asignamos OrdenVisual interno si es necesario para mantener el "snap" del Gantt,
             # pero NO tocamos Idprioridad para respetar el valor original del ERP.
@@ -2854,43 +2860,65 @@ def proyectos_prioridades(request):
     if not active_scenario:
         active_scenario = Scenario.objects.using('default').filter(es_principal=True).first()
         
-    # Session Persistence for Proyectos
-    proyectos_str = request.GET.get('proyectos')
-    if proyectos_str is not None:
-        request.session['last_proyectos_filter'] = proyectos_str
-    elif 'proyectos' not in request.GET:
-        proyectos_str = request.session.get('last_proyectos_filter')
-
-    if not proyectos_str and active_scenario and active_scenario.proyectos:
-        proyectos_str = active_scenario.proyectos
+    # PARSEO STRICT: Interceptar parámetro 'proyectos' directamente de la URL
+    proyectos_param = request.GET.get('proyectos', '')
+    if proyectos_param:
+        # Limpia espacios y separa por comas (Split real)
+        proyectos_list = [p.strip() for p in proyectos_param.split(',') if p.strip()]
+    else:
+        proyectos_list = []
     
-    proyectos_list = [p.strip() for p in proyectos_str.split(',') if p.strip()] if proyectos_str else []
-
-    
+    # Aislamiento: Si no hay proyectos en la URL, la tabla va vacía (Sin fallbacks)
+    if not proyectos_list:
+        return render(request, 'produccion/proyectos_prioridades.html', {
+            'proyectos_data': [],
+            'active_scenario': active_scenario,
+            'all_scenarios': Scenario.objects.using('default').all().order_by('-fecha_creacion'),
+            'has_projects': False
+        })
+        
+    # Obtener prioridades guardadas SOLO para los proyectos de la lista
     prioridades_db = {}
     if active_scenario:
-        prioridades_db = {p.proyecto: p.prioridad for p in ProyectoPrioridad.objects.using('default').filter(scenario=active_scenario)}
+        # Filtrado estricto en el queryset (proyecto__in)
+        db_qs = ProyectoPrioridad.objects.using('default').filter(
+            scenario=active_scenario,
+            proyecto__in=proyectos_list
+        )
+        prioridades_db = {p.proyecto: p.prioridad for p in db_qs}
         
     proyectos_data = []
-    # Assign priorities based on what is in DB or assign incremental default
+    # Generar la lista final únicamente con los proyectos de la petición actual
     for p in proyectos_list:
-        prio = prioridades_db.get(p, 999) # Default priority for unranked
+        prio = prioridades_db.get(p, 999) # Prioridad por defecto para nuevos
         proyectos_data.append({'proyecto': p, 'prioridad': prio})
         
-    # Correct unassigned priorities to be incremental starting from last max
-    max_prio = max([d['prioridad'] for d in proyectos_data if d['prioridad'] != 999] + [0])
+    # Corregir prioridades no asignadas para que sean incrementales
+    # Empezamos desde el máximo actual o desde 0
+    assigned_prios = [d['prioridad'] for d in proyectos_data if d['prioridad'] != 999]
+    max_prio = max(assigned_prios + [0])
+    
     for item in proyectos_data:
         if item['prioridad'] == 999:
             max_prio += 1
             item['prioridad'] = max_prio
 
-    proyectos_data.sort(key=lambda x: x['prioridad'])
-    
+    # --- INICIO FILTRO DE EMERGENCIA STRICT ---
+    proyectos_url = request.GET.get('proyectos', '')
+    if proyectos_url:
+        # Convertir la URL en una lista limpia: ['26-027']
+        lista_validos = [p.strip() for p in proyectos_url.split(',') if p.strip()]
+        # Forzamos filtrado directo sobre la lista que va al contexto
+        proyectos_final = [d for d in proyectos_data if d['proyecto'] in lista_validos]
+    else:
+        proyectos_final = []
+    # --- FIN FILTRO DE EMERGENCIA STRICT ---
+
     return render(request, 'produccion/proyectos_prioridades.html', {
-        'proyectos_data': proyectos_data,
+        'proyectos': proyectos_final, # Nombre de variable solicitado por el usuario
         'active_scenario': active_scenario,
         'all_scenarios': Scenario.objects.using('default').all().order_by('-fecha_creacion'),
-        'has_projects': len(proyectos_data) > 0
+        'has_projects': len(proyectos_final) > 0
     })
 
 @csrf_exempt
@@ -3359,6 +3387,28 @@ def api_get_project_articles(request):
                     planned_state[m_pk] = []
                 planned_state[m_pk].append(oid_s)
 
+        # 3. Consultamos las prioridades de pieza guardadas en SQLite para este escenario
+        piece_priorities_map = {}
+        if planned_ids:
+            piece_priorities_db = PlannedTask.objects.using('default').filter(
+                scenario=active_scenario,
+                id_orden__in=planned_ids
+            ).values('id_orden', 'prioridad_pieza')
+            
+            # Como la prioridad es por Pieza (MacroPK), pero se guarda en la OP, 
+            # necesitamos mapear IdOrden -> Prioridad y luego asociarla al MacroPK en el loop de artículos
+            op_to_prio = {p['id_orden']: p['prioridad_pieza'] for p in piece_priorities_db}
+            
+            # Enriquecemos los artículos con su prioridad actual
+            for art in articles:
+                m_pk = art.get('MacroPK')
+                if m_pk in planned_state:
+                    # Buscamos la prioridad de cualquiera de sus OPs (debería ser la misma)
+                    for oid_s in planned_state[m_pk]:
+                        if int(oid_s) in op_to_prio:
+                            art['prioridad_pieza'] = op_to_prio[int(oid_s)]
+                            break
+
     return JsonResponse({
         'articles': articles,
         'planned_state': planned_state
@@ -3426,6 +3476,8 @@ def api_confirm_selected_tasks(request):
     try:
         body = json.loads(request.body)
         id_ordens = body.get('id_ordens', [])
+        piece_priorities = body.get('piece_priorities', {}) # macroPk -> priority
+        selected_ops_by_article = body.get('selected_ops_by_article', {}) # macroPk -> [id_ordens]
         scenario_id = body.get('scenario_id')
         project_code = body.get('project_code')
         force = body.get('force', False)
@@ -3486,12 +3538,25 @@ def api_confirm_selected_tasks(request):
                 scenario=active_scenario
             ).delete()
 
-            # 3. Registramos las OPs que el usuario seleccionó ahora
-            planned_tasks = [
-                PlannedTask(id_orden=oid, scenario=active_scenario, proyecto_code=project_code)
-                for oid in id_ordens
-            ]
-            PlannedTask.objects.using('default').bulk_create(planned_tasks)
+            # 3. Guardamos las nuevas OPs
+            # Mapeo invertido para saber qué prioridad le toca a cada ID
+            op_prio_lookup = {}
+            for m_pk, ops in selected_ops_by_article.items():
+                prio = piece_priorities.get(m_pk, 1)
+                for oid in ops:
+                    op_prio_lookup[int(oid)] = prio
+
+            tasks_to_create = []
+            for oid in id_ordens:
+                tasks_to_create.append(PlannedTask(
+                    id_orden=oid,
+                    scenario=active_scenario,
+                    proyecto_code=project_code,
+                    prioridad_pieza=op_prio_lookup.get(int(oid), 1)
+                ))
+            
+            if tasks_to_create:
+                PlannedTask.objects.using('default').bulk_create(tasks_to_create)
 
             # --- SYNC: Actualizamos el campo 'proyectos' del escenario para persistencia ---
             if project_code and active_scenario:
@@ -3554,6 +3619,7 @@ def api_clear_all_planning(request):
         scenario_id = body.get('scenario_id')
         active_scenario = get_active_scenario(request, scenario_id=scenario_id)
         
+        from .models import PlannedTask, PrioridadManual, HiddenTask, TaskDependency, ProyectoPrioridad
         from django.db import transaction
         with transaction.atomic(using='default'):
             # 1. Delete all tasks from the planned list in this scenario
@@ -3561,6 +3627,16 @@ def api_clear_all_planning(request):
             
             # 2. Delete all manual overrides (machine moves, etc) for this scenario
             PrioridadManual.objects.using('default').filter(scenario=active_scenario).delete()
+
+            # 3. Delete hidden tasks for this scenario
+            HiddenTask.objects.using('default').filter(scenario=active_scenario).delete()
+
+            # 4. Reset project priorities for this scenario
+            ProyectoPrioridad.objects.using('default').filter(scenario=active_scenario).delete()
+
+            # 5. Delete manual dependencies (These are currently global in the DB schema provided)
+            # To be safe and meet the "reset" requirement, we clear them as they relate to the planning state.
+            TaskDependency.objects.using('default').all().delete()
             
         return JsonResponse({'status': 'ok', 'message': 'Selección vaciada correctamente'})
     except Exception as e:

@@ -1223,29 +1223,33 @@
 
                   <div class="vr mx-2 bg-secondary opacity-25" style="height: 25px;"></div>
                   
-                  <!-- 3. Actions Dropdown -->
-                  <div class="dropdown me-1">
-                      <button class="btn-modern glass rounded-pill no-caret px-3" style="height: 34px; border-color: #e2e8f0; color: #475569;" type="button" data-bs-toggle="dropdown">
-                          <i class="fas fa-tools text-primary"></i> Reportes
+                  <!-- 3. Actions & Cleanup -->
+                  <div class="d-flex align-items-center gap-1">
+                      <button id="btn-borrar-plan" 
+                              class="btn-modern glass rounded-pill px-3" 
+                              style="height: 34px; border-color: rgba(239, 68, 68, 0.4); color: #ef4444;" 
+                              onclick="window.confirmClearPlanning()"
+                              title="Limpiar Planificación Visual">
+                          <i class="fas fa-trash-alt me-1"></i> Borrar Plan
                       </button>
-                      <ul class="dropdown-menu dropdown-menu-end dropdown-menu-premium mt-2">
-                          <li>
-                              <a class="dropdown-item dropdown-item-premium" href="#" id="btnPlanillasDiarias" onclick="openPlanillasDiarias()">
-                                   <i class="fas fa-file-alt me-2 text-warning"></i> Planillas Diarias
-                              </a>
-                          </li>
-                          <li>
-                              <a class="dropdown-item dropdown-item-premium" href="#" id="btnExport">
-                                  <i class="fas fa-file-excel me-2 text-success"></i> Exportar Excel
-                              </a>
-                          </li>
-                          <li><hr class="dropdown-divider"></li>
-                          <li>
-                              <a class="dropdown-item dropdown-item-premium text-danger" href="#" onclick="window.confirmClearPlanning()">
-                                  <i class="fas fa-trash-alt me-2"></i> Limpiar Planificación
-                              </a>
-                          </li>
-                      </ul>
+
+                      <div class="dropdown me-1">
+                          <button class="btn-modern glass rounded-pill no-caret px-3" style="height: 34px; border-color: #e2e8f0; color: #475569;" type="button" data-bs-toggle="dropdown">
+                              <i class="fas fa-tools text-primary"></i> Reportes
+                          </button>
+                          <ul class="dropdown-menu dropdown-menu-end dropdown-menu-premium mt-2">
+                              <li>
+                                  <a class="dropdown-item dropdown-item-premium" href="#" id="btnPlanillasDiarias" onclick="openPlanillasDiarias()">
+                                       <i class="fas fa-file-alt me-2 text-warning"></i> Planillas Diarias
+                                  </a>
+                              </li>
+                              <li>
+                                  <a class="dropdown-item dropdown-item-premium" href="#" id="btnExport">
+                                      <i class="fas fa-file-excel me-2 text-success"></i> Exportar Excel
+                                  </a>
+                              </li>
+                          </ul>
+                      </div>
                   </div>
 
                   <!-- 4. Alerts -->
@@ -1477,48 +1481,87 @@
             const ACTIVE_SCENARIO_ID = "{{ active_scenario.id|default:'' }}";
 
             // Cleanup function for OpenCode Fix
+            window.executeClearPlanning = function() {
+                try {
+                    // 1. Remover únicamente los bloques de tareas en el timeline
+                    const blocks = document.querySelectorAll('.task-block, [class*="task-block"]');
+                    blocks.forEach(b => b.remove());
+
+                    // 2. Remover únicamente las líneas y rutas SVG de las dependencias
+                    const svgLines = document.querySelectorAll('svg line, svg path');
+                    svgLines.forEach(l => l.remove());
+
+                    console.log("Gantt limpiado visualmente con éxito.");
+                } catch (error) {
+                    console.error("Error al limpiar el DOM:", error);
+                }
+            };
+
             window.confirmClearPlanning = function() {
-                Swal.fire({
-                    title: '¿Limpiar Planificación?',
-                    text: 'Se eliminarán todas las OPs seleccionadas y sus movimientos manuales en este escenario. Esta acción no se puede deshacer.',
-                    icon: 'warning',
-                    showCancelButton: true,
-                    confirmButtonText: 'Sí, limpiar todo',
-                    cancelButtonText: 'Cancelar',
-                    customClass: {
-                        popup: 'premium-swal',
-                        confirmButton: 'premium-confirm',
-                        cancelButton: 'premium-cancel'
-                    },
-                    buttonsStyling: false
-                }).then((result) => {
-                    if (result.isConfirmed) {
-                        fetch('/produccion/api/clear_all_planning/', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'X-CSRFToken': '{{ csrf_token }}'
-                            },
-                            body: JSON.stringify({ scenario_id: ACTIVE_SCENARIO_ID })
-                        })
-                        .then(response => response.json())
-                        .then(data => {
-                            if (data.status === 'ok') {
-                                Swal.fire({
-                                    title: '¡Limpiado!',
-                                    text: 'La planificación se ha vaciado correctamente.',
-                                    icon: 'success',
-                                    timer: 2000,
-                                    showConfirmButton: false
-                                }).then(() => {
-                                    window.location.reload();
-                                });
-                            } else {
-                                Swal.fire('Error', data.error || 'No se pudo limpiar la planificación', 'error');
-                            }
-                        });
-                    }
+                const modalId = 'clear-planning-modal';
+                if (document.getElementById(modalId)) return;
+
+                const overlay = document.createElement('div');
+                overlay.id = modalId;
+                const s = { 
+                  overlay: {
+                    position:'fixed', inset:0, display:'flex', alignItems:'center', justifyContent:'center', 
+                    backgroundColor:'rgba(15, 23, 42, 0.65)', zIndex: 30000, backdropFilter: 'blur(8px)',
+                    animation: 'fadeIn 0.3s ease'
+                  }, 
+                  card: {
+                    backgroundColor:'white', padding:'40px', borderRadius:'24px', textAlign:'center',
+                    maxWidth: '400px', width: '92%', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)',
+                    animation: 'slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
+                  }, 
+                  iconCircle: {
+                    margin:'0 auto 24px', borderRadius:'50%', width:'72px', height:'72px',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', fontSize: '32px'
+                  }, 
+                  title: { fontSize: '1.4rem', fontWeight: '800', color: '#1e293b', marginBottom: '12px', letterSpacing: '-0.5px' },
+                  text: { fontSize: '1rem', color: '#64748b', marginBottom: '32px', lineHeight: '1.6' },
+                  btnContainer: { display: 'flex', flexDirection: 'column', gap: '12px' },
+                  confirmBtn: {
+                    borderRadius:'16px', padding:'14px', color:'white', fontWeight:'bold', 
+                    backgroundColor:'#ef4444', border:'none', cursor:'pointer', transition:'all 0.2s'
+                  },
+                  cancelBtn: {
+                    background:'none', border:'none', color:'#64748b', cursor:'pointer', fontWeight:'600', padding:'8px'
+                  }
+                };
+
+                Object.assign(overlay.style, s.overlay);
+                overlay.innerHTML = `
+                    <div style="background:white; padding:40px; border-radius:24px; text-align:center; max-width:400px; width:92%; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);">
+                        <div id="icon-circle" style="margin:0 auto 24px; border-radius:50%; width:72px; height:72px; display:flex; align-items:center; justify-content:center; background:rgba(239,68,68,0.1); color:#ef4444; font-size:32px;">
+                            <i class="fas fa-trash-alt"></i>
+                        </div>
+                        <h3 style="font-size:1.4rem; font-weight:800; color:#1e293b; margin-bottom:12px;">¿Limpiar Planificación?</h3>
+                        <p style="font-size:1rem; color:#64748b; margin-bottom:32px;">Esta acción eliminará visualmente todas las tareas del Gantt. Los cambios no se guardarán en el servidor.</p>
+                        <div style="display:flex; flex-direction:column; gap:12px;">
+                            <button id="confirm-clear-btn" style="border-radius:16px; padding:14px; color:white; font-weight:bold; background:#ef4444; border:none; cursor:pointer;">Sí, limpiar Gantt</button>
+                            <button id="cancel-clear-btn" style="background:none; border:none; color:#64748b; cursor:pointer; font-weight:600;">Cancelar</button>
+                        </div>
+                    </div>
+                `;
+
+                document.body.appendChild(overlay);
+
+                const closeModal = () => overlay.remove();
+
+                const confirmBtn = document.getElementById('confirm-clear-btn');
+                const cancelBtn = document.getElementById('cancel-clear-btn');
+
+                confirmBtn.addEventListener('click', function(e) {
+                    e.preventDefault(); // CORTE DE PETICIONES DE RED
+                    e.stopPropagation();
+                    window.executeClearPlanning(); // EJECUCIÓN QUIRÚRGICA
+                    closeModal(); // CIERRE INSTANTÁNEO
                 });
+
+                cancelBtn.addEventListener('click', closeModal);
+                overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
             };
 
             // Toggle detail rows in analysis cards

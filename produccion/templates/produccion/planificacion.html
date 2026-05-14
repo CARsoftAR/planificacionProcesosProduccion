@@ -167,6 +167,24 @@
             border: 4px solid #f1f5f9 !important;
         }
         .nav-tabs::-webkit-scrollbar-thumb:hover { background-color: #64748b !important; }
+
+        /* Estilos para Inputs de Prioridad por Pieza */
+        .article-priority-input {
+            width: 80px;
+            text-align: center;
+            font-weight: bold;
+            color: #0d6efd;
+            border-radius: 50px;
+            border: 1px solid #e2e8f0;
+            padding: 0.25rem 0.5rem;
+            transition: all 0.2s ease;
+            margin: 0 auto;
+        }
+        .article-priority-input:focus {
+            box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.15);
+            border-color: #3b82f6;
+            outline: none;
+        }
     </style>
 </head>
 <body>
@@ -179,7 +197,7 @@
             <form method="GET" id="plan-filter-form" class="d-flex align-items-center gap-3 flex-grow-1">
                 <div class="d-flex align-items-center gap-2">
                     <label for="proyectos" class="smaller fw-bold text-muted mb-0"><i class="fas fa-search"></i> Proyectos:</label>
-                    <input type="text" name="proyectos" id="proyectos" class="form-control form-control-sm rounded-pill" style="width: 250px;" value="{{ proyectos_value|default:'' }}" placeholder="Ej: 25-001, 23-145">
+                    <input type="text" name="proyectos" id="proyectos" class="form-control form-control-sm rounded-pill" style="width: 250px;" value="" placeholder="Ej: 26-027">
                     <button type="submit" class="btn btn-sm btn-primary rounded-pill px-3">Filtrar</button>
                     {% if request.GET.proyectos %}
                     <a href="{% url 'planificacion_view' %}?plan_mode={{ request.GET.plan_mode|default:'manual' }}" class="btn btn-sm btn-outline-secondary rounded-pill px-2" title="Limpiar Filtros">
@@ -332,6 +350,7 @@
                                             <th class="text-center">Solicitado</th>
                                             <th class="text-center">Finalizado</th>
                                             <th class="text-center">Seleccionados</th>
+                                            <th class="text-center" style="width: 100px;">Prioridad</th>
                                             <th class="pe-4 text-center">Acción</th>
                                         </tr>
                                     </thead>
@@ -734,6 +753,13 @@
                                 <td class="text-center">${parseFloat(art.Solicitado || 0).toFixed(0)}</td>
                                 <td class="text-center">${parseFloat(art.Finalizado || 0).toFixed(0)}</td>
                                 <td class="text-center"><span class="badge bg-secondary rounded-pill process-count" id="count-art-${art.MacroPK.replace(/\s+/g, '-')}">0</span></td>
+                                <td class="text-center">
+                                    <input type="number" 
+                                           class="form-control form-control-sm article-priority-input" 
+                                           data-macropk="${art.MacroPK}"
+                                           value="${art.prioridad_pieza || 1}" 
+                                           min="1">
+                                </td>
                                 <td class="pe-4 text-center">
                                     <button class="btn btn-sm btn-link text-primary article-clickable" onclick="handleArticleClick('${art.MacroPK}', '${art.Denominacion}', '${art.Articulo}')">
                                         <i class="fas fa-chevron-right"></i>
@@ -800,6 +826,9 @@
                     const data = await response.json();
                     
                     if (data.processes && data.processes.length > 0) {
+                        // Ordenar por Nivel de mayor a menor (Descendente)
+                        data.processes.sort((a, b) => (parseInt(b.Nivel) || 0) - (parseInt(a.Nivel) || 0));
+                        
                         tbody.innerHTML = "";
                         
                         // FIXED: Only auto-select processes with real pending quantity (Pendiente > 0)
@@ -919,9 +948,15 @@
             window.confirmSelection = async function() {
                 // Collect all selected OPs but ONLY from ENABLED articles
                 let finalSelection = [];
+                let piecePriorities = {}; // macroPk -> priority
+
                 for (const mPk in selectedOpsByArticle) {
                     if (enabledArticles[mPk]) {
                         finalSelection = finalSelection.concat(selectedOpsByArticle[mPk]);
+                        
+                        // Collect priority for this piece
+                        const prioInput = document.querySelector(`.article-priority-input[data-macropk="${mPk}"]`);
+                        piecePriorities[mPk] = prioInput ? parseInt(prioInput.value) || 1 : 1;
                     }
                 }
                 
@@ -950,6 +985,8 @@
                         },
                         body: JSON.stringify({
                             id_ordens: finalSelection,
+                            piece_priorities: piecePriorities, // macroPk -> priority
+                            selected_ops_by_article: selectedOpsByArticle, // to know which OP gets which priority
                             scenario_id: scenarioId,
                             project_code: currentProjectToSelect,
                             force: true
@@ -2228,6 +2265,16 @@
         }
 
         initTheme();
+
+        // Hard Reset for Projects Input (Strict Requirement)
+        document.addEventListener('DOMContentLoaded', function() {
+            const projInput = document.getElementById('proyectos');
+            if (projInput) {
+                projInput.value = '';
+                // Ensure autocomplete doesn't re-fill it
+                projInput.setAttribute('autocomplete', 'off');
+            }
+        });
     </script>
 
     <!-- Modal para Selección de Máquina -->

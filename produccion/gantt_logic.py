@@ -223,18 +223,17 @@ def get_gantt_data(request, force_run=False):
     from .models import Scenario, TaskDependency # Import here to avoid circular
     
     # --- PERSISTENCE LOGIC (Remember last selection) ---
-    # Projects - ONLY use session if explicitly provided in URL
+    # Strict Filtering: Only use projects from the current GET request
     raw_proyectos = request.GET.get('proyectos', '').strip()
     
     # HARD RESET: If no projects in URL or clear flag set, ignore all cached data
     clear_flag = request.GET.get('clear', '0') == '1'
     if clear_flag or raw_proyectos == '':
-        # Force empty - no fallback to session
         raw_proyectos = None
-        # Signal frontend to clear visual state
+        # Clean session to avoid poisoning other views
+        if 'last_proyectos_filter' in request.session:
+            del request.session['last_proyectos_filter']
         request.session['gantt_needs_clear'] = True
-    elif raw_proyectos:
-        request.session['last_proyectos_filter'] = raw_proyectos
 
     # ID Orden
     id_orden = request.GET.get('id_orden')
@@ -293,9 +292,9 @@ def get_gantt_data(request, force_run=False):
         if active_scenario and not request.session.get('last_scenario_id'):
             request.session['last_scenario_id'] = str(active_scenario.id)
             
-    # SYNC: If no projects in URL, fallback to scenario projects
-    if not raw_proyectos and active_scenario and active_scenario.proyectos:
-        raw_proyectos = active_scenario.proyectos
+    # Fallback to scenario projects REMOVED per user request for strict filtering
+    # if not raw_proyectos and active_scenario and active_scenario.proyectos:
+    #     raw_proyectos = active_scenario.proyectos
 
         
     virtual_overrides = {}
@@ -356,10 +355,12 @@ def get_gantt_data(request, force_run=False):
     # NEW: Respect manual selections from the article selector (PlannedTask)
     # We fetch ALL planned IDs for the scenario. The get_planificacion_data call 
     # will later filter them by proyecto if proyectos_list is present in deps_filter.
-    if active_scenario:
-        planned_ids = list(PlannedTask.objects.using('default').filter(
+        planned_metadata_qs = PlannedTask.objects.using('default').filter(
             scenario=active_scenario
-        ).values_list('id_orden', flat=True))
+        ).values('id_orden', 'prioridad_pieza')
+        
+        planned_ids = [p['id_orden'] for p in planned_metadata_qs]
+        planned_prio_map = {p['id_orden']: p['prioridad_pieza'] for p in planned_metadata_qs}
         
         if planned_ids:
             # Shift to strict ID-based filtering (will be ANDed with proyectos if present)
@@ -450,6 +451,9 @@ def get_gantt_data(request, force_run=False):
                  t['Idorden'] = int(float(t_id_raw))
         except:
              pass
+
+        # Attach piece priority from metadata
+        t['prioridad_pieza'] = planned_prio_map.get(t.get('Idorden'), 1) if 'planned_prio_map' in locals() else 1
 
         mid_code = str(t.get('Idmaquina', '')).strip()
         if mid_code in name_to_id:
@@ -677,7 +681,11 @@ def get_gantt_data(request, force_run=False):
              else:
                  item['Cantidadpp'] = item.get('cantidad_producida', 0)
                   
-        tasks.sort(key=lambda x: x.get('OrdenVisual', 999999))
+        tasks.sort(key=lambda x: (
+            -int(x.get('Nivel_Planificacion') or 0), 
+            int(x.get('prioridad_pieza', 1)),
+            x.get('OrdenVisual', 999999)
+        ))
         machine_tasks_map[machine_id] = {'maquina': maquina, 'tasks': tasks}
         
         calculated_tasks = calculate_timeline(maquina, tasks, start_date=start_simulation, 
@@ -745,8 +753,8 @@ def get_gantt_data(request, force_run=False):
                      target_start = force_start_times[tid]
                      is_pinned = 1
                  
-                 # PRIORIDAD ABSOLUTA: Despacho por Nivel (Mayor es primero) y luego OrdenVisual o disponibilidad.
-                 return (-get_nivel(t), t.get('OrdenVisual', 999999), target_start)
+                 # PRIORIDAD ABSOLUTA: Despacho por Nivel (Mayor es primero), Prioridad de Pieza (Menor es primero) y luego OrdenVisual o disponibilidad.
+                 return (-get_nivel(t), int(t.get('prioridad_pieza', 1)), t.get('OrdenVisual', 999999), target_start)
             
             tasks.sort(key=get_sort_key)
             recalc = calculate_timeline(maquina, tasks, start_date=start_simulation, 
