@@ -1,7 +1,5 @@
 from django.urls import path
 from . import views
-from . import ai_chat
-from . import ai_chat
 
 urlpatterns = [
     path('api/planificacion/', views.planificacion_list, name='planificacion_list'),
@@ -35,9 +33,6 @@ urlpatterns = [
     # Navigation
     path('planificacion/', views.planificacion_list, name='planificacion_view'),
     path('planificacion/visual/', views.planificacion_visual, name='planificacion_visual'),
-    path('planificacion/visual/ai-chat/', ai_chat.ai_chat_command, name='ai_chat_command'),
-    path('planificacion/visual/ai-suggest/', views.ai_planning_suggest_api, name='ai_planning_suggest_api'),
-    path('planificacion/visual/ai-apply/', views.apply_ai_suggestions, name='apply_ai_suggestions'),
     path('proyectos/prioridades/', views.proyectos_prioridades, name='proyectos_prioridades'),
     path('planillas_diarias/', views.planillas_diarias, name='planillas_diarias'),
     path('api/proyectos/update_prioridad/', views.update_proyecto_prioridad, name='update_proyecto_prioridad'),

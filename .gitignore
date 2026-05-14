@@ -22,3 +22,6 @@ Thumbs.db
 
 # Project specific
 scratch/
+dist/
+build/
+*.exe

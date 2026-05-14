@@ -1,8 +1,17 @@
 import os
 from pathlib import Path
 
+import sys
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
-BASE_DIR = Path(__file__).resolve().parent.parent
+if getattr(sys, 'frozen', False):
+    # BASE_DIR: Carpeta del ejecutable (para DB persistente)
+    BASE_DIR = Path(os.path.dirname(sys.executable))
+    # BUNDLE_DIR: Carpeta interna con los recursos (templates/static)
+    BUNDLE_DIR = Path(sys._MEIPASS).resolve()
+else:
+    BASE_DIR = Path(__file__).resolve().parent.parent
+    BUNDLE_DIR = BASE_DIR
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = 'django-insecure-523g52y7&sa8p7rjdfgc)ms400)zsqckhb%pv-=yi5d9@2^th='
@@ -10,7 +19,7 @@ SECRET_KEY = 'django-insecure-523g52y7&sa8p7rjdfgc)ms400)zsqckhb%pv-=yi5d9@2^th=
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ["*"]
+ALLOWED_HOSTS = ['*']
 # Application definition
 
 INSTALLED_APPS = [
@@ -38,7 +47,7 @@ ROOT_URLCONF = 'planificacion.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [BUNDLE_DIR / 'produccion' / 'templates'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -110,6 +119,10 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+STATICFILES_DIRS = [
+    BUNDLE_DIR / 'produccion' / 'static',
+]
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
