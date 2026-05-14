@@ -826,7 +826,7 @@
                 document.getElementById('btnConfirmSelect').style.display = 'none';
                 
                 const tbody = document.getElementById('tbodyProcesses');
-                tbody.innerHTML = '<tr><td colspan="11" class="text-center py-4"><i class="fas fa-sync fa-spin me-2"></i> Cargando procesos...</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4"><i class="fas fa-sync fa-spin me-2"></i> Cargando procesos...</td></tr>';
                 
                 try {
                     const response = await fetch(`/api/get_article_processes/?macro_pk=${macroPk}`);
@@ -885,10 +885,10 @@
                         // Check if all are selected to sync master checkbox
                         syncMasterCheckbox();
                     } else {
-                        tbody.innerHTML = '<tr><td colspan="11" class="text-center py-4 text-muted">No hay procesos abiertos para este artículo.</td></tr>';
+                        tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-muted">No hay procesos abiertos para este artículo.</td></tr>';
                     }
                 } catch (e) {
-                    tbody.innerHTML = '<tr><td colspan="11" class="text-center py-4 text-danger">Error al cargar procesos.</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4 text-danger">Error al cargar procesos.</td></tr>';
                 }
             };
 
