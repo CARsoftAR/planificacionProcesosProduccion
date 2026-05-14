@@ -3584,28 +3584,9 @@ def api_confirm_selected_tasks(request):
             if tasks_to_create:
                 PlannedTask.objects.using('default').bulk_create(tasks_to_create)
 
-            # 4. Sincronizamos el Nivel Planificación en PrioridadManual
-            # Necesitamos saber la máquina de cada OP para actualizar PrioridadManual correctamente
-            from django.db import connections
-            with connections['production'].cursor() as cursor:
-                placeholders = ', '.join(['%s'] * len(id_ordens))
-                sql = f"SELECT Idorden, Idmaquina FROM Tman050 WHERE Idorden IN ({placeholders})"
-                cursor.execute(sql, id_ordens)
-                op_maquina_map = {row[0]: row[1] for row in cursor.fetchall()}
-
-            for m_pk, ops in selected_ops_by_article.items():
-                nivel = piece_priorities.get(m_pk)
-                if nivel is not None:
-                    for oid in ops:
-                        oid_int = int(oid)
-                        maquina_id = op_maquina_map.get(oid_int)
-                        if maquina_id:
-                            PrioridadManual.objects.using('default').update_or_create(
-                                id_orden=oid_int,
-                                maquina=maquina_id,
-                                scenario=active_scenario,
-                                defaults={'nivel_manual': int(nivel)}
-                            )
+            # 4. (REMOVED) Sincronizamos el Nivel Planificación en PrioridadManual
+            # Se ha eliminado la sobrescritura colectiva para evitar que todas las piezas hereden el nivel del artículo.
+            # Los niveles individuales se gestionan directamente desde el modal de procesos.
 
             # --- SYNC: Actualizamos el campo 'proyectos' del escenario para persistencia ---
             if project_code and active_scenario:
