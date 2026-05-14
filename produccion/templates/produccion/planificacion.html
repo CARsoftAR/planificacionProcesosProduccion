@@ -168,7 +168,27 @@
         }
         .nav-tabs::-webkit-scrollbar-thumb:hover { background-color: #64748b !important; }
 
-        /* Estilos para Inputs de Prioridad por Pieza */
+        /* 💎 PREMIUM MODAL SCALING (Aislamiento Nivel 1 vs Nivel 2) */
+        #selectorProduccionModal .modal-dialog {
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            max-width: 850px; /* Ancho elegante para Nivel 1 */
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        /* Clase dinámica para Nivel 2 (Expansión Industrial) */
+        #selectorProduccionModal .modal-dialog.modal-nivel-2 {
+            max-width: 95% !important;
+            width: 1450px !important;
+        }
+
+        /* Forzar No-Wrap solo en Nivel 2 para aprovechar el ancho */
+        #level2-processes table th, 
+        #level2-processes table td {
+            white-space: nowrap !important;
+        }
+
+        /* Inputs de Prioridad */
         .article-priority-input {
             width: 80px;
             text-align: center;
@@ -323,7 +343,7 @@
 
         <!-- NEW: Selector de Producción Modal -->
         <div class="modal fade" id="selectorProduccionModal" tabindex="-1" aria-hidden="true">
-            <div class="modal-dialog modal-xl modal-dialog-scrollable" style="margin-top: 80px; height: 75vh; max-height: 75vh;">
+            <div class="modal-dialog modal-dialog-scrollable" id="selectorDialog" style="margin-top: 80px; height: 75vh; max-height: 75vh;">
                 <div class="modal-content border-0 shadow-lg" style="border-radius: 20px; overflow: hidden; height: 100%;">
                     <div class="modal-header border-0 bg-primary text-white p-4">
                         <div class="d-flex align-items-center">
@@ -810,6 +830,10 @@
 
             window.showProcesses = async function(macroPk, artName, artCode) {
                 currentLevel2MacroPk = macroPk; // Set global tracker
+                
+                // Expand modal for Level 2
+                document.getElementById('selectorDialog').classList.add('modal-nivel-2');
+                
                 document.getElementById('level1-articles').style.display = 'none';
                 document.getElementById('level2-processes').style.display = 'block';
                 document.getElementById('detailArtName').innerText = artName;
@@ -887,6 +911,9 @@
             };
 
             window.backToArticles = function() {
+                // Shrink modal for Level 1
+                document.getElementById('selectorDialog').classList.remove('modal-nivel-2');
+                
                 document.getElementById('level1-articles').style.display = 'block';
                 document.getElementById('level2-processes').style.display = 'none';
                 
