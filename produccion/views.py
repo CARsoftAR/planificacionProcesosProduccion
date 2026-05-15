@@ -3434,7 +3434,7 @@ def api_get_article_processes(request):
         (T.Cantidad - T.Cantidadpp) as Pendiente,
         T.Cantidad as Cantidad,
         T.Cantidadpp as Finalizado,
-        ISNULL(T3.Nivel_Planificacion, 0) as Nivel_Planificacion,
+        ISNULL(T3.Nivel, 0) as Nivel_Planificacion,
         ISNULL(M.MAQUINAD, T.Idmaquina) as MaquinaNombre
     FROM Tman050 T
     LEFT JOIN Tman010 M ON T.Idmaquina = M.Idmaquina
@@ -3456,7 +3456,7 @@ def api_get_article_processes(request):
         (T.Cantidad - T.Cantidadpp) as Pendiente,
         T.Cantidad as Cantidad,
         T.Cantidadpp as Finalizado,
-        ISNULL(T3.Nivel_Planificacion, 0) as Nivel_Planificacion,
+        ISNULL(T3.Nivel, 0) as Nivel_Planificacion,
         ISNULL(M.MAQUINAD, T.Idmaquina) as MaquinaNombre
     FROM Tman050 T
     LEFT JOIN Tman010 M ON T.Idmaquina = M.Idmaquina
@@ -3495,6 +3495,15 @@ def api_get_article_processes(request):
                 oid = r['IdOrden']
                 if oid in op_to_nivel:
                     r['Nivel_Planificacion'] = op_to_nivel[oid]
+                    print(f"DEBUG OVERRIDE: Op {r.get('Proceso')} - Nivel Manual: {op_to_nivel[oid]}")
+                else:
+                    # Prioridad ERP (ya viene en el campo del SQL). 
+                    # Si el ERP no tiene dato (0), usamos 1 como base.
+                    if not r.get('Nivel_Planificacion') or r['Nivel_Planificacion'] == 0:
+                        r['Nivel_Planificacion'] = 1
+                    
+                    # Debug Real solicitado por Cristian
+                    print(f"DEBUG ERP: Op {r.get('Proceso')} - Nivel ERP: {r.get('Nivel_Planificacion')}")
 
         return JsonResponse({'processes': results})
     except Exception as e:
