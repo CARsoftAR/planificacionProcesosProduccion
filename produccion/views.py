@@ -3397,6 +3397,7 @@ def api_get_project_articles(request):
             
             # Enriquecemos los artículos con su nivel actual
             for art in articles:
+                art['nivel_planificacion'] = 1 # Default si no hay override
                 m_pk = art.get('MacroPK')
                 if m_pk in planned_state:
                     for oid_s in planned_state[m_pk]:
@@ -3584,9 +3585,28 @@ def api_confirm_selected_tasks(request):
             if tasks_to_create:
                 PlannedTask.objects.using('default').bulk_create(tasks_to_create)
 
-            # 4. (REMOVED) Sincronizamos el Nivel Planificación en PrioridadManual
-            # Se ha eliminado la sobrescritura colectiva para evitar que todas las piezas hereden el nivel del artículo.
-            # Los niveles individuales se gestionan directamente desde el modal de procesos.
+            # 4. Sincronizamos el Nivel Planificación en PrioridadManual (RESTORED)
+            # Obtenemos las máquinas originales del ERP para no mover las tareas de lugar al confirmar
+            op_machines = {}
+            if id_ordens:
+                with connections['production'].cursor() as cursor:
+                    placeholders = ', '.join(['%s'] * len(id_ordens))
+                    sql_m = f"SELECT Idorden, Idmaquina FROM Tman050 WHERE Idorden IN ({placeholders})"
+                    cursor.execute(sql_m, id_ordens)
+                    op_machines = {str(row[0]): str(row[1]).strip() for row in cursor.fetchall()}
+
+            for mPk, nivel in piece_priorities.items():
+                ops = selected_ops_by_article.get(mPk, [])
+                for oid in ops:
+                    # Usamos la máquina del ERP para que el override sea válido sin cambiarla de máquina
+                    maquina = op_machines.get(str(oid), 'SIN ASIGNAR')
+                    PrioridadManual.objects.using('default').update_or_create(
+                        id_orden=oid,
+                        scenario=active_scenario,
+                        maquina=maquina,
+                        defaults={'nivel_manual': int(nivel)}
+                    )
+                    print(f"DATO GRABADO: {mPk} -> {nivel}")
 
             # --- SYNC: Actualizamos el campo 'proyectos' del escenario para persistencia ---
             if project_code and active_scenario:

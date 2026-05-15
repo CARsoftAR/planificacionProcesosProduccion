@@ -21,7 +21,7 @@ REM --windowed: No mostrar consola de Windows al ejecutar (solo GUI)
 REM --add-data: Incluir plantillas y archivos estáticos
 REM --hidden-import: Asegurar que apps de django no falten
 echo [2/3] Empaquetando con PyInstaller usando desktop_run.spec...
-pyinstaller --clean desktop_run.spec
+pyinstaller --clean -y desktop_run.spec
 
 echo [3/3] Copiando script de lanzamiento a la carpeta generada...
 copy INICIAR_SISTEMA.bat dist\ABBAMAT_PROD_Desktop\
