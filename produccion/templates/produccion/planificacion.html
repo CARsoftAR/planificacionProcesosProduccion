@@ -421,7 +421,7 @@
                         <button type="button" class="btn btn-success rounded-pill px-4 fw-bold shadow-sm" id="btnAcceptSelector" onclick="backToArticles()" style="display: none;">
                             <i class="fas fa-check me-2"></i>Aceptar
                         </button>
-                        <button type="button" class="btn btn-primary rounded-pill px-4 fw-bold shadow-sm" id="btnConfirmSelect" onclick="console.log('🔵 CLIC OK'); confirmSelection();">
+                        <button type="button" class="btn btn-primary rounded-pill px-4 fw-bold shadow-sm" id="btnConfirmSelect" onclick="alert('🔵 CLIC DETECTADO'); console.log('🚀 FUNCION confirmSelection EJECUTÁNDOSE...'); confirmSelection();">
                             <i class="fas fa-check-double me-2"></i>Confirmar y Cargar Planificación
                         </button>
                     </div>
@@ -2386,8 +2386,8 @@
         console.log("🛠️ Script de Planificación cargado al final del DOM.");
 
         window.confirmSelection = async function() {
-            console.log("🚀 Iniciando confirmSelection...");
             try {
+                console.log("🚀 FUNCION confirmSelection EJECUTÁNDOSE...");
                 let finalSelection = [];
                 let piecePriorities = {};
 
