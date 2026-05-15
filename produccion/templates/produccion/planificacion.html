@@ -841,7 +841,8 @@
                 tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4"><i class="fas fa-sync fa-spin me-2"></i> Cargando procesos...</td></tr>';
                 
                 try {
-                    const response = await fetch(`/api/get_article_processes/?macro_pk=${macroPk}`);
+                    const scenarioId = new URLSearchParams(window.location.search).get('scenario_id');
+                    const response = await fetch(`/api/get_article_processes/?macro_pk=${macroPk}&scenario_id=${scenarioId}`);
                     const data = await response.json();
                     
                     if (data.processes && data.processes.length > 0) {
@@ -939,8 +940,9 @@
             };
 
             window.updateProcessPriority = function(idOrden, nivel) {
+                console.log("Enviando ID:", idOrden, "Nivel:", nivel);
                 const scenarioId = new URLSearchParams(window.location.search).get('scenario_id');
-                fetch('/api/update_manual_nivel/', {
+                return fetch('/api/update_manual_nivel/', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -951,9 +953,18 @@
                 })
                 .then(r => r.json())
                 .then(data => {
-                    if (data.error) console.error("Error saving priority:", data.error);
+                    if (data.error) {
+                        console.error("Error saving priority:", data.error);
+                        alert("Error al guardar nivel: " + data.error);
+                    } else {
+                        console.log("Nivel guardado correctamente en DB SQLite para ID:", idOrden);
+                    }
+                    return data;
                 })
-                .catch(err => console.error("Network error saving priority:", err));
+                .catch(err => {
+                    console.error("Network error saving priority:", err);
+                    alert("Error de red al guardar nivel.");
+                });
             };
 
             window.updateAllCounters = function() {

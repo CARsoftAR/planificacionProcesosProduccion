@@ -164,6 +164,19 @@ def get_planificacion_data(filtros=None, exclude_completed=True):
     WHERE 1=1
     """
 
+    # --- NEW: Fetch Manual Priority Overrides from SQLite ---
+    from .models import PrioridadManual, Scenario
+    active_scenario = None
+    if filtros and filtros.get('scenario_id'):
+        try:
+            active_scenario = Scenario.objects.using('default').get(id=filtros['scenario_id'])
+        except Scenario.DoesNotExist:
+            pass
+    
+    if not active_scenario:
+        # Fallback to current official scenario
+        active_scenario = Scenario.objects.using('default').filter(es_principal=True).first()
+
     # Construcción Dinámica del WHERE
     params = []
     where_clauses = []
@@ -244,4 +257,22 @@ def get_planificacion_data(filtros=None, exclude_completed=True):
 
     with connections['production'].cursor() as cursor:
         cursor.execute(final_sql, params)
-        return dictfetchall(cursor)
+        results = dictfetchall(cursor)
+        
+    # --- MERGE: Overlay Manual Levels from SQLite ---
+    if results and active_scenario:
+        op_ids = [r['Idorden'] for r in results]
+        p_manual_db = PrioridadManual.objects.using('default').filter(
+            scenario=active_scenario,
+            id_orden__in=op_ids
+        ).values('id_orden', 'nivel_manual')
+        
+        op_to_nivel = {p['id_orden']: p['nivel_manual'] for p in p_manual_db if p['nivel_manual'] is not None}
+        
+        for r in results:
+            oid = r['Idorden']
+            if oid in op_to_nivel:
+                # Override the ERP value with the user's manual level
+                r['Nivel_Planificacion'] = op_to_nivel[oid]
+
+    return results
