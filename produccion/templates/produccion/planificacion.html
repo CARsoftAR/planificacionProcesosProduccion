@@ -421,7 +421,7 @@
                         <button type="button" class="btn btn-success rounded-pill px-4 fw-bold shadow-sm" id="btnAcceptSelector" onclick="backToArticles()" style="display: none;">
                             <i class="fas fa-check me-2"></i>Aceptar
                         </button>
-                        <button type="button" class="btn btn-primary rounded-pill px-4 fw-bold shadow-sm" id="btnConfirmSelect" onclick="confirmSelection()">
+                        <button type="button" class="btn btn-primary rounded-pill px-4 fw-bold shadow-sm" id="btnConfirmSelect" onclick="console.log('🔵 CLIC OK'); confirmSelection();">
                             <i class="fas fa-check-double me-2"></i>Confirmar y Cargar Planificación
                         </button>
                     </div>
@@ -2383,11 +2383,89 @@
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
     </style>
     <script>
-        console.log("🔥 AG: Inyección directa en HTML exitosa.");
-        window.confirmSelection = function() {
-            console.log("🚀 Ejecutando confirmSelection desde el HTML...");
-            alert("¡Conexión establecida!");
+        console.log("🛠️ Script de Planificación cargado al final del DOM.");
+
+        window.confirmSelection = async function() {
+            console.log("🚀 Iniciando confirmSelection...");
+            try {
+                let finalSelection = [];
+                let piecePriorities = {};
+
+                // 1. Recolección de datos
+                for (const mPk in selectedOpsByArticle) {
+                    if (enabledArticles[mPk]) {
+                        finalSelection = finalSelection.concat(selectedOpsByArticle[mPk]);
+                        const prioInput = document.querySelector(`.article-priority-input[data-macropk="${mPk}"]`);
+                        piecePriorities[mPk] = prioInput ? parseInt(prioInput.value) || 1 : 1;
+                    }
+                }
+                
+                const payload = {
+                    id_ordens: finalSelection,
+                    piece_priorities: piecePriorities,
+                    scenario_id: new URLSearchParams(window.location.search).get('scenario_id'),
+                    project_code: currentProjectToSelect,
+                    force: true
+                };
+
+                console.log("🚀 MANDANDO DATOS:", JSON.stringify(payload));
+
+                if (finalSelection.length === 0) {
+                    alert("No hay procesos seleccionados en los artículos activos.");
+                    return;
+                }
+
+                const btn = document.getElementById('btnConfirmSelect');
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Cargando...';
+
+                // 2. Fetch con manejo de errores
+                const response = await fetch('/api/confirm_selected_tasks/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCookie('csrftoken') || document.querySelector('[name=csrfmiddlewaretoken]')?.value
+                    },
+                    body: JSON.stringify(payload)
+                });
+                
+                console.log("📡 Respuesta del servidor:", response.status);
+
+                if (response.ok) {
+                    alert("✅ Planificación cargada correctamente.");
+                    location.reload();
+                } else {
+                    const errData = await response.json();
+                    console.error("❌ Error del servidor:", errData);
+                    alert("Error al guardar: " + (errData.message || 'Error desconocido'));
+                }
+            } catch (e) {
+                console.error("❌ ERROR EN SCRIPT:", e);
+                alert("Error interno: " + e.message);
+            } finally {
+                const btn = document.getElementById('btnConfirmSelect');
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fas fa-check-double me-2"></i>Confirmar y Cargar Planificación';
+                }
+            }
         };
+
+        // Función auxiliar para el token CSRF
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
     </script>
 </body>
 </html>
