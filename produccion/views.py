@@ -3397,7 +3397,7 @@ def api_get_project_articles(request):
             
             # Enriquecemos los artículos con su nivel actual
             for art in articles:
-                art['nivel_planificacion'] = 1 # Default si no hay override
+                art['nivel_planificacion'] = 0 # Default si no hay override
                 m_pk = art.get('MacroPK')
                 if m_pk in planned_state:
                     for oid_s in planned_state[m_pk]:
@@ -3434,15 +3434,11 @@ def api_get_article_processes(request):
         (T.Cantidad - T.Cantidadpp) as Pendiente,
         T.Cantidad as Cantidad,
         T.Cantidadpp as Finalizado,
-        ISNULL(T3.Nivel, 0) as Nivel_Planificacion,
-        ISNULL(M.MAQUINAD, T.Idmaquina) as MaquinaNombre
+        ISNULL((SELECT MAX(T3.Nivel_Planificacion) FROM TMAN002 T3 WHERE LTRIM(RTRIM(T3.ArticuloH)) = LTRIM(RTRIM(T.Articulo)) AND LTRIM(RTRIM(T3.Formula)) = LTRIM(RTRIM(T.Formula))), 0) as Nivel_Planificacion,
+        ISNULL(M.MAQUINAD, T.Idmaquina) as MaquinaNombre,
+        T.MSTNMBR as MSTNMBR
     FROM Tman050 T
     LEFT JOIN Tman010 M ON T.Idmaquina = M.Idmaquina
-    LEFT JOIN Tman050 T2 ON T.MSTNMBR = T2.IdOrden
-    LEFT JOIN TMAN002 T3 ON 
-        T.Articulo = T3.ArticuloH AND 
-        T.Formula = T3.Formula AND 
-        T2.Articulo = T3.ArticuloP
     WHERE T.MacroPK = %s
     AND T.IsMacro = 0
 
@@ -3456,15 +3452,11 @@ def api_get_article_processes(request):
         (T.Cantidad - T.Cantidadpp) as Pendiente,
         T.Cantidad as Cantidad,
         T.Cantidadpp as Finalizado,
-        ISNULL(T3.Nivel, 0) as Nivel_Planificacion,
-        ISNULL(M.MAQUINAD, T.Idmaquina) as MaquinaNombre
+        ISNULL((SELECT MAX(T3.Nivel_Planificacion) FROM TMAN002 T3 WHERE LTRIM(RTRIM(T3.ArticuloH)) = LTRIM(RTRIM(T.Articulo)) AND LTRIM(RTRIM(T3.Formula)) = LTRIM(RTRIM(T.Formula))), 0) as Nivel_Planificacion,
+        ISNULL(M.MAQUINAD, T.Idmaquina) as MaquinaNombre,
+        T.MSTNMBR as MSTNMBR
     FROM Tman050 T
     LEFT JOIN Tman010 M ON T.Idmaquina = M.Idmaquina
-    LEFT JOIN Tman050 T2 ON T.MSTNMBR = T2.IdOrden
-    LEFT JOIN TMAN002 T3 ON 
-        T.Articulo = T3.ArticuloH AND 
-        T.Formula = T3.Formula AND 
-        T2.Articulo = T3.ArticuloP
     WHERE T.MSTNMBR IN (SELECT IdOrden FROM Tman050 WHERE MacroPK = %s AND IsMacro = 1)
     AND (T.MacroPK IS NULL OR T.MacroPK = '')
     AND T.IsMacro = 0
@@ -3478,7 +3470,7 @@ def api_get_article_processes(request):
             columns = [col[0] for col in cursor.description]
             results = [dict(zip(columns, row)) for row in cursor.fetchall()]
             
-        # 3. Aplicar Overrides de Nivel desde SQLite (PrioridadManual)
+        # 3. Aplicar Overrides de Nivel desde SQLite (PrioridadManual) y Secuenciación Dinámica
         if results:
             op_ids = [r['IdOrden'] for r in results]
             scenario_id = request.GET.get('scenario_id')
@@ -3491,19 +3483,28 @@ def api_get_article_processes(request):
             
             op_to_nivel = {p['id_orden']: p['nivel_manual'] for p in p_manual_db if p['nivel_manual'] is not None}
             
+            # Agrupamos por MSTNMBR (pieza/artículo madre) para auto-secuenciar las operaciones del proceso
+            from collections import defaultdict
+            groups = defaultdict(list)
             for r in results:
-                oid = r['IdOrden']
-                if oid in op_to_nivel:
-                    r['Nivel_Planificacion'] = op_to_nivel[oid]
-                    print(f"DEBUG OVERRIDE: Op {r.get('Proceso')} - Nivel Manual: {op_to_nivel[oid]}")
-                else:
-                    # Prioridad ERP (ya viene en el campo del SQL). 
-                    # Si el ERP no tiene dato (0), usamos 1 como base.
-                    if not r.get('Nivel_Planificacion') or r['Nivel_Planificacion'] == 0:
-                        r['Nivel_Planificacion'] = 1
-                    
-                    # Debug Real solicitado por Cristian
-                    print(f"DEBUG ERP: Op {r.get('Proceso')} - Nivel ERP: {r.get('Nivel_Planificacion')}")
+                mst = r.get('MSTNMBR') or 0
+                groups[mst].append(r)
+                
+            for mst, group in groups.items():
+                # Ordenamos las operaciones por IdOrden (hoja de ruta natural del ERP)
+                group.sort(key=lambda x: int(x.get('IdOrden') or 0))
+                for i, r in enumerate(group):
+                    oid = r['IdOrden']
+                    if oid in op_to_nivel:
+                        r['Nivel_Planificacion'] = int(op_to_nivel[oid])
+                        print(f"DEBUG OVERRIDE: Op {r.get('Proceso')} - Nivel Manual: {op_to_nivel[oid]}")
+                    else:
+                        proc_desc = r.get('Proceso', '').upper()
+                        if 'RECEPCION DE ORDEN DE COMPRA' in proc_desc:
+                            r['Nivel_Planificacion'] = 20
+                        else:
+                            r['Nivel_Planificacion'] = int(i + 1)
+                        print(f"DEBUG ERP (Secuencia Calculada): Proceso='{r.get('Proceso')}' | Articulo='{r.get('Articulo')}' | Nivel={r.get('Nivel_Planificacion')}")
 
         return JsonResponse({'processes': results})
     except Exception as e:
@@ -3570,7 +3571,18 @@ def api_confirm_selected_tasks(request):
                         id_orden__in=project_op_ids
                     ).delete()
             
-            # 2. Borramos prioridades manuales y estado 'oculto' previo de las OPs que estamos guardando ahora
+            # 2. Resguardamos los niveles manuales existentes (si los hay) para no perderlos
+            existing_niveles = {}
+            if id_ordens:
+                existing_pms = PrioridadManual.objects.using('default').filter(
+                    id_orden__in=id_ordens,
+                    scenario=active_scenario
+                ).values('id_orden', 'nivel_manual')
+                for pm in existing_pms:
+                    if pm['nivel_manual'] is not None:
+                        existing_niveles[str(pm['id_orden'])] = pm['nivel_manual']
+
+            # 3. Borramos prioridades manuales y estado 'oculto' previo de las OPs que estamos guardando ahora
             # (Para que aparezcan y arranquen en su máquina original del ERP)
             PrioridadManual.objects.using('default').filter(
                 id_orden__in=id_ordens, 
@@ -3582,7 +3594,7 @@ def api_confirm_selected_tasks(request):
                 scenario=active_scenario
             ).delete()
 
-            # 3. Guardamos las nuevas OPs en PlannedTask
+            # 4. Guardamos las nuevas OPs en PlannedTask
             tasks_to_create = []
             for oid in id_ordens:
                 tasks_to_create.append(PlannedTask(
@@ -3594,28 +3606,27 @@ def api_confirm_selected_tasks(request):
             if tasks_to_create:
                 PlannedTask.objects.using('default').bulk_create(tasks_to_create)
 
-            # 4. Sincronizamos el Nivel Planificación en PrioridadManual (RESTORED)
-            # Obtenemos las máquinas originales del ERP para no mover las tareas de lugar al confirmar
-            op_machines = {}
-            if id_ordens:
+            # 5. Sincronizamos el Nivel Planificación en PrioridadManual (RESTORED ONLY FOR EXPLICIT USER OVERRIDES)
+            # Restauramos ÚNICAMENTE los niveles manuales que existían previamente (los que el usuario editó a mano)
+            # Para las OPs sin nivel manual preexistente, NO creamos registro (así usan el nivel base del ERP)
+            if existing_niveles:
+                # Obtenemos las máquinas originales del ERP
+                op_machines = {}
                 with connections['production'].cursor() as cursor:
                     placeholders = ', '.join(['%s'] * len(id_ordens))
                     sql_m = f"SELECT Idorden, Idmaquina FROM Tman050 WHERE Idorden IN ({placeholders})"
                     cursor.execute(sql_m, id_ordens)
                     op_machines = {str(row[0]): str(row[1]).strip() for row in cursor.fetchall()}
 
-            for mPk, nivel in piece_priorities.items():
-                ops = selected_ops_by_article.get(mPk, [])
-                for oid in ops:
-                    # Usamos la máquina del ERP para que el override sea válido sin cambiarla de máquina
-                    maquina = op_machines.get(str(oid), 'SIN ASIGNAR')
+                for oid_s, nivel_val in existing_niveles.items():
+                    maquina = op_machines.get(oid_s, 'SIN ASIGNAR')
                     PrioridadManual.objects.using('default').update_or_create(
-                        id_orden=oid,
+                        id_orden=oid_s,
                         scenario=active_scenario,
                         maquina=maquina,
-                        defaults={'nivel_manual': int(nivel)}
+                        defaults={'nivel_manual': nivel_val}
                     )
-                    print(f"DATO GRABADO: {mPk} -> {nivel}")
+                    print(f"RESTORED MANUAL LEVEL: OP {oid_s} -> Nivel {nivel_val}")
 
             # --- SYNC: Actualizamos el campo 'proyectos' del escenario para persistencia ---
             if project_code and active_scenario:

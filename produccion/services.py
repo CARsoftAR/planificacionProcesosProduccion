@@ -68,8 +68,7 @@ def get_planificacion_data(filtros=None, exclude_completed=True):
         T.Idprioridad,
         Oe.Descripcion AS Estadod,
         T.Lote,
-        T3.Nivel,
-        T3.Nivel_Planificacion,
+        ISNULL((SELECT MAX(SUB.Nivel_Planificacion) FROM TMAN002 SUB WHERE LTRIM(RTRIM(SUB.ArticuloH)) = LTRIM(RTRIM(T.Articulo)) AND LTRIM(RTRIM(SUB.Formula)) = LTRIM(RTRIM(T.Formula))), 0) AS Nivel_Planificacion,
         T3.IDConcepto AS [SECTOR PERSONA],
         Isnull(T3.QConcepto, 1) AS [NIVEL PERSONA],
         Isnull(T.Idmaquina, '') AS Idmaquina,
@@ -253,26 +252,43 @@ def get_planificacion_data(filtros=None, exclude_completed=True):
     final_sql = base_sql + "".join(where_clauses)
     
     # Ordenamiento (Jerarquía solicitada: Maquina, Nivel Planificacion ASC)
-    final_sql += " ORDER BY MAC.MAQUINAD, T3.Nivel_Planificacion, T3.Nivel, T.IdOrden desc"
+    final_sql += " ORDER BY MAC.MAQUINAD, Nivel_Planificacion, T.Idorden desc"
 
     with connections['production'].cursor() as cursor:
         cursor.execute(final_sql, params)
         results = dictfetchall(cursor)
         
-    # --- MERGE: Overlay Manual Levels from SQLite ---
+    # --- MERGE: Overlay Manual Levels and Auto-Sequence ---
+    op_to_nivel = {}
     if results and active_scenario:
         op_ids = [r['Idorden'] for r in results]
         p_manual_db = PrioridadManual.objects.using('default').filter(
             scenario=active_scenario,
             id_orden__in=op_ids
         ).values('id_orden', 'nivel_manual')
-        
         op_to_nivel = {p['id_orden']: p['nivel_manual'] for p in p_manual_db if p['nivel_manual'] is not None}
         
+    if results:
+        # Agrupamos por código de proyecto y MSTNMBR (artículo/pieza madre) para secuenciar
+        from collections import defaultdict
+        groups = defaultdict(list)
         for r in results:
-            oid = r['Idorden']
-            if oid in op_to_nivel:
-                # Override the ERP value with the user's manual level
-                r['Nivel_Planificacion'] = op_to_nivel[oid]
+            proj = r.get('ProyectoCode', '')
+            mst = r.get('Mstnmbr') or 0
+            groups[(proj, mst)].append(r)
+            
+        for (proj, mst), group in groups.items():
+            # Ordenamos las operaciones por Idorden (secuencia de hoja de ruta natural del ERP)
+            group.sort(key=lambda x: int(x.get('Idorden') or 0))
+            for i, r in enumerate(group):
+                oid = r.get('Idorden')
+                if oid in op_to_nivel:
+                    r['Nivel_Planificacion'] = int(op_to_nivel[oid])
+                else:
+                    desc = r.get('Descri', '').upper()
+                    if 'RECEPCION DE ORDEN DE COMPRA' in desc:
+                        r['Nivel_Planificacion'] = 20
+                    else:
+                        r['Nivel_Planificacion'] = int(i + 1)
 
     return results

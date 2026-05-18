@@ -421,7 +421,7 @@
                         <button type="button" class="btn btn-success rounded-pill px-4 fw-bold shadow-sm" id="btnAcceptSelector" onclick="backToArticles()" style="display: none;">
                             <i class="fas fa-check me-2"></i>Aceptar
                         </button>
-                        <button type="button" class="btn btn-primary rounded-pill px-4 fw-bold shadow-sm" id="btnConfirmSelect" onclick="alert('🔵 CLIC DETECTADO'); console.log('🚀 FUNCION confirmSelection EJECUTÁNDOSE...'); confirmSelection();">
+                        <button type="button" class="btn btn-primary rounded-pill px-4 fw-bold shadow-sm" id="btnConfirmSelect" onclick="confirmSelection();">
                             <i class="fas fa-check-double me-2"></i>Confirmar y Cargar Planificación
                         </button>
                     </div>
@@ -775,7 +775,7 @@
                                     <input type="number" 
                                            class="form-control form-control-sm article-priority-input" 
                                            data-macropk="${art.MacroPK}"
-                                           value="${art.nivel_planificacion || 1}" 
+                                           value="${art.nivel_planificacion || 0}" 
                                            min="1">
                                 </td>
                                 <td class="pe-4 text-center">
@@ -1056,14 +1056,15 @@
                             customClass: { popup: 'premium-swal' }
                         }).then(() => {
                              const params = new URLSearchParams(window.location.search);
+                             const scenarioParam = params.get('scenario_id') || scenarioId;
                              let currentProjects = params.get('proyectos') || '';
                              let projectsArray = currentProjects.split(',').map(p => p.trim()).filter(p => p);
-                             if (!projectsArray.includes(currentProjectToSelect)) {
+                             if (currentProjectToSelect && !projectsArray.includes(currentProjectToSelect)) {
                                  projectsArray.push(currentProjectToSelect);
                              }
-                             params.set('proyectos', projectsArray.join(','));
-                             params.set('run', '1');
-                             window.location.href = window.location.pathname + "?" + params.toString();
+                             // Redirigir al GANTT VISUAL directamente tras confirmar
+                             const ganttUrl = `/planificacion/visual/?scenario_id=${scenarioParam}&proyectos=${projectsArray.join(',')}&plan_mode=manual&run=1`;
+                             window.location.href = ganttUrl;
                         });
                     } else {
                         throw new Error("Error al confirmar la selección");

@@ -355,15 +355,15 @@ def get_gantt_data(request, force_run=False):
     # NEW: Respect manual selections from the article selector (PlannedTask)
     # We fetch ALL planned IDs for the scenario. The get_planificacion_data call 
     # will later filter them by proyecto if proyectos_list is present in deps_filter.
-        planned_metadata_qs = PlannedTask.objects.using('default').filter(
-            scenario=active_scenario
-        ).values('id_orden')
-        
-        planned_ids = [p['id_orden'] for p in planned_metadata_qs]
-        
-        if planned_ids:
-            # Shift to strict ID-based filtering (will be ANDed with proyectos if present)
-            deps_filter['id_orden_in'] = planned_ids
+    planned_metadata_qs = PlannedTask.objects.using('default').filter(
+        scenario=active_scenario
+    ).values('id_orden')
+    
+    planned_ids = [p['id_orden'] for p in planned_metadata_qs]
+    
+    if planned_ids:
+        # Shift to strict ID-based filtering (will be ANDed with proyectos if present)
+        deps_filter['id_orden_in'] = planned_ids
 
     # Match spreadsheet logic: in manual/scenario mode, we often want to see 
     # what we planned even if the ERP thinks it is completed (e.g. for audits or manual overrides)

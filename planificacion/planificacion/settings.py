@@ -4,7 +4,13 @@ from pathlib import Path
 import sys
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 if getattr(sys, 'frozen', False):
-    BASE_DIR = Path(os.path.dirname(sys.executable))
+    # En PyInstaller onedir, sys.executable está en la carpeta _internal/ o en la raíz.
+    # Queremos que BASE_DIR sea la carpeta raíz (donde reside el lanzador y la base de datos sqlite3).
+    exe_dir = Path(sys.executable).resolve().parent
+    if exe_dir.name == '_internal':
+        BASE_DIR = exe_dir.parent
+    else:
+        BASE_DIR = exe_dir
 else:
     BASE_DIR = Path(__file__).resolve().parent.parent
 
