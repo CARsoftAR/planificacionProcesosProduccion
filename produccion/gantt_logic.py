@@ -436,6 +436,39 @@ def get_gantt_data(request, force_run=False):
 
     # Include all tasks for dependencies and simulation, including unassigned ones (MAC00)
     all_tasks_for_deps = all_tasks_raw
+
+    # 1. Obtener prioridades de proyectos para el escenario activo
+    from .models import ProyectoPrioridad
+    proj_priorities = {}
+    active_projects = set(t.get('ProyectoCode') for t in all_tasks_raw if t.get('ProyectoCode'))
+    
+    db_priorities = []
+    if active_scenario and active_projects:
+        db_priorities = list(ProyectoPrioridad.objects.using('default').filter(
+            scenario=active_scenario,
+            proyecto__in=active_projects
+        ).order_by('prioridad'))
+        
+    db_proj_names = {pp.proyecto for pp in db_priorities}
+    
+    # Proyectos que no tienen prioridad en BD
+    missing_priorities = []
+    for proj in sorted(active_projects):
+        if proj not in db_proj_names:
+            class DummyPP:
+                def __init__(self, proyecto, prioridad):
+                    self.proyecto = proyecto
+                    self.prioridad = prioridad
+            missing_priorities.append(DummyPP(proj, 999))
+            
+    all_sorted_projects = db_priorities + missing_priorities
+    # Ordenamos todos de forma ascendente (1 es primero, 2 segundo, etc.)
+    all_sorted_projects.sort(key=lambda x: x.prioridad)
+    
+    print("--- MOTOR: INICIO ORDENAMIENTO DE PROYECTOS ---")
+    for p in all_sorted_projects:
+        print(f"MOTOR: Orden de planificación seleccionado -> PROYECTO: {p.proyecto} | PRIORIDAD: {p.prioridad}")
+        proj_priorities[p.proyecto] = p.prioridad
     
     # Pre-group tasks by machine for internal loop efficiency
     all_tasks_by_machine = defaultdict(list)
@@ -678,6 +711,7 @@ def get_gantt_data(request, force_run=False):
                  item['Cantidadpp'] = item.get('cantidad_producida', 0)
                   
         tasks.sort(key=lambda x: (
+            proj_priorities.get(x.get('ProyectoCode'), 999),
             -int(x.get('Nivel_Planificacion') or 0), 
             x.get('OrdenVisual', 999999)
         ))
@@ -748,8 +782,10 @@ def get_gantt_data(request, force_run=False):
                      target_start = force_start_times[tid]
                      is_pinned = 1
                  
-                 # PRIORIDAD ABSOLUTA: Despacho por Nivel (Mayor es primero) y luego OrdenVisual o disponibilidad.
-                 return (-get_nivel(t), t.get('OrdenVisual', 999999), target_start)
+                 # PRIORIDAD ABSOLUTA: ProyectoPrioridad (Ascending), Nivel (Descending), OrdenVisual, disponibilidad
+                 proj_code = t.get('ProyectoCode')
+                 proj_prio = proj_priorities.get(proj_code, 999)
+                 return (proj_prio, -get_nivel(t), t.get('OrdenVisual', 999999), target_start)
             
             tasks.sort(key=get_sort_key)
             recalc = calculate_timeline(maquina, tasks, start_date=start_simulation, 
