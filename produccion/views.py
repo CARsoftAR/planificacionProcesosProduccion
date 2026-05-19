@@ -760,6 +760,7 @@ def planificacion_list(request):
             'proyectos_value': proyectos if proyectos else '',
             'id_orden_value': id_orden if id_orden else '',
             'all_scenarios': Scenario.objects.using('default').all() if 'Scenario' in globals() else [],
+            'active_scenario': active_scenario,
             'active_scenario_id': active_scenario.id if active_scenario else None,
             'audit_mode': audit_mode
         })

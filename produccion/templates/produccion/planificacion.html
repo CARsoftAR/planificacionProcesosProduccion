@@ -233,28 +233,27 @@
                     </select>
                 </div>
 
-                <div class="d-flex align-items-center gap-2 ms-2">
-                    <label for="scenario_id" class="smaller fw-bold text-muted mb-0"><i class="fas fa-database"></i> Estado:</label>
-                    <select name="scenario_id" id="scenario-selector" class="form-select form-select-sm rounded-pill border-secondary border-opacity-25" style="width: 200px; font-size: 0.8rem;">
-                        <option value="">-- Estado Actual (Oficial) --</option>
-                        {% for scenario in all_scenarios %}
-                        <option value="{{ scenario.id }}" 
-                                data-proyectos="{{ scenario.proyectos|default:'' }}"
-                                data-principal="{{ scenario.es_principal|yesno:'1,0' }}"
-                                {% if active_scenario_id == scenario.id %}selected{% endif %}>
-                            {{ scenario.nombre }} {% if scenario.es_principal %}(Oficial){% endif %}
-                        </option>
-                        {% endfor %}
-                    </select>
+                <input type="hidden" name="scenario_id" id="active-scenario-id-input" value="{{ active_scenario_id|default:'' }}">
+                <div class="d-flex align-items-center gap-3 ms-2">
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="smaller fw-bold text-muted mb-0"><i class="fas fa-file-alt"></i> Plan Activo:</span>
+                        <span class="fw-bold text-dark bg-light px-3 py-1 rounded-pill border border-secondary border-opacity-25" style="font-size: 0.8rem;">
+                            {{ active_scenario.nombre|default:"Nuevo Plan" }}
+                        </span>
+                    </div>
+
                     <div class="d-flex gap-1">
-                        <button type="button" id="btnSaveScenario" class="btn btn-sm btn-outline-success rounded-pill px-2" title="Grabar Escenario (Copiar estado actual)">
-                            <i class="fas fa-save"></i>
+                        <!-- Botón NUEVO -->
+                        <button type="button" id="btnNewScenario" class="btn btn-sm btn-outline-primary rounded-pill px-3 fw-bold d-inline-flex align-items-center gap-1" title="Empezar un escenario en blanco (Nuevo Plan)">
+                            <i class="fas fa-file"></i> NUEVO
                         </button>
-                        <button type="button" id="btnDeleteScenario" class="btn btn-sm btn-outline-danger rounded-pill px-2" title="Borrar Escenario">
-                            <i class="fas fa-trash-alt"></i>
+                        <!-- Botón GUARDAR -->
+                        <button type="button" id="btnSaveScenario" class="btn btn-sm btn-outline-success rounded-pill px-3 fw-bold d-inline-flex align-items-center gap-1" title="Guardar escenario actual">
+                            <i class="fas fa-save"></i> GUARDAR
                         </button>
-                        <button type="button" id="btnPublishScenario" class="btn btn-sm btn-outline-primary rounded-pill px-3 fw-bold" title="Activar Escenario (Convertir en Oficial)">
-                            <i class="fas fa-check-double me-1"></i> Activar
+                        <!-- Botón CARGAR -->
+                        <button type="button" id="btnLoadScenario" class="btn btn-sm btn-outline-info rounded-pill px-3 fw-bold d-inline-flex align-items-center gap-1" title="Cargar escenario guardado">
+                            <i class="fas fa-folder-open"></i> CARGAR
                         </button>
                     </div>
                 </div>
@@ -278,60 +277,57 @@
 
         <!-- Modal Guardar Escenario -->
         <div class="modal fade" id="saveScenarioModal" tabindex="-1" aria-labelledby="saveScenarioModalLabel" aria-hidden="true">
-            <div class="modal-dialog">
-                <div class="modal-content">
-                    <div class="modal-header bg-success text-white">
-                        <h5 class="modal-title" id="saveScenarioModalLabel">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content border-0 shadow" style="border-radius: 12px; overflow: hidden;">
+                    <div class="modal-header bg-success text-white border-0 py-3 px-4">
+                        <h5 class="modal-title fw-bold" id="saveScenarioModalLabel">
                             <i class="fas fa-save me-2"></i>Guardar Escenario
                         </h5>
                         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                     </div>
-                    <div class="modal-body">
-                        <div class="mb-4">
-                            <label class="form-label fw-bold">Elija una opción:</label>
-                            <div class="form-check mb-2">
-                                <input class="form-check-input" type="radio" name="saveOption" id="radioNew" value="new" checked>
-                                <label class="form-check-label" for="radioNew">
-                                    <i class="fas fa-plus-circle me-1 text-primary"></i>Crear uno nuevo
-                                </label>
-                            </div>
-                            <div class="form-check">
-                                <input class="form-check-input" type="radio" name="saveOption" id="radioExisting" value="existing">
-                                <label class="form-check-label" for="radioExisting">
-                                    <i class="fas fa-edit me-1 text-warning"></i>Sobrescribir existente
-                                </label>
-                            </div>
-                        </div>
-                        
-                        <div id="divNewScenario">
-                            <div class="mb-3">
-                                <label for="newScenarioName" class="form-label">Nombre del nuevo escenario:</label>
-                                <input type="text" class="form-control" id="newScenarioName" placeholder="Ej: Plan Alternativo B">
-                            </div>
-                        </div>
-                        
-                        <div id="divExistingScenario" style="display: none;">
-                            <div class="mb-3">
-                                <label for="existingScenarioSelect" class="form-label">Seleccionar escenario a sobrescribir:</label>
-                                <select class="form-select" id="existingScenarioSelect">
-                                    <option value="">-- Seleccionar --</option>
-                                    {% for scenario in all_scenarios %}
-                                        {% if not scenario.es_principal %}
-                                            <option value="{{ scenario.id }}">{{ scenario.nombre }}</option>
-                                        {% endif %}
-                                    {% endfor %}
-                                </select>
-                                <div class="form-text text-danger mt-2">
-                                    <i class="fas fa-exclamation-triangle me-1"></i>
-                                    Atención: Se perderán los movimientos previos del escenario seleccionado.
-                                </div>
-                            </div>
+                    <div class="modal-body p-4 bg-light">
+                        <div class="mb-3">
+                            <label for="newScenarioName" class="form-label fw-bold text-muted small uppercase">Nombre del plan:</label>
+                            <input type="text" class="form-control rounded-pill border-secondary border-opacity-25" id="newScenarioName" placeholder="Ej: Planificación de Mayo" style="padding: 0.6rem 1.2rem;" value="{% if active_scenario and active_scenario.nombre != 'Nuevo Plan' %}{{ active_scenario.nombre }}{% endif %}">
                         </div>
                     </div>
-                    <div class="modal-footer bg-light">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                        <button type="button" class="btn btn-success" id="btnConfirmSave">
-                            <i class="fas fa-check me-1"></i>Confirmar Guardado
+                    <div class="modal-footer border-0 bg-white px-4 pb-4 pt-0">
+                        <button type="button" class="btn btn-light rounded-pill px-4 fw-bold" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="button" class="btn btn-success rounded-pill px-4 fw-bold shadow-sm" id="btnConfirmSave">
+                            <i class="fas fa-check me-2"></i>Confirmar Guardado
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal Cargar Escenario -->
+        <div class="modal fade" id="loadScenarioModal" tabindex="-1" aria-labelledby="loadScenarioModalLabel" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content border-0 shadow" style="border-radius: 12px; overflow: hidden;">
+                    <div class="modal-header bg-primary text-white border-0 py-3 px-4">
+                        <h5 class="modal-title fw-bold" id="loadScenarioModalLabel">
+                            <i class="fas fa-folder-open me-2"></i>Cargar Escenario
+                        </h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body p-4 bg-light">
+                        <div class="mb-3">
+                            <label for="loadScenarioSelect" class="form-label fw-bold text-muted small uppercase">Seleccionar plan guardado:</label>
+                            <select class="form-select rounded-pill border-secondary border-opacity-25" id="loadScenarioSelect" style="padding: 0.6rem 1.2rem;">
+                                <option value="">-- Seleccionar un Plan --</option>
+                                {% for scenario in all_scenarios %}
+                                    <option value="{{ scenario.id }}" data-proyectos="{{ scenario.proyectos|default:'' }}">
+                                        {{ scenario.nombre }}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="modal-footer border-0 bg-white px-4 pb-4 pt-0">
+                        <button type="button" class="btn btn-light rounded-pill px-4 fw-bold" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="button" class="btn btn-primary rounded-pill px-4 fw-bold shadow-sm" id="btnConfirmLoad">
+                            <i class="fas fa-check me-2"></i>Aceptar
                         </button>
                     </div>
                 </div>
@@ -1875,131 +1871,15 @@
                 });
             });
 
-            // --- PUBLISH SCENARIO ---
-            const btnPublish = document.getElementById('btnPublishScenario');
-            if (btnPublish) {
-                btnPublish.addEventListener('click', async () => {
-                    const sel = document.getElementById('scenario-selector');
-                    const id = sel.value;
-                    if (!id) return alert("Seleccione un escenario primero.");
-                    
-                    const result = await Swal.fire({
-                        title: '¿Publicar Escenario?',
-                        text: "Este escenario se convertirá en el plan principal del sistema.",
-                        icon: 'warning',
-                        showCancelButton: true,
-                        confirmButtonText: 'Sí, publicar',
-                        customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
-                    });
-                    
-                    if (result.isConfirmed) {
-                        try {
-                            const resp = await fetch(`/api/scenarios/${id}/publish/`, { 
-                                method: 'POST',
-                                headers: { 'X-CSRFToken': '{{ csrf_token }}' }
-                            });
-                            if (resp.ok) window.location.reload();
-                            else {
-                                Swal.fire({
-                                    title: 'Error',
-                                    text: 'Hubo un problema al publicar el escenario.',
-                                    icon: 'error',
-                                    confirmButtonText: 'Cerrar',
-                                    customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
-                                });
-                            }
-                        } catch(e) { console.error(e); }
-                    }
-                });
-            }
-
-            // --- DELETE SCENARIO ---
-            const btnDeleteScen = document.getElementById('btnDeleteScenario');
-            if (btnDeleteScen) {
-                btnDeleteScen.addEventListener('click', async () => {
-                    const sel = document.getElementById('scenario-selector');
-                    const id = sel.value;
-                    if (!id) {
-                        return Swal.fire({
-                            title: 'Atención',
-                            text: 'Seleccione un escenario primero.',
-                            icon: 'info',
-                            confirmButtonText: 'Aceptar',
-                            customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
-                        });
-                    }
-                    
-                    const opt = sel.options[sel.selectedIndex];
-                    if (opt.dataset.principal === '1') {
-                        return Swal.fire({
-                            title: 'Acción No Permitida',
-                            text: 'No se puede eliminar el escenario principal (Oficial).',
-                            icon: 'error',
-                            confirmButtonText: 'Entendido',
-                            customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
-                        });
-                    }
-
-                    const result = await Swal.fire({
-                        title: '¿Eliminar Escenario?',
-                        text: "Esta acción no se puede deshacer.",
-                        icon: 'warning',
-                        showCancelButton: true,
-                        confirmButtonText: 'Sí, eliminar',
-                        confirmButtonColor: '#d33',
-                        customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
-                    });
-                    
-                    if (result.isConfirmed) {
-                        try {
-                            const resp = await fetch(`/api/scenarios/${id}/delete/`, { 
-                                method: 'POST',
-                                headers: { 'X-CSRFToken': '{{ csrf_token }}' }
-                            });
-                            if (resp.ok) window.location.href = window.location.pathname;
-                            else {
-                                Swal.fire({
-                                    title: 'Error',
-                                    text: 'No se pudo eliminar el escenario.',
-                                    icon: 'error',
-                                    confirmButtonText: 'Cerrar',
-                                    customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
-                                });
-                            }
-                        } catch(e) { console.error(e); }
-                    }
-                });
-            }
-
             // Logic for mode selector - decouple scenario when moving to manual
             const planModeSelector = document.getElementById('plan-mode-selector');
             if (planModeSelector) {
                 planModeSelector.addEventListener('change', function() {
                     if (this.value === 'manual') {
                         // Clear scenario_id to load Current State when switching to manual
-                        const scenSel = document.getElementById('scenario-selector');
+                        const scenSel = document.getElementById('active-scenario-id-input');
                         if (scenSel) scenSel.value = "";
                     }
-                    this.form.submit();
-                });
-            }
-
-            // Logic for scenario selector
-            const scenarioSelector = document.getElementById('scenario-selector');
-            if (scenarioSelector) {
-                scenarioSelector.addEventListener('change', function() {
-                    const selectedOption = this.options[this.selectedIndex];
-                    const proyectosInput = document.getElementById('proyectos');
-                    const modeSel = document.getElementById('plan-mode-selector');
-                    
-                    // If a scenario is selected, update projects and ensure manual mode
-                    if (this.value) {
-                        if (proyectosInput) {
-                            proyectosInput.value = selectedOption.dataset.proyectos || '';
-                        }
-                        if (modeSel) modeSel.value = 'manual';
-                    }
-                    
                     this.form.submit();
                 });
             }
@@ -2027,7 +1907,7 @@
                         try {
                             const proyectosInput = document.getElementById('proyectos');
                             const projVal = proyectosInput ? proyectosInput.value : '';
-                            const scenarioId = document.getElementById('scenario-selector').value;
+                            const scenarioId = document.getElementById('active-scenario-id-input').value;
 
                             const response = await fetch('/api/reset_planning/', {
                                 method: 'POST',
@@ -2079,7 +1959,7 @@
 
                     if (result.isConfirmed) {
                         try {
-                            const scenarioIdSelection = document.getElementById('scenario-selector') ? document.getElementById('scenario-selector').value : '';
+                            const scenarioIdSelection = document.getElementById('active-scenario-id-input') ? document.getElementById('active-scenario-id-input').value : '';
                             const response = await fetch('/api/clear_all_planning/', {
                                 method: 'POST',
                                 headers: {
@@ -2105,27 +1985,67 @@
                 });
             }
 
-            // --- SAVE SCENARIO MODAL LOGIC ---
+            // --- SCENARIO MANAGEMENT (NUEVO, GUARDAR, CARGAR) ---
+            
+            // 1. NUEVO: Start a blank scenario
+            const btnNewScenario = document.getElementById('btnNewScenario');
+            if (btnNewScenario) {
+                btnNewScenario.addEventListener('click', async function() {
+                    const result = await Swal.fire({
+                        title: '¿Empezar Plan Nuevo?',
+                        text: 'Se iniciará un escenario de planificación vacío. Los planes existentes guardados no se modificarán.',
+                        icon: 'question',
+                        showCancelButton: true,
+                        confirmButtonText: 'Sí, empezar nuevo',
+                        cancelButtonText: 'Cancelar',
+                        customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                    });
+                    
+                    if (result.isConfirmed) {
+                        try {
+                            const response = await fetch('/api/scenarios/create/', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'X-CSRFToken': '{{ csrf_token }}'
+                                },
+                                body: JSON.stringify({
+                                    nombre: 'Nuevo Plan',
+                                    proyectos: ''
+                                })
+                            });
+                            
+                            const data = await response.json();
+                            if (response.ok) {
+                                // Redirect to the new scenario with NO projects in query params
+                                window.location.href = `?scenario_id=${data.scenario.id}`;
+                            } else {
+                                Swal.fire({
+                                    title: 'Error',
+                                    text: data.error || 'No se pudo crear el escenario nuevo.',
+                                    icon: 'error',
+                                    customClass: { popup: 'premium-swal' }
+                                });
+                            }
+                        } catch (e) {
+                            console.error(e);
+                            Swal.fire({
+                                title: 'Error',
+                                text: 'No se pudo comunicar con el servidor.',
+                                icon: 'error',
+                                customClass: { popup: 'premium-swal' }
+                            });
+                        }
+                    }
+                });
+            }
+
+            // 2. GUARDAR: Show save modal & confirm rename/clone
             const saveScenarioModalEl = document.getElementById('saveScenarioModal');
+            let saveScenarioModal;
             if (saveScenarioModalEl) {
-                const saveScenarioModal = new bootstrap.Modal(saveScenarioModalEl);
-                const radioNew = document.getElementById('radioNew');
-                const radioExisting = document.getElementById('radioExisting');
-                const divNewScenario = document.getElementById('divNewScenario');
-                const divExistingScenario = document.getElementById('divExistingScenario');
-                const btnConfirmSave = document.getElementById('btnConfirmSave');
-
-                if (radioNew && radioExisting) {
-                    radioNew.addEventListener('change', () => {
-                        divNewScenario.style.display = 'block';
-                        divExistingScenario.style.display = 'none';
-                    });
-                    radioExisting.addEventListener('change', () => {
-                        divNewScenario.style.display = 'none';
-                        divExistingScenario.style.display = 'block';
-                    });
-                }
-
+                saveScenarioModal = new bootstrap.Modal(saveScenarioModalEl);
+                
                 const btnSaveScenario = document.getElementById('btnSaveScenario');
                 if (btnSaveScenario) {
                     btnSaveScenario.addEventListener('click', () => {
@@ -2133,45 +2053,39 @@
                     });
                 }
 
+                const btnConfirmSave = document.getElementById('btnConfirmSave');
                 if (btnConfirmSave) {
                     btnConfirmSave.addEventListener('click', async function() {
-                        const isNew = radioNew.checked;
+                        const nameInput = document.getElementById('newScenarioName');
+                        const name = nameInput ? nameInput.value.trim() : '';
+                        if (!name) { 
+                            return Swal.fire({
+                                title: 'Campo Requerido',
+                                text: 'Por favor, ingrese un nombre para el escenario.',
+                                icon: 'warning',
+                                confirmButtonText: 'Aceptar',
+                                customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                            });
+                        }
+
                         const activeScenarioId = '{{ active_scenario_id|default:'' }}';
+                        const activeScenarioName = '{{ active_scenario.nombre|escapejs }}';
                         const proyectosInput = document.getElementById('proyectos');
                         const proyectosList = proyectosInput ? proyectosInput.value.trim() : '';
 
                         let payload = {
-                            proyectos: proyectosList,
-                            copy_from_id: activeScenarioId // Clone from currently viewed scenario
+                            nombre: name,
+                            proyectos: proyectosList
                         };
 
-                        if (isNew) {
-                            const nameInput = document.getElementById('newScenarioName');
-                            const name = nameInput ? nameInput.value.trim() : '';
-                            if (!name) { 
-                                return Swal.fire({
-                                    title: 'Campo Requerido',
-                                    text: 'Por favor, ingrese un nombre para el nuevo escenario.',
-                                    icon: 'warning',
-                                    confirmButtonText: 'Aceptar',
-                                    customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
-                                });
-                            }
-                            payload.nombre = name;
+                        // Word/Excel style flow:
+                        // If current name is "Nuevo Plan" or they input the exact same name, update in place.
+                        // Otherwise, clone it to a new scenario.
+                        if (activeScenarioName === 'Nuevo Plan' || name === activeScenarioName) {
+                            payload.id = activeScenarioId;
+                            payload.update_id = activeScenarioId;
                         } else {
-                            const updateSelect = document.getElementById('existingScenarioSelect');
-                            const updateId = updateSelect ? updateSelect.value : '';
-                            if (!updateId) { 
-                                return Swal.fire({
-                                    title: 'Selección Requerida',
-                                    text: 'Por favor, seleccione un escenario para sobrescribir.',
-                                    icon: 'warning',
-                                    confirmButtonText: 'Aceptar',
-                                    customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
-                                });
-                            }
-                            payload.id = updateId; // Set 'id' for the backend
-                            payload.update_id = updateId; // Keep 'update_id' for compatibility
+                            payload.copy_from_id = activeScenarioId;
                         }
 
                         try {
@@ -2199,7 +2113,6 @@
                                     timer: 1500,
                                     showConfirmButton: false
                                 }).then(() => {
-                                    // Redirect to the saved scenario
                                     window.location.href = `?scenario_id=${data.scenario.id}&proyectos=${encodeURIComponent(proyectosList)}`;
                                 });
                             } else {
@@ -2215,7 +2128,7 @@
                         } catch (e) {
                             console.error(e);
                             this.disabled = false;
-                            this.innerHTML = '<i class="fas fa-check me-1"></i>Confirmar Guardado';
+                            this.innerHTML = '<i class="fas fa-check me-2"></i>Confirmar Guardado';
                             Swal.fire({
                                 title: 'Error de Red',
                                 text: 'No se pudo comunicar con el servidor.',
@@ -2224,6 +2137,43 @@
                                 customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
                             });
                         }
+                    });
+                }
+            }
+
+            // 3. CARGAR: Show load modal & load plan
+            const loadScenarioModalEl = document.getElementById('loadScenarioModal');
+            let loadScenarioModal;
+            if (loadScenarioModalEl) {
+                loadScenarioModal = new bootstrap.Modal(loadScenarioModalEl);
+                
+                const btnLoadScenario = document.getElementById('btnLoadScenario');
+                if (btnLoadScenario) {
+                    btnLoadScenario.addEventListener('click', () => {
+                        loadScenarioModal.show();
+                    });
+                }
+
+                const btnConfirmLoad = document.getElementById('btnConfirmLoad');
+                if (btnConfirmLoad) {
+                    btnConfirmLoad.addEventListener('click', function() {
+                        const select = document.getElementById('loadScenarioSelect');
+                        const selectedId = select ? select.value : '';
+                        if (!selectedId) {
+                            return Swal.fire({
+                                title: 'Selección Requerida',
+                                text: 'Por favor, seleccione un plan para cargar.',
+                                icon: 'warning',
+                                confirmButtonText: 'Aceptar',
+                                customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                            });
+                        }
+                        
+                        const selectedOption = select.options[select.selectedIndex];
+                        const projects = selectedOption.dataset.proyectos || '';
+                        
+                        loadScenarioModal.hide();
+                        window.location.href = `?scenario_id=${selectedId}&proyectos=${encodeURIComponent(projects)}`;
                     });
                 }
             }
