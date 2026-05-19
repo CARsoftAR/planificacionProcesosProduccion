@@ -350,7 +350,7 @@
                                 <p class="small opacity-75 m-0" id="selectorSub">Proyecto: -</p>
                             </div>
                         </div>
-                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close" onclick="event.stopPropagation();"></button>
                     </div>
                     <div class="modal-body p-4 bg-light">
                         <!-- Level 1: Articles Table -->
@@ -417,7 +417,7 @@
                         </div>
                     </div>
                     <div class="modal-footer border-0 p-4 bg-white">
-                        <button type="button" class="btn btn-light rounded-pill px-4 fw-bold" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="button" class="btn btn-light rounded-pill px-4 fw-bold" data-bs-dismiss="modal" onclick="event.stopPropagation();">Cancelar</button>
                         <button type="button" class="btn btn-success rounded-pill px-4 fw-bold shadow-sm" id="btnAcceptSelector" onclick="backToArticles()" style="display: none;">
                             <i class="fas fa-check me-2"></i>Aceptar
                         </button>
@@ -731,16 +731,31 @@
                 dialog.style.maxWidth = "1600px";
                 dialog.style.width = "95%";
                 
-                const modal = new bootstrap.Modal(document.getElementById('selectorProduccionModal'));
-                modal.show();
+                // Retrieve or create Modal instance cleanly to prevent multiple backdrops/event duplicates
+                const selectorModalEl = document.getElementById('selectorProduccionModal');
+                let modalInstance = bootstrap.Modal.getInstance(selectorModalEl);
+                if (!modalInstance) {
+                    modalInstance = new bootstrap.Modal(selectorModalEl);
+                }
+                modalInstance.show();
                 
                 backToArticles();
                 
-                const selectorModalEl = document.getElementById('selectorProduccionModal');
-                selectorModalEl.addEventListener('hidden.bs.modal', function () {
+                // Clean close: Stop event propagation to prevent any global/parent listener from redirecting to Gantt
+                const handleModalHide = function (e) {
+                    e.stopPropagation();
+                };
+                const handleModalHidden = function (e) {
+                    e.stopPropagation();
                     const projectsInput = document.getElementById('proyectos');
                     if (projectsInput) projectsInput.focus();
-                }, { once: true }); // Only for this session of the modal
+                };
+                
+                selectorModalEl.removeEventListener('hide.bs.modal', handleModalHide);
+                selectorModalEl.removeEventListener('hidden.bs.modal', handleModalHidden);
+                
+                selectorModalEl.addEventListener('hide.bs.modal', handleModalHide);
+                selectorModalEl.addEventListener('hidden.bs.modal', handleModalHidden, { once: true });
                 
                 const tbody = document.getElementById('tbodyArticles');
                 tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4"><i class="fas fa-sync fa-spin me-2"></i> Cargando artículos...</td></tr>';
@@ -1055,6 +1070,13 @@
                             showConfirmButton: false,
                             customClass: { popup: 'premium-swal' }
                         }).then(() => {
+                             // Hide modal cleanly
+                             const modalEl = document.getElementById('selectorProduccionModal');
+                             const modalInstance = bootstrap.Modal.getInstance(modalEl);
+                             if (modalInstance) {
+                                 modalInstance.hide();
+                             }
+                             
                              const params = new URLSearchParams(window.location.search);
                              const scenarioParam = params.get('scenario_id') || scenarioId;
                              let currentProjects = params.get('proyectos') || '';
@@ -1062,9 +1084,13 @@
                              if (currentProjectToSelect && !projectsArray.includes(currentProjectToSelect)) {
                                  projectsArray.push(currentProjectToSelect);
                              }
-                             // Redirigir al GANTT VISUAL directamente tras confirmar
-                             const ganttUrl = `/planificacion/visual/?scenario_id=${scenarioParam}&proyectos=${projectsArray.join(',')}&plan_mode=manual&run=1`;
-                             window.location.href = ganttUrl;
+                             
+                             params.set('scenario_id', scenarioParam);
+                             params.set('proyectos', projectsArray.join(','));
+                             
+                             // Reload current planning page with updated filters, avoiding Gantt redirection
+                             const planUrl = `${window.location.pathname}?${params.toString()}`;
+                             window.location.href = planUrl;
                         });
                     } else {
                         throw new Error("Error al confirmar la selección");

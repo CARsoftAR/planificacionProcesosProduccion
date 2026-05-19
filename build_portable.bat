@@ -31,4 +31,4 @@ echo COMPILACION EXITOSA.
 echo La aplicacion empaquetada se encuentra en la carpeta:
 echo dist\ABBAMAT_PROD_Desktop\
 echo ========================================================
-pause
+rem pause
