@@ -2955,6 +2955,7 @@ def update_proyecto_prioridad(request):
                   prioridad = update.get('prioridad')
                   
                   if proyecto and prioridad is not None:
+                       print(f"POST PRIORIDADES: Procesando Proyecto {proyecto} con nueva prioridad {prioridad}")
                        # Update or create priority
                        ProyectoPrioridad.objects.using('default').update_or_create(
                             scenario=scenario,

@@ -167,6 +167,8 @@
                 scenario_id: scenarioId
             };
             
+            console.log("JSON enviado a la API:", reqBody);
+            
             const myModal = new bootstrap.Modal(document.getElementById('loadingModal'));
             myModal.show();
             
@@ -192,6 +194,7 @@
                 alert("Error de red: " + err);
             });
         }
+    </script>
     <script>
         // 🚀 CLIENT-SIDE HARD PURGE (Refined: Only runs if filters are active)
         document.addEventListener("DOMContentLoaded", function() {
