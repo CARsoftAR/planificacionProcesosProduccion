@@ -244,6 +244,9 @@ def get_gantt_data(request, force_run=False):
 
     # Scenario
     scenario_id = request.GET.get('scenario_id')
+    if scenario_id == 'null' or scenario_id == '':
+        scenario_id = None
+        
     if scenario_id:
         request.session['last_scenario_id'] = scenario_id
     else:

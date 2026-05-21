@@ -2357,6 +2357,13 @@
         // Redirect with graficar=1
         const url = new URL(window.location.href);
         url.searchParams.set('graficar', '1');
+        
+        // Fix: Avoid sending "null" strings that crash Django's integer parsers
+        const scenarioId = url.searchParams.get('scenario_id');
+        if (scenarioId === 'null' || scenarioId === '') {
+            url.searchParams.delete('scenario_id');
+        }
+        
         window.location.href = url.toString();
     };
     
