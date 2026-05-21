@@ -155,18 +155,67 @@
         }
 
 
-        /* 🛠️ NAVIGATION SCROLLBAR REFINEMENT (Requested: -10px, Color: Gray) */
+        /* 🛠️ NAVIGATION SCROLLBAR REFINEMENT */
+        .nav-tabs {
+            padding-bottom: 12px; /* Separación para que el scroll no pise las etiquetas */
+            overflow-x: auto;
+            flex-wrap: nowrap;
+        }
         .nav-tabs::-webkit-scrollbar {
-            height: 35px !important;
-            display: block !important;
+            height: 35px;
         }
-        .nav-tabs::-webkit-scrollbar-track { background: #f1f5f9 !important; }
+        .nav-tabs::-webkit-scrollbar-track { 
+            background: #f1f3f5;
+            border-radius: 6px;
+        }
         .nav-tabs::-webkit-scrollbar-thumb {
-            background-color: #94a3b8 !important;
-            border-radius: 10px !important;
-            border: 4px solid #f1f5f9 !important;
+            background-color: #ced4da;
+            border-radius: 6px;
         }
-        .nav-tabs::-webkit-scrollbar-thumb:hover { background-color: #64748b !important; }
+        .nav-tabs::-webkit-scrollbar-thumb:hover { 
+            background-color: #adb5bd; 
+        }
+
+        /* 🛠️ TABS VISUAL IMPROVEMENTS */
+        /* Pestañas con carga (Inactivas) */
+        .nav-tabs .nav-link.con-carga {
+            background-color: #f0f7ff !important; /* Azul pastel muy sutil */
+            color: #1e40af !important; /* Azul oscuro y definido */
+            font-weight: 700 !important;
+            border-color: #cbd5e0 !important;
+        }
+        .nav-tabs .nav-link.con-carga .badge {
+            background-color: #2563eb !important; /* Azul vibrante */
+            color: #ffffff !important;
+        }
+
+        /* Pestañas seleccionadas (Active) - Sobrescribe con carga */
+        .nav-tabs .nav-link.active {
+            background-color: #ffffff !important;
+            border-top: 4px solid #1d4ed8 !important; /* Borde superior azul intenso */
+            border-left: 1px solid #dee2e6 !important;
+            border-right: 1px solid #dee2e6 !important;
+            border-bottom: 1px solid transparent !important;
+            color: #0f172a !important;
+            font-weight: 800 !important;
+            box-shadow: 0 -4px 12px rgba(59, 130, 246, 0.05);
+        }
+        .nav-tabs .nav-link.active .badge {
+            background-color: #1d4ed8 !important; /* Azul más oscuro e intenso */
+            color: #ffffff !important;
+        }
+
+        /* Pestañas vacías (0 procesos) - Estética actual/por defecto */
+        .nav-tabs .nav-link:not(.con-carga):not(.active) {
+            background-color: #f8fafc !important; /* Grisáceo muy tenue */
+            color: #64748b !important; /* Gris apagado */
+            font-weight: normal !important;
+            border-color: #e2e8f0 !important;
+        }
+        .nav-tabs .nav-link:not(.con-carga):not(.active) .badge {
+            background-color: #94a3b8 !important; /* Gris apagado */
+            color: #ffffff !important;
+        }
 
         /* 💎 PREMIUM MODAL SCALING (Forzado Global 1600px) */
         #selectorProduccionModal .modal-dialog {
@@ -225,22 +274,22 @@
 
                 <div class="vr bg-secondary opacity-25" style="height: 25px;"></div>
 
-                <div class="d-flex align-items-center gap-2">
+                <!-- <div class="d-flex align-items-center gap-2">
                     <label for="plan_mode" class="smaller fw-bold text-muted mb-0"><i class="fas fa-cog"></i> Modo:</label>
                     <select name="plan_mode" id="plan-mode-selector" class="form-select form-select-sm rounded-pill border-secondary border-opacity-25" style="width: 160px; font-size: 0.8rem;">
                         <option value="manual" {% if request.GET.plan_mode != 'original' %}selected{% endif %}>Optimizado (Manual)</option>
                         <option value="original" {% if request.GET.plan_mode == 'original' %}selected{% endif %}>Original (ERP)</option>
                     </select>
-                </div>
+                </div> -->
 
                 <input type="hidden" name="scenario_id" id="active-scenario-id-input" value="{{ active_scenario_id|default:'' }}">
                 <div class="d-flex align-items-center gap-3 ms-2">
-                    <div class="d-flex align-items-center gap-2">
+                    <!-- <div class="d-flex align-items-center gap-2">
                         <span class="smaller fw-bold text-muted mb-0"><i class="fas fa-file-alt"></i> Plan Activo:</span>
                         <span class="fw-bold text-dark bg-light px-3 py-1 rounded-pill border border-secondary border-opacity-25" style="font-size: 0.8rem;">
                             {{ active_scenario.nombre|default:"Nuevo Plan" }}
                         </span>
-                    </div>
+                    </div> -->
 
                     <div class="d-flex gap-1">
                         <!-- Botón NUEVO -->
@@ -428,8 +477,9 @@
         <!-- Tabs Navigation -->
         <ul class="nav nav-tabs" id="myTab" role="tablist">
             {% for machine in machines %}
+            {% with count=grouped_data|get_item:machine.nombre|length %}
             <li class="nav-item" role="presentation">
-                <button class="nav-link {% if forloop.first %}active{% endif %}" 
+                <button class="nav-link {% if forloop.first %}active{% endif %} {% if count > 0 %}con-carga{% endif %}" 
                         id="{{ machine.nombre|slugify }}-tab" 
                         data-bs-toggle="tab" 
                         data-bs-target="#{{ machine.nombre|slugify }}" 
@@ -438,9 +488,10 @@
                         role="tab" 
                         aria-selected="{% if forloop.first %}true{% else %}false{% endif %}">
                     {{ machine.nombre }}
-                    <span class="badge bg-secondary ms-1">{{ grouped_data|get_item:machine.nombre|length }}</span>
+                    <span class="badge ms-1">{{ count }}</span>
                 </button>
             </li>
+            {% endwith %}
             {% endfor %}
         </ul>
 
@@ -452,7 +503,7 @@
                  role="tabpanel" 
                  aria-labelledby="{{ machine.nombre|slugify }}-tab">
                 
-                <div class="machine-header bg-primary text-white p-2 mb-0 mt-3">
+                <div class="machine-header bg-primary text-white p-2 mb-0">
                     <h5 class="m-0 text-center">{{ machine.nombre }}</h5>
                 </div>
 
