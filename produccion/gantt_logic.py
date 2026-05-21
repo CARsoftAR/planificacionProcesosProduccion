@@ -295,11 +295,14 @@ def get_gantt_data(request, force_run=False):
         if active_scenario and not request.session.get('last_scenario_id'):
             request.session['last_scenario_id'] = str(active_scenario.id)
             
-    # Fallback to scenario projects REMOVED per user request for strict filtering
-    # if not raw_proyectos and active_scenario and active_scenario.proyectos:
-    #     raw_proyectos = active_scenario.proyectos
-
-        
+    if not raw_proyectos and active_scenario:
+        from .models import PlannedTask
+        # Busca los proyectos únicos que ya existen en los procesos de este escenario como plan de respaldo
+        db_proyectos = list(PlannedTask.objects.using('default').filter(scenario=active_scenario).values_list('proyecto_code', flat=True).distinct())
+        if db_proyectos:
+            raw_proyectos = ','.join(db_proyectos)
+            
+    # Plan Mode  
     virtual_overrides = {}
     
     # ONLY load overrides if mode is MANUAL. 

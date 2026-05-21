@@ -78,19 +78,13 @@ def get_active_scenario(request, scenario_id=None):
     
     # If explicitly empty in URL, we don't wipe the session blindly
     # because it might be a reload from a provisional state.
-    if url_scenario_id == "":
+    if url_scenario_id == "" or url_scenario_id == "null":
         scenario_id = None
     elif url_scenario_id:
         scenario_id = url_scenario_id
     
-    # Check if we are switching to manual mode without a scenario in URL
-    plan_mode = request.GET.get('plan_mode')
-    if plan_mode == 'manual' and url_scenario_id is None:
-        # If the user goes to manual but doesn't specify a scenario, 
-        # assume they want to "leave" the current simulation scenario and see the Official state.
-        request.session['last_scenario_id'] = None
-        scenario_id = None
-
+    # Removed logic that previously wiped the session if plan_mode was 'manual'.
+    # This ensures smooth persistence when returning from Gantt.
     if not scenario_id and request.method == 'POST':
         try:
             body = json.loads(request.body)
@@ -411,6 +405,7 @@ def planificacion_list(request):
             return redirect(f"{request.path}?{params.urlencode()}")
 
     active_scenario = get_active_scenario(request)
+    print(f"DEBUG VISTA PRINCIPAL: Extrayendo procesos para el Scenario ID: {active_scenario.id if active_scenario else 'NONE'}")
 
     # Filter Persistence: Session + GET
     id_orden = request.GET.get('id_orden')
@@ -2145,20 +2140,24 @@ def planificacion_visual(request):
     from django.utils import timezone
     from .models import Scenario
     
+    if 'scenario_id' not in request.GET:
+        active_scenario = get_active_scenario(request)
+        if active_scenario:
+            params = request.GET.copy()
+            params['scenario_id'] = active_scenario.id
+            return redirect(f"{request.path}?{params.urlencode()}")
+            
+    active_scenario = get_active_scenario(request)
+
     all_scenarios = Scenario.objects.using('default').all().order_by('-es_principal', 'nombre')
     proyectos_value = request.GET.get('proyectos', '').strip()
     
-    # Get active_scenario and plan_mode for synchronization
-    scenario_id = request.GET.get('scenario_id') or request.session.get('last_scenario_id')
-    active_scenario = None
-    if scenario_id:
-        try:
-            active_scenario = Scenario.objects.using('default').get(pk=scenario_id)
-        except Scenario.DoesNotExist:
-            pass
-    if not active_scenario:
-        active_scenario = Scenario.objects.using('default').filter(es_principal=True).first()
-        
+    if not proyectos_value and active_scenario:
+        from .models import PlannedTask
+        db_proyectos = list(PlannedTask.objects.using('default').filter(scenario=active_scenario).values_list('proyecto_code', flat=True).distinct())
+        if db_proyectos:
+            proyectos_value = ','.join(db_proyectos)
+            
     plan_mode = request.GET.get('plan_mode') or request.session.get('last_plan_mode', 'manual')
 
     # Check if manual render is triggered
@@ -3600,7 +3599,12 @@ def api_confirm_selected_tasks(request):
         
         active_scenario = get_active_scenario(request, scenario_id=scenario_id)
         
-        if not active_scenario:
+        # If the user is working on a clean state but get_active_scenario returns the "es_principal"
+        # we might need to force a temporary scenario creation if there is no session explicitly set.
+        # But let's first log what it's finding.
+        print(f"DEBUG SELECTOR: Guardando procesos bajo el Scenario ID: {active_scenario.id if active_scenario else 'NONE'}, (Session last_scenario_id: {request.session.get('last_scenario_id')})")
+        
+        if not active_scenario or (not request.session.get('last_scenario_id') and not scenario_id):
             from .models import Scenario
             import datetime
             timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -3609,6 +3613,8 @@ def api_confirm_selected_tasks(request):
                 es_principal=False
             )
             request.session['last_scenario_id'] = str(active_scenario.id)
+            request.session.modified = True
+            print(f"DEBUG SELECTOR: Creado nuevo Scenario ID: {active_scenario.id}")
         
         # Backend Security Layer: Check if already planned unless forced
         if not force and project_code:
@@ -3718,7 +3724,7 @@ def api_confirm_selected_tasks(request):
                     active_scenario.proyectos = ",".join(p_list)
                     active_scenario.save(using='default')
                 
-        return JsonResponse({'status': 'ok', 'count': len(id_ordens)})
+        return JsonResponse({'status': 'ok', 'count': len(id_ordens), 'scenario_id': str(active_scenario.id)})
     except Exception as e:
         import traceback
         print(f"ERROR CONFIRMACIÓN: {str(e)}")
