@@ -3317,9 +3317,10 @@
                 const x2 = (r2.left - containerRect.left) + sL;
                 const y2 = (r2.top - containerRect.top + (r2.height / 2)) + sT;
 
-                // Extraemos el color directamente del estilo calculado del borde
-                let color = window.getComputedStyle(box1).borderTopColor || '#3b82f6';
-                if (box1.dataset.critical === 'true') color = '#ef4444'; 
+                // Extraemos el color directamente del dataset (color del proyecto)
+                let color = box1.dataset.color || window.getComputedStyle(box1).borderLeftColor || '#3b82f6';
+
+
                 
                 const colorId = color.replace(/[^a-zA-Z0-9]/g, '');
                 
@@ -3333,7 +3334,7 @@
                     marker.setAttribute('pointer-events', 'none');
                     const mPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
                     mPath.setAttribute('d', 'M 0 0 L 10 5 L 0 10 z');
-                    mPath.setAttribute('fill', color);
+                    mPath.style.setProperty('fill', color, 'important'); // Forzar color
                     mPath.setAttribute('pointer-events', 'none');
                     marker.appendChild(mPath);
                     defs.appendChild(marker);
@@ -3345,16 +3346,24 @@
                 const curveOffset = Math.min(dx * 0.45, 120);
                 
                 path.setAttribute('d', `M${x1},${y1} C${x1 + curveOffset},${y1} ${x2 - curveOffset},${y2} ${x2},${y2}`);
-                path.setAttribute('stroke', color);
-                path.setAttribute('stroke-width', '2');
                 path.setAttribute('fill', 'none');
-                path.setAttribute('stroke-opacity', '0.5');
                 path.setAttribute('marker-end', `url(#arr-${colorId})`);
                 path.classList.add('dependency-path');
                 
+                // Forzar stroke y estilos mediante style !important para evitar clases globales
+                path.style.setProperty('stroke', color, 'important');
+                path.style.setProperty('stroke-width', '2', 'important');
+                path.style.setProperty('stroke-opacity', '0.5', 'important');
+                
                 path.style.transition = 'stroke-opacity 0.2s, stroke-width 0.2s';
-                path.onmouseenter = () => { path.setAttribute('stroke-opacity', '1'); path.setAttribute('stroke-width', '3'); };
-                path.onmouseleave = () => { path.setAttribute('stroke-opacity', '0.5'); path.setAttribute('stroke-width', '2'); };
+                path.onmouseenter = () => { 
+                    path.style.setProperty('stroke-opacity', '1', 'important'); 
+                    path.style.setProperty('stroke-width', '3', 'important'); 
+                };
+                path.onmouseleave = () => { 
+                    path.style.setProperty('stroke-opacity', '0.5', 'important'); 
+                    path.style.setProperty('stroke-width', '2', 'important'); 
+                };
                 
                 svgLayer.appendChild(path);
                 count++;

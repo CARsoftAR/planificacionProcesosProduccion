@@ -2834,8 +2834,13 @@
                 console.log("📡 Respuesta del servidor:", response.status);
 
                 if (response.ok) {
+                    const respData = await response.json();
                     alert("✅ Planificación cargada correctamente.");
-                    location.reload();
+                    if (respData.scenario_id) {
+                        window.location.href = '/planificacion/?scenario_id=' + respData.scenario_id;
+                    } else {
+                        location.reload();
+                    }
                 } else {
                     const errData = await response.json();
                     console.error("❌ Error del servidor:", errData);
