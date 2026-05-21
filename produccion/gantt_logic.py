@@ -221,10 +221,13 @@ def get_gantt_data(request, force_run=False):
     Returns a dictionary with calculated timeline data and grid configuration.
     """
     from .models import Scenario, TaskDependency # Import here to avoid circular
+    import urllib.parse
     
     # --- PERSISTENCE LOGIC (Remember last selection) ---
     # Strict Filtering: Only use projects from the current GET request
-    raw_proyectos = request.GET.get('proyectos', '').strip()
+    raw_proyectos = request.GET.get('proyectos', '')
+    if raw_proyectos:
+        raw_proyectos = urllib.parse.unquote(raw_proyectos).replace('%2C', ',').strip()
     
     # HARD RESET: If no projects in URL or clear flag set, ignore all cached data
     clear_flag = request.GET.get('clear', '0') == '1'
@@ -410,7 +413,18 @@ def get_gantt_data(request, force_run=False):
     def is_valid_task(t):
         p_code = t.get('ProyectoCode')
         m_name = t.get('MAQUINAD')
-        # We exclude tasks without project or without machine name (not even SIN ASIGNAR if it's null)
+        
+        # FIX: Check if task has a manual override (virtual move to a machine)
+        clean_id = ''
+        try:
+            clean_id = str(int(float(t.get('Idorden') or 0)))
+        except:
+            clean_id = str(t.get('Idorden', ''))
+            
+        if clean_id in virtual_overrides and virtual_overrides[clean_id].get('maquina'):
+            m_name = virtual_overrides[clean_id]['maquina']
+            
+        # We exclude tasks without project or without machine name
         if not p_code or not m_name:
             return False
         # Also exclude tasks with 0 duration as they cause "ghost" rendering

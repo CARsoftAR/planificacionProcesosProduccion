@@ -415,7 +415,10 @@ def planificacion_list(request):
         id_orden = request.session.get('last_id_orden_filter')
 
     # Strict Filtering: Only use projects from the current GET request
+    import urllib.parse
     proyectos = request.GET.get('proyectos', '')
+    if proyectos:
+        proyectos = urllib.parse.unquote(proyectos).replace('%2C', ',').strip()
 
     # Build filtros for the SQL query
     filtros = {}
@@ -2149,8 +2152,12 @@ def planificacion_visual(request):
             
     active_scenario = get_active_scenario(request)
 
+    import urllib.parse
     all_scenarios = Scenario.objects.using('default').all().order_by('-es_principal', 'nombre')
-    proyectos_value = request.GET.get('proyectos', '').strip()
+    
+    proyectos_value = request.GET.get('proyectos', '')
+    if proyectos_value:
+        proyectos_value = urllib.parse.unquote(proyectos_value).replace('%2C', ',').strip()
     
     if not proyectos_value and active_scenario:
         from .models import PlannedTask
