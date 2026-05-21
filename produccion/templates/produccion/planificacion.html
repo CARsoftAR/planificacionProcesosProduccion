@@ -162,18 +162,30 @@
             flex-wrap: nowrap;
         }
         .nav-tabs::-webkit-scrollbar {
-            height: 35px;
+            height: 10px;
         }
         .nav-tabs::-webkit-scrollbar-track { 
-            background: #f1f3f5;
+            background: #f8f9fa;
             border-radius: 6px;
         }
         .nav-tabs::-webkit-scrollbar-thumb {
-            background-color: #ced4da;
+            background: repeating-linear-gradient(
+                45deg,
+                #ced4da,
+                #ced4da 4px,
+                #c1c7cd 4px,
+                #c1c7cd 8px
+            );
             border-radius: 6px;
         }
         .nav-tabs::-webkit-scrollbar-thumb:hover { 
-            background-color: #adb5bd; 
+            background: repeating-linear-gradient(
+                45deg,
+                #adb5bd,
+                #adb5bd 4px,
+                #a0a7ae 4px,
+                #a0a7ae 8px
+            );
         }
 
         /* 🛠️ TABS VISUAL IMPROVEMENTS */
