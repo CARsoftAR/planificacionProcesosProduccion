@@ -1196,6 +1196,14 @@
                   
                   <!-- Visual Toggles (Direct Inline Control) -->
                   <div class="d-flex align-items-center gap-1">
+                      <button id="btn-toggle-projects" 
+                              class="btn-modern glass rounded-pill px-2" 
+                              style="height: 34px; border-color: #e2e8f0; color: #475569;" 
+                              data-bs-toggle="offcanvas" 
+                              data-bs-target="#activeProjectsOffcanvas" 
+                              title="Proyectos en Plan">
+                          <i class="fas fa-project-diagram text-primary"></i> <span id="activeProjectsCountBadge" class="badge bg-secondary ms-1">0</span>
+                      </button>
                       <button id="btn-toggle-arrows" 
                               class="btn-modern glass rounded-pill px-2" 
                               style="height: 34px; border-color: #e2e8f0; color: #475569;" 
@@ -1225,6 +1233,14 @@
                   
                   <!-- 3. Actions & Cleanup -->
                   <div class="d-flex align-items-center gap-1">
+                      <button id="btn-graficar-gantt" 
+                              class="btn-modern btn-primary-modern rounded-pill px-3" 
+                              style="height: 34px; border: none;" 
+                              onclick="window.triggerGraficarGantt()"
+                              title="Graficar Gantt">
+                          <i class="fas fa-play me-1"></i> Graficar Gantt
+                      </button>
+
                       <button id="btn-borrar-plan" 
                               class="btn-modern glass rounded-pill px-3" 
                               style="height: 34px; border-color: rgba(239, 68, 68, 0.4); color: #ef4444;" 
@@ -1472,6 +1488,24 @@
                             </table>
                         </div>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Offcanvas para Proyectos Activos (Filtro Gantt) -->
+        <div class="offcanvas offcanvas-end shadow" tabindex="-1" id="activeProjectsOffcanvas" aria-labelledby="activeProjectsOffcanvasLabel" style="width: 380px; border-left: none; z-index: 1060;">
+            <div class="offcanvas-header bg-light border-bottom py-3 px-4">
+                <h5 class="offcanvas-title fw-bold text-dark d-flex align-items-center gap-2" id="activeProjectsOffcanvasLabel">
+                    <i class="fas fa-filter text-primary"></i> Filtro de Proyectos
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+            </div>
+            <div class="offcanvas-body p-0 bg-white">
+                <div class="p-3 bg-light border-bottom text-muted small">
+                    <i class="fas fa-info-circle me-1"></i> Destilda proyectos para ocultarlos del Gantt y liberar el espacio visualmente.
+                </div>
+                <div id="activeProjectsList" class="list-group list-group-flush">
+                    <div class="text-center py-4 text-muted small">Calculando proyectos...</div>
                 </div>
             </div>
         </div>
@@ -1993,8 +2027,24 @@
                 </div>
             </div>
             {% endif %}
+            
             <div id="gantt-body-scroll" style="flex: 1; overflow: auto; display: flex; flex-direction: column; position: relative;">
-                <div style="min-width: calc(200px + {{ total_width }}px); position: relative; display: flex; flex-direction: column; flex: 1;">
+                {% if not timeline_data %}
+                <div class="d-flex flex-column align-items-center justify-content-center py-5 text-muted" style="min-height: 400px; background: var(--bg-deep); border-radius: 12px; margin: 15px;">
+                    <div class="p-4 rounded-circle bg-white shadow-sm border d-flex align-items-center justify-content-center mb-3" style="width: 80px; height: 80px;">
+                        <i class="fas fa-project-diagram fa-2x text-primary opacity-75 animate-pulse"></i>
+                    </div>
+                    <h5 class="fw-bold text-dark">Carga Limpia de Gantt</h5>
+                    <p class="small text-muted text-center px-4" style="max-width: 480px; line-height: 1.6;">
+                        El cálculo automático al ingresar ha sido desactivado para optimizar el rendimiento de la aplicación.
+                        Presioná el botón <strong class="text-primary">Graficar Gantt</strong> en la barra superior para procesar y visualizar la planificación.
+                    </p>
+                    <button class="btn btn-primary rounded-pill px-4 py-2 mt-3 shadow-sm border-0 fw-bold" style="background: linear-gradient(135deg, #2563eb, #1d4ed8); display: flex; align-items: center; gap: 8px; font-size: 0.9rem;" onclick="window.triggerGraficarGantt()">
+                        <i class="fas fa-play" style="font-size: 0.75rem;"></i> Graficar Gantt
+                    </button>
+                </div>
+                {% else %}
+                <div class="timeline-area" style="min-width: calc(200px + {{ total_width }}px); position: relative; display: flex; flex-direction: column; flex: 1;">
                     <!-- 1. HEADER ROW (Sticky Top) -->
                     <div class="d-flex sticky-top" style="z-index: 100; background: var(--bg-header); border-bottom: 2px solid var(--border); width: 100%;">
                         <div class="machine-column" style="z-index: 101;">
@@ -2265,6 +2315,7 @@
                 </div> <!-- End Task Row Wrapper -->
                 {% endfor %}
                 </div>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -2278,6 +2329,36 @@
 
     // Global Configuration & State (Universal Scope)
     window.START_SIMULATION_ISO = "{{ today|date:'c' }}"; 
+
+    window.triggerGraficarGantt = function() {
+        const proyectosInput = document.getElementById('proyectos');
+        const projects = proyectosInput ? proyectosInput.value.trim() : '';
+        if (!projects) {
+            Swal.fire({
+                toast: true,
+                position: 'top-end',
+                icon: 'warning',
+                title: 'Atención',
+                text: 'No hay proyectos seleccionados para graficar el Gantt.',
+                showConfirmButton: false,
+                timer: 3000,
+                timerProgressBar: true
+            });
+            return;
+        }
+        
+        // Show page loader
+        const loader = document.getElementById('page-loader');
+        if (loader) {
+            loader.style.display = 'flex';
+            loader.style.opacity = '1';
+        }
+        
+        // Redirect with graficar=1
+        const url = new URL(window.location.href);
+        url.searchParams.set('graficar', '1');
+        window.location.href = url.toString();
+    };
     
     // Safety check for dependencies data
     const depDataEl = document.getElementById('dependencies-data-json');
@@ -3870,35 +3951,41 @@
             const rows = document.querySelectorAll('.task-row');
             
             rows.forEach(row => {
-                // Obtener todas las tareas de la fila ordenadas por tiempo (left)
+                // Obtener todas las tareas visibles de la fila ordenadas por tiempo original (left)
                 const tasks = Array.from(row.querySelectorAll('.task-block'))
-                                   .sort((a, b) => parseFloat(a.style.left) - parseFloat(b.style.left));
+                                   .filter(t => t.style.display !== 'none')
+                                   .sort((a, b) => {
+                                       let leftA = a.dataset.originalLeft ? parseFloat(a.dataset.originalLeft) : parseFloat(a.style.left);
+                                       let leftB = b.dataset.originalLeft ? parseFloat(b.dataset.originalLeft) : parseFloat(b.style.left);
+                                       return leftA - leftB;
+                                   });
                 
                 let lastEnd = 0;
                 const MARGIN = 4; // Margen mínimo entre bloques
 
                 tasks.forEach((task, index) => {
-                    const currentLeft = parseFloat(task.style.left);
+                    if (!task.dataset.originalLeft) {
+                        task.dataset.originalLeft = parseFloat(task.style.left);
+                    }
+                    const origLeft = parseFloat(task.dataset.originalLeft);
                     const currentWidth = parseFloat(task.style.width);
                     
+                    let targetLeft = origLeft;
                     // Si hay solape con el final del anterior (lastEnd), empujamos
-                    if (currentLeft < lastEnd + MARGIN) {
-                        const newLeft = lastEnd + MARGIN;
-                        task.style.left = newLeft + 'px';
-                        console.log(`GanttEngine: Empujando OP ${task.dataset.taskId} a ${newLeft}px`);
+                    if (targetLeft < lastEnd + MARGIN) {
+                        targetLeft = lastEnd + MARGIN;
                     }
+                    task.style.left = targetLeft + 'px';
 
                     // Calculamos el final real de esta tarea incluyendo su badge si existe
-                    // Si el badge de ATRASO es muy grande, extendemos el 'espacio ocupado'
                     const delayBadge = task.querySelector('.delay-badge');
                     let effectiveWidth = currentWidth;
                     
                     if (delayBadge && delayBadge.offsetWidth > currentWidth) {
-                        // Si la etiqueta es más ancha que la caja, reservamos ese espacio
                         effectiveWidth = delayBadge.offsetWidth + 10;
                     }
 
-                    lastEnd = parseFloat(task.style.left) + effectiveWidth;
+                    lastEnd = targetLeft + effectiveWidth;
                 });
             });
 
@@ -3907,6 +3994,81 @@
                 setTimeout(window.drawDependencies, 100);
             }
         }
+
+        // --- FILTRO VISUAL DE PROYECTOS (SIDEBAR) ---
+        function updateActiveProjectsSidebar() {
+            const blocks = document.querySelectorAll('.task-block');
+            const projects = new Set();
+            
+            blocks.forEach(block => {
+                const proj = block.getAttribute('data-project-name');
+                if (proj && proj !== 'S/P' && proj.trim() !== '-' && proj.trim() !== '') {
+                    projects.add(proj.trim());
+                }
+            });
+            
+            const projectArray = Array.from(projects).sort();
+            const badge = document.getElementById('activeProjectsCountBadge');
+            if (badge) {
+                badge.textContent = projectArray.length;
+                if (projectArray.length > 0) {
+                    badge.classList.remove('bg-secondary');
+                    badge.classList.add('bg-primary');
+                } else {
+                    badge.classList.remove('bg-primary');
+                    badge.classList.add('bg-secondary');
+                }
+            }
+            
+            const listContainer = document.getElementById('activeProjectsList');
+            if (listContainer) {
+                if (projectArray.length === 0) {
+                    listContainer.innerHTML = '<div class="text-center py-4 text-muted small"><i class="fas fa-inbox fa-2x mb-2 opacity-25"></i><br>No hay proyectos activos en el Gantt.</div>';
+                } else {
+                    let html = '';
+                    projectArray.forEach(p => {
+                        html += `
+                        <div class="list-group-item d-flex align-items-center py-2 border-bottom-0 border-top">
+                            <div class="form-check form-switch me-3">
+                                <input class="form-check-input project-filter-chk" type="checkbox" value="${p}" checked style="cursor: pointer; transform: scale(1.1);">
+                            </div>
+                            <div class="bg-primary bg-opacity-10 text-primary rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 35px; height: 35px;">
+                                <i class="fas fa-code-branch"></i>
+                            </div>
+                            <div>
+                                <h6 class="mb-0 fw-bold text-dark" style="font-size: 0.95rem;">${p}</h6>
+                                <small class="text-muted" style="font-size: 0.75rem;">Proyecto activo</small>
+                            </div>
+                        </div>`;
+                    });
+                    listContainer.innerHTML = html;
+                    
+                    document.querySelectorAll('.project-filter-chk').forEach(chk => {
+                        chk.addEventListener('change', applyGanttProjectFilter);
+                    });
+                }
+            }
+        }
+        
+        function applyGanttProjectFilter() {
+            const unchecked = Array.from(document.querySelectorAll('.project-filter-chk:not(:checked)')).map(c => c.value);
+            
+            document.querySelectorAll('.task-block').forEach(block => {
+                const proj = block.getAttribute('data-project-name');
+                if (unchecked.includes(proj)) {
+                    block.style.display = 'none';
+                } else {
+                    block.style.display = ''; // Restaurar
+                }
+            });
+            
+            // Recalcular layout para acomodar espacios libres
+            runAutoLayout();
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            setTimeout(updateActiveProjectsSidebar, 600);
+        });
 
         // Ejecutar si estamos en Modo Auto o al cargar
         {% if plan_mode == 'original' %}
@@ -3973,12 +4135,12 @@
     <div id="op-filter-overlay" onclick="window.toggleOpFilterSidebar()"></div>
     <aside id="op-filter-sidebar">
         <div class="sidebar-header">
-            <h6><i class="fas fa-filter me-2 text-info"></i>Filtrar Visibilidad de OPs</h6>
+            <h6><i class="fas fa-filter me-2 text-info"></i>Filtrar Visibilidad de los Proyectos</h6>
             <button onclick="window.toggleOpFilterSidebar()" style="background:none;border:none;cursor:pointer;color:#64748b;font-size:1rem;"><i class="fas fa-times"></i></button>
         </div>
-        <div class="sidebar-search">
+        <!-- <div class="sidebar-search">
             <input type="text" id="op-filter-search" placeholder="Buscar proyecto u OP..." oninput="window.filterOpSearchList(this.value)">
-        </div>
+        </div> -->
         <div class="sidebar-actions">
             <button onclick="window.setAllOpsVisible(true)"><i class="fas fa-eye me-1"></i>Mostrar todo</button>
             <button onclick="window.setAllOpsVisible(false)"><i class="fas fa-eye-slash me-1"></i>Ocultar todo</button>

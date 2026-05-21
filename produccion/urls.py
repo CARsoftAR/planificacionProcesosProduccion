@@ -53,6 +53,7 @@ urlpatterns = [
     path('api/scenarios/create/', views.create_scenario, name='create_scenario'),
     path('api/scenarios/<int:scenario_id>/delete/', views.delete_scenario, name='delete_scenario'),
     path('api/scenarios/<int:scenario_id>/publish/', views.publish_scenario, name='publish_scenario'),
+    path('api/scenarios/list/', views.api_list_scenarios, name='api_list_scenarios'),
     
     # Statistics
     path('estadisticas/', views.estadisticas_produccion, name='estadisticas_produccion'),
@@ -63,6 +64,8 @@ urlpatterns = [
     path('api/confirm_selected_tasks/', views.api_confirm_selected_tasks, name='api_confirm_selected_tasks'),
     path('api/check_project_planning/', views.check_project_planning, name='check_project_planning'),
     path('api/clear_all_planning/', views.api_clear_all_planning, name='api_clear_all_planning'),
+    path('api/delete_project_planning/', views.api_delete_project_planning, name='api_delete_project_planning'),
+    path('api/get_planned_projects/', views.api_get_planned_projects, name='api_get_planned_projects'),
 
     path('', views.main_menu, name='home'),
 ]

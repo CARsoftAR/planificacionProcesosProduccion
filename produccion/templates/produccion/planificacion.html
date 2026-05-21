@@ -162,30 +162,18 @@
             flex-wrap: nowrap;
         }
         .nav-tabs::-webkit-scrollbar {
-            height: 10px;
+            height: 20px;
         }
         .nav-tabs::-webkit-scrollbar-track { 
-            background: #f8f9fa;
-            border-radius: 6px;
+            background: #edf2f7;
+            border-radius: 10px;
         }
         .nav-tabs::-webkit-scrollbar-thumb {
-            background: repeating-linear-gradient(
-                45deg,
-                #ced4da,
-                #ced4da 4px,
-                #c1c7cd 4px,
-                #c1c7cd 8px
-            );
-            border-radius: 6px;
+            background-color: #2b6cb0;
+            border-radius: 10px;
         }
         .nav-tabs::-webkit-scrollbar-thumb:hover { 
-            background: repeating-linear-gradient(
-                45deg,
-                #adb5bd,
-                #adb5bd 4px,
-                #a0a7ae 4px,
-                #a0a7ae 8px
-            );
+            background-color: #1a365d; 
         }
 
         /* 🛠️ TABS VISUAL IMPROVEMENTS */
@@ -304,6 +292,10 @@
                     </div> -->
 
                     <div class="d-flex gap-1">
+                        <!-- Botón Proyectos Activos -->
+                        <button type="button" id="btnActiveProjectsToggle" class="btn btn-sm btn-outline-secondary rounded-pill px-3 fw-bold d-inline-flex align-items-center gap-1" data-bs-toggle="offcanvas" data-bs-target="#activeProjectsOffcanvas" aria-controls="activeProjectsOffcanvas" title="Ver proyectos actualmente en plan">
+                            <i class="fas fa-project-diagram"></i> Proyectos: <span id="activeProjectsCountBadge" class="badge bg-secondary ms-1">0</span>
+                        </button>
                         <!-- Botón NUEVO -->
                         <button type="button" id="btnNewScenario" class="btn btn-sm btn-outline-primary rounded-pill px-3 fw-bold d-inline-flex align-items-center gap-1" title="Empezar un escenario en blanco (Nuevo Plan)">
                             <i class="fas fa-file"></i> NUEVO
@@ -316,10 +308,14 @@
                         <button type="button" id="btnLoadScenario" class="btn btn-sm btn-outline-info rounded-pill px-3 fw-bold d-inline-flex align-items-center gap-1" title="Cargar escenario guardado">
                             <i class="fas fa-folder-open"></i> CARGAR
                         </button>
+                        <!-- Botón BORRAR -->
+                        <button type="button" id="btnDeleteScenario" class="btn btn-sm btn-outline-danger rounded-pill px-3 fw-bold d-inline-flex align-items-center gap-1" title="Borrar planificación guardada para este proyecto">
+                            <i class="fas fa-trash-alt"></i> BORRAR
+                        </button>
                     </div>
                 </div>
 
-                <div class="ms-auto d-flex align-items-center gap-2">
+                <!-- <div class="ms-auto d-flex align-items-center gap-2">
                     <button type="button" id="btnToggleAudit" class="btn btn-sm btn-outline-secondary rounded-pill px-3 fw-bold {% if audit_mode %}btn-audit-active{% endif %}" title="Ver u ocultar procesos eliminados visualmente">
                         <i class="fas {% if audit_mode %}fa-eye-slash{% else %}fa-eye{% endif %} me-1"></i> 
                         {% if audit_mode %}Ocultar Modificados{% else %}Ver Ocultos{% endif %}
@@ -330,7 +326,7 @@
                     <button type="button" id="btnClearPlanning" class="btn btn-sm btn-danger rounded-pill px-3 fw-bold shadow-sm" style="background: #dc2626; border: none;" title="Vaciar todas las tablas de planificación">
                         <i class="fas fa-trash-alt me-1"></i> Vaciar Tablas
                     </button>
-                </div>
+                </div> -->
 
                 <input type="hidden" name="run" value="1">
             </form>
@@ -390,6 +386,34 @@
                         <button type="button" class="btn btn-primary rounded-pill px-4 fw-bold shadow-sm" id="btnConfirmLoad">
                             <i class="fas fa-check me-2"></i>Aceptar
                         </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal Borrar Escenarios Guardados -->
+        <div class="modal fade" id="deleteProjectModal" tabindex="-1" aria-labelledby="deleteProjectModalLabel" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content border-0 shadow" style="border-radius: 12px; overflow: hidden;">
+                    <div class="modal-header bg-danger text-white border-0 py-3 px-4">
+                        <h5 class="modal-title fw-bold" id="deleteProjectModalLabel">
+                            <i class="fas fa-trash-alt me-2"></i>Borrar Escenarios Guardados
+                        </h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body p-4 bg-light">
+                        <div class="mb-1">
+                            <label class="form-label fw-bold text-muted small uppercase mb-3"><i class="fas fa-list me-1"></i>Planes/Escenarios guardados en la base de datos:</label>
+                            <div id="deleteProjectListContainer" class="list-group rounded-3 overflow-hidden border shadow-sm" style="max-height: 350px; overflow-y: auto;">
+                                <!-- Dynamically populated list of scenarios -->
+                                <div class="text-center py-4 text-muted">
+                                    <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span> Cargando escenarios...
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer border-0 bg-white px-4 pb-4 pt-0">
+                        <button type="button" class="btn btn-light rounded-pill px-4 fw-bold" data-bs-dismiss="modal">Cerrar</button>
                     </div>
                 </div>
             </div>
@@ -549,6 +573,7 @@
                                  data-total-qty="{{ item.Cantidad|unlocalize }}"
                                 data-maquina="{{ item.MAQUINA_ID }}" 
                                 data-priority="{{ item.OrdenVisual }}" 
+                                data-proyecto="{{ item.ProyectoCode|default:'' }}"
                                 class="{% if item.is_hidden %}hidden-row{% endif %}"
                                 style="cursor: grab;">
                                 <td class="text-center actions-column" style="white-space: nowrap;">
@@ -672,6 +697,27 @@
 
     </div>
 
+        <!-- Offcanvas para Proyectos Activos -->
+        <div class="offcanvas offcanvas-end shadow" tabindex="-1" id="activeProjectsOffcanvas" aria-labelledby="activeProjectsOffcanvasLabel" style="width: 380px; border-left: none;">
+            <div class="offcanvas-header bg-light border-bottom py-3 px-4">
+                <h5 class="offcanvas-title fw-bold text-dark d-flex align-items-center gap-2" id="activeProjectsOffcanvasLabel">
+                    <i class="fas fa-project-diagram text-primary"></i> Proyectos Activos
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+            </div>
+            <div class="offcanvas-body p-0 bg-white">
+                <div class="p-3 bg-light border-bottom text-muted small">
+                    <i class="fas fa-info-circle me-1"></i> Lista de proyectos con operaciones presentes en las máquinas.
+                </div>
+                <div id="activeProjectsList" class="list-group list-group-flush">
+                    <!-- Dinámico por JS -->
+                    <div class="text-center py-4 text-muted small">
+                        Calculando proyectos...
+                    </div>
+                </div>
+            </div>
+        </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <!-- SortableJS for Drag and Drop -->
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
@@ -711,12 +757,70 @@
             window.location.href = "{% url 'planillas_diarias' %}?" + params.toString();
         }
 
+        function updateActiveProjectsPanel() {
+            const rows = document.querySelectorAll('.tab-content table tbody tr:not(.hidden-row)');
+            const projects = new Set();
+            
+            rows.forEach(row => {
+                const proj = row.getAttribute('data-proyecto');
+                if (proj && proj.trim() && proj.trim() !== '-') {
+                    projects.add(proj.trim());
+                }
+            });
+            
+            const projectArray = Array.from(projects).sort();
+            
+            const badge = document.getElementById('activeProjectsCountBadge');
+            if (badge) {
+                badge.textContent = projectArray.length;
+                if (projectArray.length > 0) {
+                    badge.classList.remove('bg-secondary');
+                    badge.classList.add('bg-primary');
+                } else {
+                    badge.classList.remove('bg-primary');
+                    badge.classList.add('bg-secondary');
+                }
+            }
+            
+            const listContainer = document.getElementById('activeProjectsList');
+            if (listContainer) {
+                if (projectArray.length === 0) {
+                    listContainer.innerHTML = '<div class="text-center py-4 text-muted small"><i class="fas fa-inbox fa-2x mb-2 opacity-25"></i><br>No hay proyectos activos en plan.</div>';
+                } else {
+                    let html = '';
+                    projectArray.forEach(p => {
+                        html += `
+                        <div class="list-group-item d-flex align-items-center py-2 border-bottom-0 border-top">
+                            <div class="bg-primary bg-opacity-10 text-primary rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 35px; height: 35px;">
+                                <i class="fas fa-code-branch"></i>
+                            </div>
+                            <div>
+                                <h6 class="mb-0 fw-bold text-dark" style="font-size: 0.95rem;">${p}</h6>
+                                <small class="text-muted" style="font-size: 0.75rem;">En planificación</small>
+                            </div>
+                        </div>`;
+                    });
+                    listContainer.innerHTML = html;
+                }
+            }
+        }
+
         let currentProjectToSelect = "";
         let selectedOpsByArticle = {}; // { macroPk: [idOrden1, idOrden2, ...] }
         let enabledArticles = {}; // { macroPk: true/false }
         let currentLevel2MacroPk = ""; // Tracker for the active article in detail view
 
         document.addEventListener('DOMContentLoaded', function() {
+            // Activar panel de proyectos inicialmente y observar cambios
+            updateActiveProjectsPanel();
+            const tabContent = document.getElementById('myTabContent');
+            if (tabContent) {
+                const observer = new MutationObserver(mutations => {
+                    updateActiveProjectsPanel();
+                });
+                observer.observe(tabContent, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+            }
+
             // --- SELECTIVE PLANNING FLOW ---
              const planForm = document.getElementById('plan-filter-form');
             if (planForm) {
@@ -2239,6 +2343,264 @@
                         window.location.href = `?scenario_id=${selectedId}&proyectos=${encodeURIComponent(projects)}`;
                     });
                 }
+            }
+
+            // 4. BORRAR: Open delete modal and load saved scenarios dynamically
+            const deleteProjectModalEl = document.getElementById('deleteProjectModal');
+            let deleteProjectModal;
+            if (deleteProjectModalEl) {
+                deleteProjectModal = new bootstrap.Modal(deleteProjectModalEl);
+                deleteProjectModalEl.addEventListener('hidden.bs.modal', function() {
+                    // Update the select dropdown when closing the modal to ensure sync
+                    fetchAndSyncSelect();
+                });
+            }
+
+            const btnDeleteScenario = document.getElementById('btnDeleteScenario');
+            if (btnDeleteScenario && deleteProjectModal) {
+                btnDeleteScenario.addEventListener('click', function() {
+                    deleteProjectModal.show();
+                    loadScenariosList();
+                });
+            }
+
+            async function fetchAndSyncSelect() {
+                try {
+                    const response = await fetch('/api/scenarios/list/');
+                    if (response.ok) {
+                        const data = await response.json();
+                        updateLoadScenarioSelect(data.scenarios || []);
+                    }
+                } catch (e) {
+                    console.error('Error syncing scenarios select:', e);
+                }
+            }
+
+            async function loadScenariosList() {
+                const container = document.getElementById('deleteProjectListContainer');
+                if (!container) return;
+
+                // Show spinner
+                container.innerHTML = `
+                    <div class="text-center py-4 text-muted bg-white">
+                        <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span> Cargando escenarios...
+                    </div>
+                `;
+
+                try {
+                    const response = await fetch('/api/scenarios/list/');
+                    if (!response.ok) throw new Error('Error al obtener escenarios');
+                    
+                    const data = await response.json();
+                    const scenarios = data.scenarios || [];
+
+                    // Synchronize the load dropdown list
+                    updateLoadScenarioSelect(scenarios);
+
+                    if (scenarios.length === 0) {
+                        container.innerHTML = `
+                            <div class="text-center py-4 text-muted bg-white">
+                                <i class="fas fa-info-circle me-1"></i> No hay escenarios guardados.
+                            </div>
+                        `;
+                        return;
+                    }
+
+                    container.innerHTML = '';
+                    scenarios.forEach(sc => {
+                        const item = document.createElement('div');
+                        item.className = 'list-group-item d-flex justify-content-between align-items-center bg-white border-0 border-bottom px-3 py-2.5 transition-all';
+                        item.style.borderRadius = '8px';
+                        item.style.marginBottom = '4px';
+
+                        // Scenario info (Name)
+                        const infoDiv = document.createElement('div');
+                        infoDiv.className = 'd-flex align-items-center';
+                        
+                        let iconHTML = `<i class="fas fa-folder fa-md"></i>`;
+                        let badgeHTML = '';
+                        if (sc.es_principal) {
+                            iconHTML = `<i class="fas fa-star fa-md"></i>`;
+                            badgeHTML = `<span class="badge bg-secondary ms-2 text-uppercase" style="font-size: 0.65rem;">Oficial</span>`;
+                        }
+                        
+                        infoDiv.innerHTML = `
+                            <div class="bg-primary bg-opacity-10 text-primary rounded-3 p-2 me-3 d-flex align-items-center justify-content-center" style="width: 38px; height: 38px;">
+                                ${iconHTML}
+                            </div>
+                            <div>
+                                <span class="fw-bold text-dark fs-6">${sc.nombre}</span>
+                                ${badgeHTML}
+                            </div>
+                        `;
+                        item.appendChild(infoDiv);
+
+                        // Action button (Delete)
+                        if (!sc.es_principal) {
+                            const deleteBtn = document.createElement('button');
+                            deleteBtn.className = 'btn btn-sm btn-outline-danger rounded-pill px-3 py-1.5 fw-bold d-inline-flex align-items-center gap-1.5 shadow-sm transition-all';
+                            deleteBtn.style.borderColor = '#fee2e2';
+                            deleteBtn.style.backgroundColor = '#fef2f2';
+                            deleteBtn.style.color = '#dc2626';
+                            
+                            deleteBtn.onmouseover = function() {
+                                this.style.backgroundColor = '#fee2e2';
+                                this.style.borderColor = '#fca5a5';
+                                this.style.color = '#b91c1c';
+                            };
+                            deleteBtn.onmouseout = function() {
+                                this.style.backgroundColor = '#fef2f2';
+                                this.style.borderColor = '#fee2e2';
+                                this.style.color = '#dc2626';
+                            };
+
+                            deleteBtn.title = `Eliminar escenario ${sc.nombre}`;
+                            deleteBtn.innerHTML = '<i class="fas fa-trash-alt"></i> Eliminar';
+                            
+                            deleteBtn.addEventListener('click', async function() {
+                                await confirmAndDeleteScenario(sc.id, sc.nombre);
+                            });
+                            item.appendChild(deleteBtn);
+                        } else {
+                            // Locked or principal indicator
+                            const lockDiv = document.createElement('div');
+                            lockDiv.className = 'text-muted small px-3 py-1.5';
+                            lockDiv.innerHTML = '<i class="fas fa-lock me-1"></i> No borrable';
+                            item.appendChild(lockDiv);
+                        }
+
+                        container.appendChild(item);
+                    });
+
+                } catch (error) {
+                    console.error(error);
+                    container.innerHTML = `
+                        <div class="text-center py-4 text-danger bg-white">
+                            <i class="fas fa-exclamation-triangle me-1"></i> Error al cargar escenarios.
+                        </div>
+                    `;
+                }
+            }
+
+            async function confirmAndDeleteScenario(id, name) {
+                const result = await Swal.fire({
+                    title: '¿Confirmar eliminación?',
+                    text: `¿Seguro que deseas eliminar por completo el escenario guardado [${name}]?`,
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonText: 'Sí, Eliminar',
+                    cancelButtonText: 'Cancelar',
+                    confirmButtonColor: '#dc2626',
+                    customClass: {
+                        popup: 'premium-swal',
+                        confirmButton: 'premium-confirm-danger',
+                        cancelButton: 'premium-cancel'
+                    }
+                });
+
+                if (result.isConfirmed) {
+                    try {
+                        const response = await fetch(`/api/scenarios/${id}/delete/`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRFToken': '{{ csrf_token }}'
+                            }
+                        });
+
+                        const data = await response.json();
+                        if (response.ok && data.status === 'ok') {
+                            Swal.fire({
+                                title: '¡Eliminado!',
+                                text: `El escenario "${name}" ha sido eliminado exitosamente.`,
+                                icon: 'success',
+                                timer: 1500,
+                                showConfirmButton: false
+                            });
+
+                            // Reload list in modal (which also updates the select dropdown)
+                            await loadScenariosList();
+
+                            // Check if the deleted scenario is currently loaded/active
+                            const activeScenarioIdInput = document.getElementById('active-scenario-id-input');
+                            const activeScenarioId = activeScenarioIdInput ? activeScenarioIdInput.value : '';
+                            if (activeScenarioId && String(activeScenarioId) === String(id)) {
+                                // If the active scenario was deleted, reload the main page without the scenario_id param
+                                const params = new URLSearchParams(window.location.search);
+                                params.delete('scenario_id');
+                                window.location.href = window.location.pathname + '?' + params.toString();
+                            }
+                        } else {
+                            Swal.fire({
+                                title: 'Error',
+                                text: data.error || 'Ocurrió un error al intentar eliminar el escenario.',
+                                icon: 'error',
+                                confirmButtonText: 'Cerrar',
+                                customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                            });
+                        }
+                    } catch (e) {
+                        console.error(e);
+                        Swal.fire({
+                            title: 'Error de Conexión',
+                            text: 'No se pudo comunicar con el servidor para eliminar el escenario.',
+                            icon: 'error',
+                            confirmButtonText: 'Cerrar',
+                            customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                        });
+                    }
+                }
+            }
+
+            function updateLoadScenarioSelect(scenarios) {
+                const selectEl = document.getElementById('loadScenarioSelect');
+                if (!selectEl) return;
+                
+                const currentVal = selectEl.value;
+                
+                selectEl.innerHTML = '<option value="">-- Seleccionar un Plan --</option>';
+                
+                scenarios.forEach(sc => {
+                    const opt = document.createElement('option');
+                    opt.value = sc.id;
+                    opt.dataset.proyectos = sc.proyectos || '';
+                    opt.textContent = sc.nombre;
+                    selectEl.appendChild(opt);
+                });
+                
+                if (currentVal && [...selectEl.options].some(o => o.value === currentVal)) {
+                    selectEl.value = currentVal;
+                }
+            }
+
+            function clearUIPlanning() {
+                // 1. Clear projects input
+                const proyectosInput = document.getElementById('proyectos');
+                if (proyectosInput) {
+                    proyectosInput.value = '';
+                }
+
+                // 2. Reset machine tabs badges and remove .con-carga class
+                const tabButtons = document.querySelectorAll('#myTab button.nav-link');
+                tabButtons.forEach(btn => {
+                    btn.classList.remove('con-carga');
+                    const badge = btn.querySelector('.badge');
+                    if (badge) {
+                        badge.textContent = '0';
+                    }
+                });
+
+                // 3. Clear table bodies and put them in empty state
+                const tableBodies = document.querySelectorAll('#myTabContent table tbody');
+                tableBodies.forEach(tbody => {
+                    tbody.innerHTML = '<tr><td colspan="16" class="text-center">No hay datos para esta máquina.</td></tr>';
+                });
+
+                // 4. Update browser URL to remove proyectos parameter cleanly
+                const params = new URLSearchParams(window.location.search);
+                params.delete('proyectos');
+                const newUrl = window.location.pathname + '?' + params.toString();
+                window.history.pushState({ path: newUrl }, '', newUrl);
             }
 
             // --- Audit Mode Toggle Logic ---

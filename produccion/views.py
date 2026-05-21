@@ -2138,6 +2138,48 @@ def planificacion_visual(request):
     Visual Gantt Chart View.
     Uses shared logic from gantt_logic.py
     """
+    from django.utils import timezone
+    from .models import Scenario
+    
+    all_scenarios = Scenario.objects.using('default').all().order_by('-es_principal', 'nombre')
+    proyectos_value = request.GET.get('proyectos', '').strip()
+    
+    # Get active_scenario and plan_mode for synchronization
+    scenario_id = request.GET.get('scenario_id') or request.session.get('last_scenario_id')
+    active_scenario = None
+    if scenario_id:
+        try:
+            active_scenario = Scenario.objects.using('default').get(pk=scenario_id)
+        except Scenario.DoesNotExist:
+            pass
+    if not active_scenario:
+        active_scenario = Scenario.objects.using('default').filter(es_principal=True).first()
+        
+    plan_mode = request.GET.get('plan_mode') or request.session.get('last_plan_mode', 'manual')
+
+    # Check if manual render is triggered
+    graficar = request.GET.get('graficar') == '1'
+    
+    if not graficar:
+        # Fast load, empty Gantt view
+        context = {
+            'timeline_data': [],
+            'time_columns': [],
+            'start_date': timezone.now(),
+            'dependencies_json': json.dumps([]),
+            'today': timezone.now(),
+            'total_width': 0,
+            'system_alerts': [],
+            'analysis': {'machines': [], 'project_alerts': []},
+            'all_scenarios': all_scenarios,
+            'active_scenario': active_scenario,
+            'plan_mode': plan_mode,
+            'gantt_needs_clear': False,
+            'any_rendering_capped': False,
+            'proyectos_value': proyectos_value,
+        }
+        return render(request, 'produccion/planificacion_visual.html', context)
+        
     # Use shared logic
     data = get_gantt_data(request)
     
@@ -2337,6 +2379,7 @@ def planificacion_visual(request):
         'plan_mode': data.get('plan_mode', 'manual'),
         'gantt_needs_clear': data.get('gantt_needs_clear', False),
         'any_rendering_capped': any(row.get('rendering_capped') for row in timeline_data),
+        'proyectos_value': proyectos_value,
     }
 
 
@@ -2783,6 +2826,28 @@ def delete_scenario(request, scenario_id):
         return JsonResponse({'status': 'ok'})
     except Exception as e:
         return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+def api_list_scenarios(request):
+    """
+    Returns a list of all scenarios in the database.
+    """
+    try:
+        from .models import Scenario
+        scenarios = Scenario.objects.using('default').all().order_by('-id')
+        data = []
+        for s in scenarios:
+            data.append({
+                'id': s.id,
+                'nombre': s.nombre,
+                'es_principal': s.es_principal,
+                'proyectos': s.proyectos or ''
+            })
+        return JsonResponse({'scenarios': data})
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+
 
 @csrf_exempt
 def publish_scenario(request, scenario_id):
@@ -3711,6 +3776,137 @@ def api_clear_all_planning(request):
             TaskDependency.objects.using('default').all().delete()
             
         return JsonResponse({'status': 'ok', 'message': 'Selección vaciada correctamente'})
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+def api_delete_project_planning(request):
+    """
+    Deletes planned tasks, manual priorities, and hidden status for the specified projects in the active scenario.
+    Removes the projects from the scenario's persistent list as well.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+        
+    try:
+        body = json.loads(request.body)
+        proyectos_raw = body.get('proyectos', '').strip()
+        scenario_id = body.get('scenario_id')
+        
+        active_scenario = get_active_scenario(request, scenario_id=scenario_id)
+        
+        if not proyectos_raw:
+            return JsonResponse({'error': 'No se especificaron proyectos para borrar.'}, status=400)
+            
+        proj_list = [p.strip() for p in proyectos_raw.split(',') if p.strip()]
+        if not proj_list:
+            return JsonResponse({'error': 'No se especificaron proyectos válidos.'}, status=400)
+            
+        # Collect all op ids to delete
+        all_op_ids = set()
+        codes_to_match = set()
+        
+        for proj in proj_list:
+            v1 = proj
+            v2 = proj.replace('-', '.')
+            v3 = proj.replace('.', '-')
+            for c in (v1, v2, v3):
+                codes_to_match.add(c)
+                
+        # Query ERP to resolve Idorden
+        ps = [f"%{c}%" for c in codes_to_match]
+        if ps:
+            from django.db import connections
+            with connections['production'].cursor() as cursor:
+                where_clauses = " OR ".join(["Formula LIKE %s"] * len(ps))
+                sql = f"SELECT Idorden FROM Tman050 WHERE ({where_clauses})"
+                cursor.execute(sql, ps)
+                for row in cursor.fetchall():
+                    all_op_ids.add(str(row[0]))
+                    
+        with transaction.atomic(using='default'):
+            # Also find by matching proyecto_code in PlannedTask SQLite table directly to be extra thorough
+            sqlite_ops = PlannedTask.objects.using('default').filter(
+                scenario=active_scenario,
+                proyecto_code__in=list(codes_to_match)
+            ).values_list('id_orden', flat=True)
+            
+            for op in sqlite_ops:
+                all_op_ids.add(str(op))
+                
+            # If we resolved some OP IDs, delete them from all three tables
+            if all_op_ids:
+                op_ids_list = list(all_op_ids)
+                
+                # Delete from PlannedTask
+                PlannedTask.objects.using('default').filter(
+                    scenario=active_scenario,
+                    id_orden__in=op_ids_list
+                ).delete()
+                
+                # Delete from PrioridadManual
+                PrioridadManual.objects.using('default').filter(
+                    scenario=active_scenario,
+                    id_orden__in=op_ids_list
+                ).delete()
+                
+                # Delete from HiddenTask
+                HiddenTask.objects.using('default').filter(
+                    scenario=active_scenario,
+                    id_orden__in=op_ids_list
+                ).delete()
+                
+            # Also clean up the projects text in the scenario model
+            if active_scenario.proyectos:
+                current_p = active_scenario.proyectos or ""
+                p_list = [p.strip() for p in current_p.split(",") if p.strip()]
+                # Remove deleted projects and their hyphen/dot variations
+                new_p_list = [p for p in p_list if p not in proj_list and p.replace('-', '.') not in proj_list and p.replace('.', '-') not in proj_list]
+                active_scenario.proyectos = ",".join(new_p_list)
+                active_scenario.save(using='default')
+                
+        return JsonResponse({
+            'status': 'ok',
+            'message': f'Planificación de proyecto(s) {", ".join(proj_list)} borrada correctamente.',
+            'deleted_ops_count': len(all_op_ids)
+        })
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+def api_get_planned_projects(request):
+    """
+    Returns a list of distinct project codes that have tasks planned in the active scenario.
+    """
+    try:
+        scenario_id = request.GET.get('scenario_id')
+        active_scenario = get_active_scenario(request, scenario_id=scenario_id)
+        
+        # Get distinct projects from PlannedTask
+        projects_qs = PlannedTask.objects.using('default').filter(
+            scenario=active_scenario
+        ).exclude(proyecto_code__isnull=True).exclude(proyecto_code='').values_list('proyecto_code', flat=True).distinct()
+        
+        # Get projects from scenario.proyectos field
+        scenario_projects = []
+        if active_scenario.proyectos:
+            scenario_projects = [p.strip() for p in active_scenario.proyectos.split(',') if p.strip()]
+            
+        # Combine lists and ensure unique/clean results
+        combined_set = set()
+        for p in list(projects_qs) + scenario_projects:
+            if p and p.strip():
+                combined_set.add(p.strip())
+                
+        combined = sorted(list(combined_set))
+        
+        return JsonResponse({'projects': combined})
     except Exception as e:
         import traceback
         print(traceback.format_exc())
