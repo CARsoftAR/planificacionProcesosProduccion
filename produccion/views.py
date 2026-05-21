@@ -76,9 +76,9 @@ def get_active_scenario(request, scenario_id=None):
     """
     url_scenario_id = request.GET.get('scenario_id')
     
-    # If explicitly empty in URL, it means the user selected "Current State"
+    # If explicitly empty in URL, we don't wipe the session blindly
+    # because it might be a reload from a provisional state.
     if url_scenario_id == "":
-        request.session['last_scenario_id'] = None
         scenario_id = None
     elif url_scenario_id:
         scenario_id = url_scenario_id
@@ -129,7 +129,10 @@ def reset_planning(request):
         ids = body.get('ids', [])
         active_scenario = get_active_scenario(request)
 
-        print(f"DEBUG: reset_planning called for Scenario: {active_scenario.nombre} (ID: {active_scenario.id}) with {len(ids)} IDs")
+        if active_scenario:
+            print(f"DEBUG: reset_planning called for Scenario: {active_scenario.nombre} (ID: {active_scenario.id}) with {len(ids)} IDs")
+        else:
+            print(f"DEBUG: reset_planning called for NO SCENARIO with {len(ids)} IDs")
         
         # If no IDs on screen, try to find them by project filter
         proyectos = body.get('proyectos')
@@ -402,9 +405,10 @@ def planificacion_list(request):
     # Canonical URL Redirect: Ensure scenario_id is always in URL for consistency
     if 'scenario_id' not in request.GET:
         active_scenario = get_active_scenario(request)
-        params = request.GET.copy()
-        params['scenario_id'] = active_scenario.id
-        return redirect(f"{request.path}?{params.urlencode()}")
+        if active_scenario:
+            params = request.GET.copy()
+            params['scenario_id'] = active_scenario.id
+            return redirect(f"{request.path}?{params.urlencode()}")
 
     active_scenario = get_active_scenario(request)
 
@@ -3596,6 +3600,16 @@ def api_confirm_selected_tasks(request):
         
         active_scenario = get_active_scenario(request, scenario_id=scenario_id)
         
+        if not active_scenario:
+            from .models import Scenario
+            import datetime
+            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+            active_scenario = Scenario.objects.using('default').create(
+                nombre=f"Planificación Temporal ({timestamp})",
+                es_principal=False
+            )
+            request.session['last_scenario_id'] = str(active_scenario.id)
+        
         # Backend Security Layer: Check if already planned unless forced
         if not force and project_code:
             v1 = project_code
@@ -3707,6 +3721,7 @@ def api_confirm_selected_tasks(request):
         return JsonResponse({'status': 'ok', 'count': len(id_ordens)})
     except Exception as e:
         import traceback
+        print(f"ERROR CONFIRMACIÓN: {str(e)}")
         print(traceback.format_exc())
         return JsonResponse({'error': str(e)}, status=500)
 
