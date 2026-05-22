@@ -3286,13 +3286,11 @@
                 }
             });
 
+            const conexionesDibujadas = new Set();
+
             filteredDeps.forEach(dep => {
                 const s_pred = dep.pred;
                 const s_succ = dep.succ;
-                
-                const linkKey = `${s_pred}-${s_succ}`;
-                if (drawnLinks.has(linkKey)) return;
-                drawnLinks.add(linkKey);
                 
                 // Salimos del ÚLTIMO segmento de la predecesora
                 const box1 = taskMapLast[s_pred];
@@ -3303,6 +3301,16 @@
                 
                 // Si alguna de las tarjetas está oculta por filtro, no dibujamos la flecha
                 if (box1.style.display === 'none' || box2.style.display === 'none') return;
+
+                // Lógica de Consolidación (Group Dependencies)
+                // Usamos el ID del proyecto destino si está disponible, o el ID de la tarea
+                const source_id = dep.source_id || s_pred;
+                const target_id = dep.target_id || box2.dataset.projectName || s_succ;
+                
+                const claveUnica = `${source_id}->${target_id}`;
+                if (conexionesDibujadas.has(claveUnica)) return;
+                conexionesDibujadas.add(claveUnica);
+
 
                 // Las anclas están dentro de los bloques
                 // Usamos selectores dentro del elemento específico de la OP/segmento

@@ -292,9 +292,15 @@
                     </div> -->
 
                     <div class="d-flex gap-1">
+                        <!-- Botón Mostrar Ocultos (Audit Mode) -->
+                        <button type="button" id="btnToggleAudit" class="btn btn-sm {% if request.GET.audit_mode == '1' %}btn-warning{% else %}btn-outline-warning{% endif %} rounded-pill px-3 fw-bold d-inline-flex align-items-center gap-1" title="Mostrar Procesos Ocultos/Borrados">
+                            <i class="fas {% if request.GET.audit_mode == '1' %}fa-eye-slash{% else %}fa-eye{% endif %}"></i>
+                            {% if request.GET.audit_mode == '1' %}Ocultar Restaurables{% else %}Mostrar Ocultos{% endif %}
+                        </button>
+                        <div class="vr bg-secondary opacity-25 mx-1" style="height: 28px;"></div>
                         <!-- Botón Proyectos Activos -->
-                        <button type="button" id="btnActiveProjectsToggle" class="btn btn-sm btn-outline-secondary rounded-pill px-3 fw-bold d-inline-flex align-items-center gap-1" data-bs-toggle="offcanvas" data-bs-target="#activeProjectsOffcanvas" aria-controls="activeProjectsOffcanvas" title="Ver proyectos actualmente en plan">
-                            <i class="fas fa-project-diagram"></i> Proyectos: <span id="activeProjectsCountBadge" class="badge bg-secondary ms-1">0</span>
+                        <button type="button" id="btnActiveProjectsToggle" class="btn btn-sm btn-outline-danger rounded-pill px-3 fw-bold d-inline-flex align-items-center gap-1" data-bs-toggle="offcanvas" data-bs-target="#activeProjectsOffcanvas" aria-controls="activeProjectsOffcanvas" title="Ver proyectos actualmente en plan">
+                            <i class="fas fa-project-diagram"></i> Proyectos: <span id="activeProjectsCountBadge" class="badge bg-primary ms-1">0</span>
                         </button>
                         <!-- Botón NUEVO -->
                         <button type="button" id="btnNewScenario" class="btn btn-sm btn-outline-primary rounded-pill px-3 fw-bold d-inline-flex align-items-center gap-1" title="Empezar un escenario en blanco (Nuevo Plan)">
@@ -790,13 +796,13 @@
                     let html = '';
                     projectArray.forEach(p => {
                         html += `
-                        <div class="list-group-item d-flex align-items-center py-2 border-bottom-0 border-top">
+                        <div class="list-group-item list-group-item-action d-flex align-items-center py-2 border-bottom-0 border-top" style="cursor: pointer;" onclick="openProductionSelector('${p}')">
                             <div class="bg-primary bg-opacity-10 text-primary rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 35px; height: 35px;">
                                 <i class="fas fa-code-branch"></i>
                             </div>
                             <div>
                                 <h6 class="mb-0 fw-bold text-dark" style="font-size: 0.95rem;">${p}</h6>
-                                <small class="text-muted" style="font-size: 0.75rem;">En planificación</small>
+                                <small class="text-muted" style="font-size: 0.75rem;">En planificación (Clic para editar)</small>
                             </div>
                         </div>`;
                     });
@@ -882,13 +888,18 @@
             const projectsInput = document.getElementById('proyectos');
             if (projectsInput) projectsInput.focus();
 
-            async function openProductionSelector(projectCode) {
+            window.openProductionSelector = async function(projectCode) {
+                console.log("Abriendo selector para el proyecto:", projectCode);
+                try {
                 currentProjectToSelect = projectCode;
                 selectedOpsByArticle = {};
                 enabledArticles = {};
                 document.getElementById('selectorSub').innerText = "Proyecto: " + projectCode;
                 
-                const scenarioId = new URLSearchParams(window.location.search).get('scenario_id');
+                // Usar el scenarioId de la URL o el definido globalmente (Django template)
+                const urlScenarioId = new URLSearchParams(window.location.search).get('scenario_id');
+                const activeScenarioId = urlScenarioId || (typeof scenarioId !== 'undefined' ? scenarioId : '');
+                
                 const dialog = document.getElementById('selectorDialog');
                 // Permanent width for stability
                 dialog.style.maxWidth = "1600px";
@@ -924,7 +935,7 @@
                 tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4"><i class="fas fa-sync fa-spin me-2"></i> Cargando artículos...</td></tr>';
                 
                 try {
-                    const response = await fetch(`/api/get_project_articles/?proyecto=${projectCode}&scenario_id=${scenarioId || ''}`);
+                    const response = await fetch(`/api/get_project_articles/?proyecto=${projectCode}&scenario_id=${activeScenarioId}`);
                     const data = await response.json();
                     
                     if (data.planned_state) {
@@ -971,7 +982,10 @@
                 } catch (e) {
                     tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-danger">Error al cargar artículos.</td></tr>';
                 }
-            }
+                } catch (err) {
+                    console.error("Error crítico al abrir el selector:", err);
+                }
+            };
 
             window.toggleArticlePlan = function(macroPk, isEnabled) {
                 enabledArticles[macroPk] = isEnabled;
@@ -1019,8 +1033,9 @@
                 tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4"><i class="fas fa-sync fa-spin me-2"></i> Cargando procesos...</td></tr>';
                 
                 try {
-                    const scenarioId = new URLSearchParams(window.location.search).get('scenario_id');
-                    const response = await fetch(`/api/get_article_processes/?macro_pk=${macroPk}&scenario_id=${scenarioId}`);
+                    const urlScenarioId = new URLSearchParams(window.location.search).get('scenario_id');
+                    const activeScenarioId = urlScenarioId || (typeof scenarioId !== 'undefined' ? scenarioId : '');
+                    const response = await fetch(`/api/get_article_processes/?macro_pk=${macroPk}&scenario_id=${activeScenarioId}`);
                     const data = await response.json();
                     
                     if (data.processes && data.processes.length > 0) {
@@ -1179,15 +1194,18 @@
             window.confirmSelection = async function() {
                 // Collect all selected OPs but ONLY from ENABLED articles
                 let finalSelection = [];
-                let piecePriorities = {}; // macroPk -> priority
+                // Collect priority for ALL articles, regardless of selection
+                let piecePriorities = {};
+                document.querySelectorAll('.article-priority-input').forEach(input => {
+                    const mPk = input.dataset.macropk;
+                    if (mPk && enabledArticles[mPk]) {
+                        piecePriorities[mPk] = parseInt(input.value) || 1;
+                    }
+                });
 
                 for (const mPk in selectedOpsByArticle) {
                     if (enabledArticles[mPk]) {
                         finalSelection = finalSelection.concat(selectedOpsByArticle[mPk]);
-                        
-                        // Collect priority for this piece
-                        const prioInput = document.querySelector(`.article-priority-input[data-macropk="${mPk}"]`);
-                        piecePriorities[mPk] = prioInput ? parseInt(prioInput.value) || 1 : 1;
                     }
                 }
                 
@@ -2240,9 +2258,30 @@
                         const proyectosInput = document.getElementById('proyectos');
                         const proyectosList = proyectosInput ? proyectosInput.value.trim() : '';
 
+                        let secuencias = [];
+                        document.querySelectorAll('.tab-content table tbody').forEach(tbody => {
+                            let rows = tbody.querySelectorAll('tr:not(.hidden-row)');
+                            rows.forEach((row, index) => {
+                                let idOrden = row.getAttribute('data-id');
+                                let maquina = row.getAttribute('data-maquina');
+                                let nivelCell = row.querySelector('.editable-nivel');
+                                let prioridadManual = nivelCell ? parseInt(nivelCell.innerText) || 0 : 0;
+                                
+                                if (idOrden) {
+                                    secuencias.push({
+                                        id_orden: idOrden,
+                                        maquina: maquina,
+                                        orden_secuencia: index,
+                                        prioridad_manual: prioridadManual
+                                    });
+                                }
+                            });
+                        });
+
                         let payload = {
                             nombre: name,
-                            proyectos: proyectosList
+                            proyectos: proyectosList,
+                            secuencias: secuencias
                         };
 
                         // Word/Excel style flow:

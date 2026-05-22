@@ -104,6 +104,7 @@ class PrioridadManual(models.Model):
         verbose_name='Inicio Manual (Pin)',
         help_text='Fecha forzada manualmente por el usuario (Drag & Drop)'
     )
+    orden_secuencia = models.IntegerField(default=0, verbose_name='Orden Secuencia')
     scenario = models.ForeignKey(
         Scenario,
         on_delete=models.CASCADE,

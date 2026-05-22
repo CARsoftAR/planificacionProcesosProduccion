@@ -528,7 +528,7 @@ def planificacion_list(request):
         id_to_any_override = {}
         if plan_mode == 'manual':
             if active_scenario:
-                prioridades_db = PrioridadManual.objects.using('default').filter(scenario=active_scenario)
+                prioridades_db = PrioridadManual.objects.using('default').filter(scenario=active_scenario).order_by('orden_secuencia')
                 print(f"DEBUG: planificacion_list - Loading {prioridades_db.count()} overrides for Scenario {active_scenario.nombre}")
                                # Map for OVERRIDES: (id_orden, maquina_id) -> data
                 # We harvest ALL manual attributes to ensure consistency
@@ -545,7 +545,8 @@ def planificacion_list(request):
                         'nivel_manual': p.nivel_manual,
                         'porcentaje_solapamiento': p.porcentaje_solapamiento,
                         'cantidad_producida_manual': p.cantidad_producida_manual,
-                        'fecha_inicio_manual': p.fecha_inicio_manual
+                        'fecha_inicio_manual': p.fecha_inicio_manual,
+                        'orden_secuencia': p.orden_secuencia
                     }
                     virtual_overrides[(oid, mid)] = node
                     id_to_any_override[oid] = mid
@@ -619,6 +620,7 @@ def planificacion_list(request):
                 current_machine_name = id_to_name.get(target_machine_id, target_machine_id)
 
                 item['OrdenVisual'] = float(priority_val)
+                item['OrdenSecuencia'] = float(override_node.get('orden_secuencia', 999999))
                 item['ManualPriorityFlag'] = True
                 
                 # Apply Overrides
@@ -721,8 +723,9 @@ def planificacion_list(request):
                     # Let's use a per-machine index to keep priorities clean.
                     m_item['OrdenVisual'] = (idx + 1) * 5000.0 # Wide spacing for default
 
-            # 2. Sort by Nivel_Planificacion DESCENDING (Primary) and OrdenVisual ASCENDING (Secondary)
+            # 2. Sort by OrdenSecuencia (Primary), Nivel_Planificacion DESCENDING (Secondary) and OrdenVisual ASCENDING (Tertiary)
             machine_items.sort(key=lambda x: (
+                x.get('OrdenSecuencia', 999999),
                 -int(x.get('Nivel_Planificacion') or 0), 
                 x.get('OrdenVisual', 999999.0)
             ))
@@ -2708,6 +2711,7 @@ def create_scenario(request):
         proyectos = data.get('proyectos', '')
         copy_from_id = data.get('copy_from_id')
         scenario_id = data.get('id') or data.get('update_id')
+        secuencias = data.get('secuencias', [])
         
         with transaction.atomic(using='default'):
             if es_principal:
@@ -2743,6 +2747,7 @@ def create_scenario(request):
                             tiempo_manual=o.tiempo_manual, nivel_manual=o.nivel_manual,
                             porcentaje_solapamiento=o.porcentaje_solapamiento,
                             fecha_inicio_manual=o.fecha_inicio_manual,
+                            orden_secuencia=o.orden_secuencia,
                             scenario=scenario
                         ) for o in overrides
                     ]
@@ -2772,6 +2777,44 @@ def create_scenario(request):
                     ]
                     PlannedTask.objects.using('default').bulk_create(new_planned)
 
+                if secuencias:
+                    # RECOVERY/MAPPING LOGIC: Ensure all OPs have a PlannedTask with their correct project_code
+                    id_ordens = [seq.get('id_orden') for seq in secuencias if seq.get('id_orden')]
+                    existing_planned = set(PlannedTask.objects.using('default').filter(
+                        scenario=scenario, id_orden__in=id_ordens
+                    ).values_list('id_orden', flat=True))
+                    
+                    missing_ids = [int(oid) for oid in id_ordens if int(oid) not in existing_planned]
+                    if missing_ids:
+                        from django.db import connections
+                        with connections['production'].cursor() as cursor:
+                            placeholders = ', '.join(['%s'] * len(missing_ids))
+                            cursor.execute(f"SELECT Idorden, Formula FROM Tman050 WHERE Idorden IN ({placeholders})", missing_ids)
+                            missing_projects = {row[0]: str(row[1]).strip() if row[1] else '' for row in cursor.fetchall()}
+                            
+                        new_tasks = []
+                        for oid in missing_ids:
+                            proj_code = missing_projects.get(oid, '')
+                            new_tasks.append(PlannedTask(id_orden=oid, scenario=scenario, proyecto_code=proj_code))
+                        PlannedTask.objects.using('default').bulk_create(new_tasks)
+
+                    for seq in secuencias:
+                        id_orden = seq.get('id_orden')
+                        maquina = seq.get('maquina')
+                        orden_secuencia = seq.get('orden_secuencia', 0)
+                        prioridad_manual = seq.get('prioridad_manual')
+                        if id_orden and maquina:
+                            defaults_dict = {'orden_secuencia': orden_secuencia}
+                            if prioridad_manual is not None:
+                                defaults_dict['nivel_manual'] = prioridad_manual
+                                
+                            PrioridadManual.objects.using('default').update_or_create(
+                                scenario=scenario,
+                                id_orden=id_orden,
+                                maquina=maquina,
+                                defaults=defaults_dict
+                            )
+
                 return JsonResponse({'status': 'ok', 'scenario': {'id': scenario.id, 'nombre': scenario.nombre}})
                 
             else:
@@ -2793,7 +2836,9 @@ def create_scenario(request):
                             id_orden=o.id_orden, maquina=o.maquina, prioridad=o.prioridad,
                             tiempo_manual=o.tiempo_manual, nivel_manual=o.nivel_manual,
                             porcentaje_solapamiento=o.porcentaje_solapamiento,
-                            fecha_inicio_manual=o.fecha_inicio_manual, scenario=new_scenario
+                            fecha_inicio_manual=o.fecha_inicio_manual, 
+                            orden_secuencia=o.orden_secuencia,
+                            scenario=new_scenario
                         ))
                     PrioridadManual.objects.using('default').bulk_create(new_overrides)
                     
@@ -2814,6 +2859,44 @@ def create_scenario(request):
                     ]
                     PlannedTask.objects.using('default').bulk_create(new_planned)
                 
+                if secuencias:
+                    # RECOVERY/MAPPING LOGIC: Ensure all OPs have a PlannedTask with their correct project_code
+                    id_ordens = [seq.get('id_orden') for seq in secuencias if seq.get('id_orden')]
+                    existing_planned = set(PlannedTask.objects.using('default').filter(
+                        scenario=new_scenario, id_orden__in=id_ordens
+                    ).values_list('id_orden', flat=True))
+                    
+                    missing_ids = [int(oid) for oid in id_ordens if int(oid) not in existing_planned]
+                    if missing_ids:
+                        from django.db import connections
+                        with connections['production'].cursor() as cursor:
+                            placeholders = ', '.join(['%s'] * len(missing_ids))
+                            cursor.execute(f"SELECT Idorden, Formula FROM Tman050 WHERE Idorden IN ({placeholders})", missing_ids)
+                            missing_projects = {row[0]: str(row[1]).strip() if row[1] else '' for row in cursor.fetchall()}
+                            
+                        new_tasks = []
+                        for oid in missing_ids:
+                            proj_code = missing_projects.get(oid, '')
+                            new_tasks.append(PlannedTask(id_orden=oid, scenario=new_scenario, proyecto_code=proj_code))
+                        PlannedTask.objects.using('default').bulk_create(new_tasks)
+
+                    for seq in secuencias:
+                        id_orden = seq.get('id_orden')
+                        maquina = seq.get('maquina')
+                        orden_secuencia = seq.get('orden_secuencia', 0)
+                        prioridad_manual = seq.get('prioridad_manual')
+                        if id_orden and maquina:
+                            defaults_dict = {'orden_secuencia': orden_secuencia}
+                            if prioridad_manual is not None:
+                                defaults_dict['nivel_manual'] = prioridad_manual
+                                
+                            PrioridadManual.objects.using('default').update_or_create(
+                                scenario=new_scenario,
+                                id_orden=id_orden,
+                                maquina=maquina,
+                                defaults=defaults_dict
+                            )
+
                 return JsonResponse({
                     'status': 'ok',
                     'scenario': {'id': new_scenario.id, 'nombre': new_scenario.nombre}
@@ -2925,24 +3008,21 @@ def estadisticas_produccion(request):
 
 def proyectos_prioridades(request):
     scenario_id = request.GET.get('scenario_id')
-    active_scenario = None
-    if scenario_id:
-        try:
-            active_scenario = Scenario.objects.using('default').get(pk=scenario_id)
-        except:
-            pass
-    if not active_scenario:
-        active_scenario = Scenario.objects.using('default').filter(es_principal=True).first()
+    active_scenario = get_active_scenario(request, scenario_id=scenario_id)
+
         
-    # PARSEO STRICT: Interceptar parámetro 'proyectos' directamente de la URL
-    proyectos_param = request.GET.get('proyectos', '')
-    if proyectos_param:
-        # Limpia espacios y separa por comas (Split real)
-        proyectos_list = [p.strip() for p in proyectos_param.split(',') if p.strip()]
+    # Query Directa sobre las Tareas Planificadas para obtener TODOS los proyectos con presencia real
+    if active_scenario:
+        proyectos_list = list(PlannedTask.objects.using('default').filter(
+            scenario=active_scenario
+        ).values_list('proyecto_code', flat=True).distinct())
+        
+        # Filtrar nulos o vacíos
+        proyectos_list = [p.strip() for p in proyectos_list if p and p.strip()]
     else:
         proyectos_list = []
     
-    # Aislamiento: Si no hay proyectos en la URL, la tabla va vacía (Sin fallbacks)
+    # Aislamiento: Si no encontramos proyectos en el escenario, la tabla va vacía
     if not proyectos_list:
         return render(request, 'produccion/proyectos_prioridades.html', {
             'proyectos_data': [],
@@ -2977,16 +3057,9 @@ def proyectos_prioridades(request):
             max_prio += 1
             item['prioridad'] = max_prio
 
-    # --- INICIO FILTRO DE EMERGENCIA STRICT ---
-    proyectos_url = request.GET.get('proyectos', '')
-    if proyectos_url:
-        # Convertir la URL en una lista limpia: ['26-027']
-        lista_validos = [p.strip() for p in proyectos_url.split(',') if p.strip()]
-        # Forzamos filtrado directo sobre la lista que va al contexto
-        proyectos_final = [d for d in proyectos_data if d['proyecto'] in lista_validos]
-    else:
-        proyectos_final = []
-    # --- FIN FILTRO DE EMERGENCIA STRICT ---
+    # Si usamos fallback o vienen en la URL, proyectos_data ya tiene exactamente
+    # los proyectos deseados, así que podemos asignarlos a la variable final.
+    proyectos_final = proyectos_data
 
     return render(request, 'produccion/proyectos_prioridades.html', {
         'proyectos': proyectos_final, # Nombre de variable solicitado por el usuario
@@ -3463,11 +3536,14 @@ def api_get_project_articles(request):
                 planned_state[m_pk].append(oid_s)
 
         # 3. Consultamos los niveles manuales guardados en SQLite para este escenario
-        if planned_ids:
-            # Consultamos PrioridadManual para traer el nivel_manual
+        # Queremos las prioridades tanto de las OPs planificadas como de las Masters OPs (para artículos con 0 seleccionados)
+        master_ids = [art.get('IdOrdenMaster') for art in articles if art.get('IdOrdenMaster')]
+        ids_to_query = list(set(planned_ids + master_ids))
+        
+        if ids_to_query:
             p_manual_db = PrioridadManual.objects.using('default').filter(
                 scenario=active_scenario,
-                id_orden__in=planned_ids
+                id_orden__in=ids_to_query
             ).values('id_orden', 'nivel_manual')
             
             op_to_nivel = {p['id_orden']: p['nivel_manual'] for p in p_manual_db if p['nivel_manual'] is not None}
@@ -3476,7 +3552,13 @@ def api_get_project_articles(request):
             for art in articles:
                 art['nivel_planificacion'] = 0 # Default si no hay override
                 m_pk = art.get('MacroPK')
-                if m_pk in planned_state:
+                master_id = art.get('IdOrdenMaster')
+                
+                # Primero probamos con el master ID (que es donde guardamos la pieza independientemente de si hay seleccionados)
+                if master_id and int(master_id) in op_to_nivel:
+                    art['nivel_planificacion'] = op_to_nivel[int(master_id)]
+                # Fallback: Si alguna OP hija tiene override
+                elif m_pk in planned_state:
                     for oid_s in planned_state[m_pk]:
                         if int(oid_s) in op_to_nivel:
                             art['nivel_planificacion'] = op_to_nivel[int(oid_s)]
@@ -3689,6 +3771,14 @@ def api_confirm_selected_tasks(request):
             ).delete()
 
             # 4. Guardamos las nuevas OPs en PlannedTask
+            # Si project_code no vino desde el frontend, lo inferimos de Tman050 para no perderlo (Proyecto Desconocido)
+            if not project_code and id_ordens:
+                with connections['production'].cursor() as cursor:
+                    cursor.execute("SELECT TOP 1 Formula FROM Tman050 WHERE Idorden = %s", [id_ordens[0]])
+                    row = cursor.fetchone()
+                    if row and row[0]:
+                        project_code = str(row[0]).strip()
+
             tasks_to_create = []
             for oid in id_ordens:
                 tasks_to_create.append(PlannedTask(
@@ -3703,6 +3793,18 @@ def api_confirm_selected_tasks(request):
             # 5. Sincronizamos el Nivel Planificación en PrioridadManual (RESTORED ONLY FOR EXPLICIT USER OVERRIDES)
             # Restauramos ÚNICAMENTE los niveles manuales que existían previamente (los que el usuario editó a mano)
             # Para las OPs sin nivel manual preexistente, NO creamos registro (así usan el nivel base del ERP)
+            # Asignador de secuencias incrementales por máquina
+            machine_max_seqs = {}
+            def get_next_seq(maq_name):
+                if maq_name not in machine_max_seqs:
+                    max_seq_obj = PrioridadManual.objects.using('default').filter(
+                        scenario=active_scenario, maquina=maq_name
+                    ).order_by('-orden_secuencia').first()
+                    machine_max_seqs[maq_name] = (max_seq_obj.orden_secuencia + 1) if max_seq_obj else 0
+                else:
+                    machine_max_seqs[maq_name] += 1
+                return machine_max_seqs[maq_name]
+
             if existing_niveles:
                 # Obtenemos las máquinas originales del ERP
                 op_machines = {}
@@ -3714,13 +3816,71 @@ def api_confirm_selected_tasks(request):
 
                 for oid_s, nivel_val in existing_niveles.items():
                     maquina = op_machines.get(oid_s, 'SIN ASIGNAR')
+                    next_seq = get_next_seq(maquina)
                     PrioridadManual.objects.using('default').update_or_create(
                         id_orden=oid_s,
                         scenario=active_scenario,
                         maquina=maquina,
-                        defaults={'nivel_manual': nivel_val}
+                        defaults={'nivel_manual': nivel_val, 'orden_secuencia': next_seq}
                     )
-                    print(f"RESTORED MANUAL LEVEL: OP {oid_s} -> Nivel {nivel_val}")
+                    print(f"RESTORED MANUAL LEVEL: OP {oid_s} -> Nivel {nivel_val} | Seq: {next_seq}")
+
+            # 6. Apply NEW piece priorities from the frontend to PrioridadManual
+            # We want to apply it to ALL articles sent, even if they have 0 selected OPs!
+            if piece_priorities:
+                # To apply priority, we need an `id_orden`. We'll use the IdOrdenMaster for the macro_pk.
+                master_ops = {}
+                macro_pks = list(piece_priorities.keys())
+                if macro_pks:
+                    with connections['production'].cursor() as cursor:
+                        placeholders = ', '.join(['%s'] * len(macro_pks))
+                        sql_master = f"""
+                        SELECT MacroPK, MAX(Idorden) 
+                        FROM Tman050 
+                        WHERE MacroPK IN ({placeholders}) 
+                        AND IsMacro = 1
+                        GROUP BY MacroPK
+                        """
+                        cursor.execute(sql_master, macro_pks)
+                        master_ops = {str(row[0]): str(row[1]) for row in cursor.fetchall()}
+                
+                # Compile all target OPs (Masters + Selected)
+                all_target_ops = list(master_ops.values())
+                if selected_ops_by_article:
+                    for ops in selected_ops_by_article.values():
+                        all_target_ops.extend(ops)
+                    
+                all_target_ops = list(set(all_target_ops))
+                op_machines = {}
+                if all_target_ops:
+                    with connections['production'].cursor() as cursor:
+                        placeholders = ', '.join(['%s'] * len(all_target_ops))
+                        sql_m = f"SELECT Idorden, Idmaquina FROM Tman050 WHERE Idorden IN ({placeholders})"
+                        cursor.execute(sql_m, all_target_ops)
+                        op_machines = {str(row[0]): str(row[1]).strip() for row in cursor.fetchall()}
+
+                for macro_pk, prio_val in piece_priorities.items():
+                    if prio_val is not None:
+                        # 1. Update the priority for the selected OPs
+                        ops = []
+                        if selected_ops_by_article and macro_pk in selected_ops_by_article:
+                            ops = list(selected_ops_by_article[macro_pk])
+                            
+                        # 2. ALSO explicitly ensure the MASTER OP gets this priority!
+                        master_op = master_ops.get(macro_pk)
+                        if master_op and master_op not in ops:
+                            ops.append(master_op)
+                            
+                        for oid_str in ops:
+                            maquina = op_machines.get(oid_str, 'SIN ASIGNAR')
+                            next_seq = get_next_seq(maquina)
+                            print(f"DEBUG BACKEND POST - Articulo: {macro_pk}, OP: {oid_str}, Prioridad Recibida: {prio_val}, Seq: {next_seq}")
+                            PrioridadManual.objects.using('default').update_or_create(
+                                id_orden=oid_str,
+                                scenario=active_scenario,
+                                maquina=maquina,
+                                defaults={'nivel_manual': int(prio_val), 'orden_secuencia': next_seq}
+                            )
 
             # --- SYNC: Actualizamos el campo 'proyectos' del escenario para persistencia ---
             if project_code and active_scenario:

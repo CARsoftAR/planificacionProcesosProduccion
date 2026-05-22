@@ -322,7 +322,8 @@ def get_gantt_data(request, force_run=False):
                     'nivel_manual': entry.nivel_manual,
                     'porcentaje_solapamiento': entry.porcentaje_solapamiento if entry.porcentaje_solapamiento is not None else 0.0,
                     'cantidad_producida_manual': entry.cantidad_producida_manual,
-                    'manual_start': entry.fecha_inicio_manual 
+                    'manual_start': entry.fecha_inicio_manual,
+                    'orden_secuencia': entry.orden_secuencia
                 }
                 # Forzar ID a string de entero para evitar problemas con .0 de SQL
                 try:
@@ -715,6 +716,7 @@ def get_gantt_data(request, force_run=False):
              if p_id in virtual_overrides:
                  ov = virtual_overrides[p_id]
                  item['OrdenVisual'] = float(ov['prioridad'])
+                 item['OrdenSecuencia'] = float(ov.get('orden_secuencia', 999999))
                  if ov.get('tiempo_manual') is not None: item['Tiempo_Proceso'] = float(ov['tiempo_manual'])
                  if ov.get('nivel_manual') is not None: item['Nivel_Planificacion'] = float(ov['nivel_manual'])
                  if ov.get('manual_start'):
@@ -731,6 +733,7 @@ def get_gantt_data(request, force_run=False):
                  item['Cantidadpp'] = item.get('cantidad_producida', 0)
                   
         tasks.sort(key=lambda x: (
+            x.get('OrdenSecuencia', 999999),
             proj_priorities.get(x.get('ProyectoCode'), 999),
             -int(x.get('Nivel_Planificacion') or 0), 
             x.get('OrdenVisual', 999999)
