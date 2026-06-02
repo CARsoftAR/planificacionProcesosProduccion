@@ -2331,41 +2331,46 @@
     window.START_SIMULATION_ISO = "{{ today|date:'c' }}"; 
 
     window.triggerGraficarGantt = function() {
-        const proyectosInput = document.getElementById('proyectos');
-        const projects = proyectosInput ? proyectosInput.value.trim() : '';
-        if (!projects) {
-            Swal.fire({
-                toast: true,
-                position: 'top-end',
-                icon: 'warning',
-                title: 'Atención',
-                text: 'No hay proyectos seleccionados para graficar el Gantt.',
-                showConfirmButton: false,
-                timer: 3000,
-                timerProgressBar: true
-            });
-            return;
-        }
-        
-        // Show page loader
+        // Show page loader inmediatamente para feedback visual
         const loader = document.getElementById('page-loader');
         if (loader) {
             loader.style.display = 'flex';
             loader.style.opacity = '1';
         }
+
+        // ──────────────────────────────────────────────────────────────────
+        // PASO 1: Capturar parámetros actuales y estado del DOM
+        // ──────────────────────────────────────────────────────────────────
+        const currentParams = new URLSearchParams(window.location.search);
+        const scenarioId = currentParams.get('scenario_id') || '';
+        const planMode = currentParams.get('plan_mode') || 'manual';
         
-        // Redirect with graficar=1
-        const url = new URL(window.location.href);
+        // Obtener proyectos directamente desde la URL o el input si existe
+        const proyectosInput = document.getElementById('proyectos');
+        const proyectosVal = proyectosInput ? proyectosInput.value.trim() : currentParams.get('proyectos');
+
+        // Marcar en sessionStorage que ya graficamos (para persistencia de navegación)
+        sessionStorage.setItem('ganttYaGraficado', 'true');
+
+        // ──────────────────────────────────────────────────────────────────
+        // PASO 2: Redirigir a planificacion/visual con graficar=1
+        // Modificado por petición del usuario: puramente de lectura (GET),
+        // sin llamadas a métodos destructivos (POST) en el backend.
+        // ──────────────────────────────────────────────────────────────────
+        const url = new URL("{% url 'planificacion_visual' %}", window.location.origin);
         url.searchParams.set('graficar', '1');
+        if (scenarioId && scenarioId !== 'null') url.searchParams.set('scenario_id', scenarioId);
+        // Enviar explícitamente plan_mode=auto para recalcular posiciones ignorando pines
+        url.searchParams.set('plan_mode', 'auto');
         
-        // Fix: Avoid sending "null" strings that crash Django's integer parsers
-        const scenarioId = url.searchParams.get('scenario_id');
-        if (scenarioId === 'null' || scenarioId === '') {
-            url.searchParams.delete('scenario_id');
+        // Persistir la lista de proyectos en la redirección
+        if (proyectosVal) {
+            url.searchParams.set('proyectos', proyectosVal);
         }
-        
+
         window.location.href = url.toString();
     };
+
     
     // Safety check for dependencies data
     const depDataEl = document.getElementById('dependencies-data-json');
@@ -4097,17 +4102,22 @@
                     let html = '';
                     projectArray.forEach(p => {
                         html += `
-                        <div class="list-group-item d-flex align-items-center py-2 border-bottom-0 border-top">
-                            <div class="form-check form-switch me-3">
-                                <input class="form-check-input project-filter-chk" type="checkbox" value="${p}" checked style="cursor: pointer; transform: scale(1.1);">
+                        <div class="list-group-item d-flex align-items-center justify-content-between py-2 border-bottom-0 border-top">
+                            <div class="d-flex align-items-center">
+                                <div class="form-check form-switch me-3">
+                                    <input class="form-check-input project-filter-chk" type="checkbox" value="${p}" checked style="cursor: pointer; transform: scale(1.1);">
+                                </div>
+                                <div class="bg-primary bg-opacity-10 text-primary rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 35px; height: 35px;">
+                                    <i class="fas fa-code-branch"></i>
+                                </div>
+                                <div>
+                                    <h6 class="mb-0 fw-bold text-dark" style="font-size: 0.95rem;">${p}</h6>
+                                    <small class="text-muted" style="font-size: 0.75rem;">Proyecto activo</small>
+                                </div>
                             </div>
-                            <div class="bg-primary bg-opacity-10 text-primary rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 35px; height: 35px;">
-                                <i class="fas fa-code-branch"></i>
-                            </div>
-                            <div>
-                                <h6 class="mb-0 fw-bold text-dark" style="font-size: 0.95rem;">${p}</h6>
-                                <small class="text-muted" style="font-size: 0.75rem;">Proyecto activo</small>
-                            </div>
+                            <button class="btn btn-sm btn-outline-danger border-0 p-2" onclick="deleteProjectPlanning('${p}')" title="Borrar Proyecto">
+                                <i class="fas fa-trash-alt"></i>
+                            </button>
                         </div>`;
                     });
                     listContainer.innerHTML = html;
@@ -4118,6 +4128,69 @@
                 }
             }
         }
+
+        window.deleteProjectPlanning = async function(projectCode) {
+            const result = await Swal.fire({
+                title: '¿Eliminar proyecto?',
+                html: `¿Estás seguro de que deseas eliminar el Proyecto <strong>${projectCode}</strong> y quitar todas sus operaciones de la planificación actual?`,
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'Sí, Eliminar',
+                cancelButtonText: 'Cancelar',
+                confirmButtonColor: '#ef4444',
+                customClass: {
+                    popup: 'premium-swal',
+                    confirmButton: 'premium-confirm',
+                    cancelButton: 'premium-cancel'
+                }
+            });
+
+            if (!result.isConfirmed) return;
+
+            try {
+                const scenarioId = new URLSearchParams(window.location.search).get('scenario_id') || "";
+                const response = await fetch('/api/delete_project_planning/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': '{{ csrf_token }}'
+                    },
+                    body: JSON.stringify({
+                        proyectos: projectCode,
+                        scenario_id: scenarioId
+                    })
+                });
+
+                if (response.ok) {
+                    Swal.fire({
+                        title: 'Proyecto Eliminado',
+                        text: `El proyecto ${projectCode} ha sido removido de la planificación.`,
+                        icon: 'success',
+                        timer: 2000,
+                        showConfirmButton: false,
+                        customClass: { popup: 'premium-swal' }
+                    }).then(() => {
+                        const params = new URLSearchParams(window.location.search);
+                        let currentProjects = params.get('proyectos') || '';
+                        let projectsArray = currentProjects.split(',').map(p => p.trim()).filter(p => p && p !== projectCode && p.replace('-', '.') !== projectCode && p.replace('.', '-') !== projectCode);
+                        params.set('proyectos', projectsArray.join(','));
+                        
+                        // Evaluar condición de persistencia en memoria del frontend para conservar visualización
+                        try {
+                            if (sessionStorage.getItem('ganttYaGraficado') === 'true') {
+                                params.set('graficar', '1');
+                            }
+                        } catch(e) {}
+                        
+                        window.location.href = window.location.pathname + '?' + params.toString();
+                    });
+                } else {
+                    throw new Error("Error al borrar la planificación del proyecto");
+                }
+            } catch (e) {
+                Swal.fire({ title: 'Error', text: e.message, icon: 'error' });
+            }
+        };
         
         function applyGanttProjectFilter() {
             const unchecked = Array.from(document.querySelectorAll('.project-filter-chk:not(:checked)')).map(c => c.value);
@@ -4313,67 +4386,7 @@
             });
         };
 
-        // ============================================================
-        // HARD RESET: Clear visual cache when no projects selected
-        // This prevents "old data" from showing after cleanup
-        // ============================================================
-        (function() {
-            const ganttNeedsClear = {% if gantt_needs_clear %}true{% else %}false{% endif %};
-            const proyectosInput = document.getElementById('proyectos');
-            const currentProyectos = proyectosInput ? proyectosInput.value.trim() : '';
-            
-            console.log('GanttEngine: Initialization check - gantt_needs_clear:', ganttNeedsClear, 'proyectos:', currentProyectos);
-            
-            // If clear flag is set OR no proyectos in URL → HARD RESET
-            if (ganttNeedsClear || currentProyectos === '') {
-                console.log('GanttEngine: 🚫 HARD RESET - Clearing visual state');
-                
-                // 1. Clear all task blocks visually
-                document.querySelectorAll('.task-block').forEach(function(el) {
-                    el.style.display = 'none';
-                });
-                
-                // 2. Clear dependency lines
-                const depLayer = document.getElementById('dependency-layer');
-                if (depLayer) {
-                    depLayer.innerHTML = '';
-                }
-                
-                // 3. Show empty state message
-                const timelineArea = document.querySelector('.timeline-area');
-                if (timelineArea) {
-                    let emptyMsg = timelineArea.querySelector('.gantt-empty-message');
-                    if (!emptyMsg) {
-                        emptyMsg = document.createElement('div');
-                        emptyMsg.className = 'gantt-empty-message';
-                        emptyMsg.style.cssText = 'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:#999;font-size:1.2rem;z-index:100;';
-                        emptyMsg.textContent = 'No hay proyectos seleccionados. Seleccione proyectos para ver la planificación.';
-                        timelineArea.appendChild(emptyMsg);
-                    }
-                }
-                
-                // 4. Update session storage to prevent re-fetching old data
-                sessionStorage.setItem('gantt_last_proyectos', '');
-            }
-            
-            // STOP CONDITION: Prevent auto-fetch if no projects
-            // This stops the "loop" of loading old projects
-            const originalFetch = window.fetch;
-            window.fetch = function() {
-                const url = arguments[0];
-                if (typeof url === 'string' && (url.includes('/planificacion/visual') || url.includes('get_gantt'))) {
-                    // Check if proyectos param is empty or missing
-                    const urlParams = new URLSearchParams(url.split('?')[1] || '');
-                    const projParam = urlParams.get('proyectos');
-                    if (!projParam || projParam.trim() === '') {
-                        console.log('GanttEngine: BLOCKED - Empty proyectos fetch');
-                        // Return empty response
-                        return Promise.resolve(new Response(JSON.stringify({tasks: [], machines: []}), { status: 200, headers: { 'Content-Type': 'application/json' } }));
-                    }
-                }
-                return originalFetch.apply(this, arguments);
-            };
-        })();
+        // Removed frontend HARD PURGE visual state logic
     })();
     </script>
 

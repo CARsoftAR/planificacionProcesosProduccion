@@ -289,6 +289,11 @@ class PlannedTask(models.Model):
         verbose_name='Código de Proyecto',
         help_text='Código del proyecto al que pertenece esta OP (ej: 26-018)'
     )
+    enviado_a_gantt = models.BooleanField(
+        default=False,
+        verbose_name='Enviado a Gantt',
+        help_text='Indica si esta tarea fue congelada/enviada al Gantt'
+    )
     fecha_seleccion = models.DateTimeField(auto_now_add=True)
 
     class Meta:

@@ -200,7 +200,7 @@
             font-weight: 800 !important;
             box-shadow: 0 -4px 12px rgba(59, 130, 246, 0.05);
         }
-        .nav-tabs .nav-link.active .badge {
+        .nav-tabs .nav-link.active.con-carga .badge {
             background-color: #1d4ed8 !important; /* Azul más oscuro e intenso */
             color: #ffffff !important;
         }
@@ -212,8 +212,12 @@
             font-weight: normal !important;
             border-color: #e2e8f0 !important;
         }
-        .nav-tabs .nav-link:not(.con-carga):not(.active) .badge {
-            background-color: #94a3b8 !important; /* Gris apagado */
+        .nav-tabs .nav-link:not(.con-carga) .badge {
+            background-color: #94a3b8 !important; /* Gris apagado constante, incluso si está activa */
+            color: #ffffff !important;
+        }
+        .nav-tabs .nav-link.active:not(.con-carga) .badge {
+            background-color: #94a3b8 !important; /* Forzar gris neutro cuando está seleccionada pero vacía */
             color: #ffffff !important;
         }
 
@@ -469,7 +473,7 @@
                         <div id="level2-processes" class="mt-4" style="display: none;">
                             <div class="d-flex justify-content-between align-items-center mb-3">
                                 <h6 class="text-muted fw-bold m-0 uppercase smaller"><i class="fas fa-cogs me-1"></i> NIVEL 2: PROCESOS / OPERACIONES</h6>
-                                <button class="btn btn-sm btn-outline-secondary rounded-pill px-3" onclick="backToArticles()">
+                                <button class="btn btn-sm btn-danger px-3" onclick="backToArticles()">
                                     <i class="fas fa-arrow-left me-1"></i> Volver a Artículos
                                 </button>
                             </div>
@@ -746,7 +750,12 @@
                 params.delete('proyectos');
             }
 
-            params.set('run', '1');
+            // Evaluar condición de persistencia en memoria del frontend
+            try {
+                if (sessionStorage.getItem('ganttYaGraficado') === 'true') {
+                    params.set('graficar', '1');
+                }
+            } catch(e) {}
 
             // Redirect
             window.location.href = "{% url 'planificacion_visual' %}?" + params.toString();
@@ -796,20 +805,80 @@
                     let html = '';
                     projectArray.forEach(p => {
                         html += `
-                        <div class="list-group-item list-group-item-action d-flex align-items-center py-2 border-bottom-0 border-top" style="cursor: pointer;" onclick="openProductionSelector('${p}')">
-                            <div class="bg-primary bg-opacity-10 text-primary rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 35px; height: 35px;">
-                                <i class="fas fa-code-branch"></i>
+                        <div class="list-group-item list-group-item-action d-flex align-items-center justify-content-between py-2 border-bottom-0 border-top" style="cursor: pointer;" onclick="openProductionSelector('${p}')">
+                            <div class="d-flex align-items-center">
+                                <div class="bg-primary bg-opacity-10 text-primary rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 35px; height: 35px;">
+                                    <i class="fas fa-code-branch"></i>
+                                </div>
+                                <div>
+                                    <h6 class="mb-0 fw-bold text-dark" style="font-size: 0.95rem;">${p}</h6>
+                                    <small class="text-muted" style="font-size: 0.75rem;">En planificación (Clic para editar)</small>
+                                </div>
                             </div>
-                            <div>
-                                <h6 class="mb-0 fw-bold text-dark" style="font-size: 0.95rem;">${p}</h6>
-                                <small class="text-muted" style="font-size: 0.75rem;">En planificación (Clic para editar)</small>
-                            </div>
+                            <button class="btn btn-sm btn-outline-danger border-0 p-2" onclick="event.stopPropagation(); deleteProjectPlanning('${p}')" title="Borrar Proyecto">
+                                <i class="fas fa-trash-alt"></i>
+                            </button>
                         </div>`;
                     });
                     listContainer.innerHTML = html;
                 }
             }
         }
+
+        window.deleteProjectPlanning = async function(projectCode) {
+            const result = await Swal.fire({
+                title: '¿Eliminar proyecto?',
+                html: `¿Estás seguro de que deseas eliminar el Proyecto <strong>${projectCode}</strong> y quitar todas sus operaciones de la planificación actual?`,
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'Sí, Eliminar',
+                cancelButtonText: 'Cancelar',
+                confirmButtonColor: '#ef4444',
+                customClass: {
+                    popup: 'premium-swal',
+                    confirmButton: 'premium-confirm',
+                    cancelButton: 'premium-cancel'
+                }
+            });
+
+            if (!result.isConfirmed) return;
+
+            try {
+                const scenarioId = new URLSearchParams(window.location.search).get('scenario_id') || "";
+                const response = await fetch('/api/delete_project_planning/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': '{{ csrf_token }}'
+                    },
+                    body: JSON.stringify({
+                        proyectos: projectCode,
+                        scenario_id: scenarioId
+                    })
+                });
+
+                if (response.ok) {
+                    Swal.fire({
+                        title: 'Proyecto Eliminado',
+                        text: `El proyecto ${projectCode} ha sido removido de la planificación.`,
+                        icon: 'success',
+                        timer: 2000,
+                        showConfirmButton: false,
+                        customClass: { popup: 'premium-swal' }
+                    }).then(() => {
+                        const params = new URLSearchParams(window.location.search);
+                        let currentProjects = params.get('proyectos') || '';
+                        let projectsArray = currentProjects.split(',').map(p => p.trim()).filter(p => p && p !== projectCode && p.replace('-', '.') !== projectCode && p.replace('.', '-') !== projectCode);
+                        params.set('proyectos', projectsArray.join(','));
+                        window.location.href = window.location.pathname + '?' + params.toString();
+                    });
+                } else {
+                    throw new Error("Error al borrar la planificación del proyecto");
+                }
+            } catch (e) {
+                Swal.fire({ title: 'Error', text: e.message, icon: 'error' });
+            }
+        };
 
         let currentProjectToSelect = "";
         let selectedOpsByArticle = {}; // { macroPk: [idOrden1, idOrden2, ...] }
@@ -951,28 +1020,43 @@
                             row.innerHTML = `
                                 <td class="ps-4 text-center">
                                     <div class="form-check form-switch form-switch-lg d-inline-block">
-                                        <input class="form-check-input shadow-sm" type="checkbox" checked onchange="toggleArticlePlan('${art.MacroPK}', this.checked)">
+                                        <input class="form-check-input shadow-sm article-plan-checkbox" type="checkbox" checked>
                                     </div>
                                 </td>
                                 <td class="fw-bold text-muted text-center">${art.IdOrdenMaster || '-'}</td>
-                                <td class="fw-bold text-primary article-clickable" onclick="handleArticleClick('${art.MacroPK}', '${art.Denominacion}', '${art.Articulo}')">${art.Articulo}</td>
-                                <td class="article-clickable" onclick="handleArticleClick('${art.MacroPK}', '${art.Denominacion}', '${art.Articulo}')">${art.Denominacion}</td>
+                                <td class="fw-bold text-primary article-clickable">${art.Articulo}</td>
+                                <td class="article-clickable">${art.Denominacion}</td>
                                 <td class="text-center">${parseFloat(art.Solicitado || 0).toFixed(0)}</td>
                                 <td class="text-center">${parseFloat(art.Finalizado || 0).toFixed(0)}</td>
                                 <td class="text-center"><span class="badge bg-secondary rounded-pill process-count" id="count-art-${art.MacroPK.replace(/\s+/g, '-')}">0</span></td>
                                 <td class="text-center">
                                     <input type="number" 
                                            class="form-control form-control-sm article-priority-input" 
-                                           data-macropk="${art.MacroPK}"
                                            value="${art.nivel_planificacion || 0}" 
                                            min="1">
                                 </td>
                                 <td class="pe-4 text-center">
-                                    <button class="btn btn-sm btn-link text-primary article-clickable" onclick="handleArticleClick('${art.MacroPK}', '${art.Denominacion}', '${art.Articulo}')">
+                                    <button class="btn btn-sm btn-link text-primary article-clickable">
                                         <i class="fas fa-chevron-right"></i>
                                     </button>
                                 </td>
                             `;
+
+                            // Set data attributes and event listeners programmatically to avoid quote-escaping issues in inline JS/HTML attributes
+                            const priorityInput = row.querySelector('.article-priority-input');
+                            priorityInput.dataset.macropk = art.MacroPK;
+
+                            const planCheckbox = row.querySelector('.article-plan-checkbox');
+                            planCheckbox.addEventListener('change', function() {
+                                toggleArticlePlan(art.MacroPK, this.checked);
+                            });
+
+                            row.querySelectorAll('.article-clickable').forEach(el => {
+                                el.addEventListener('click', function() {
+                                    handleArticleClick(art.MacroPK, art.Denominacion, art.Articulo);
+                                });
+                            });
+
                             tbody.appendChild(row);
                         });
                         updateAllCounters();
@@ -1005,12 +1089,12 @@
             window.handleArticleClick = function(macroPk, artName, artCode) {
                 if (!enabledArticles[macroPk]) {
                     Swal.fire({
-                        title: 'Artículo Desactivado',
-                        text: 'Active el switch de "Planificar" para ver los detalles de este artículo.',
-                        icon: 'info',
-                        timer: 2000,
-                        showConfirmButton: false,
-                        customClass: { popup: 'premium-swal' }
+                         title: 'Artículo Desactivado',
+                         text: 'Active el switch de "Planificar" para ver los detalles de este artículo.',
+                         icon: 'info',
+                         timer: 2000,
+                         showConfirmButton: false,
+                         customClass: { popup: 'premium-swal' }
                     });
                     return;
                 }
@@ -1064,21 +1148,32 @@
                                 <td class="ps-4 text-center">
                                     <div class="form-check form-switch form-switch-lg d-inline-block">
                                         <input class="form-check-input shadow-sm process-checkbox" type="checkbox" 
-                                               value="${proc.IdOrden}" ${isChecked ? 'checked' : ''} 
-                                               onchange="updateProcessSelection('${macroPk}', this)">
+                                               value="${proc.IdOrden}" ${isChecked ? 'checked' : ''}>
                                     </div>
                                 </td>
                                 <td class="text-center">
-                                    <input type="number" class="form-control form-control-sm text-center fw-bold mx-auto article-priority-input" 
+                                    <input type="number" class="form-control form-control-sm text-center fw-bold mx-auto process-priority-input" 
                                            style="width: 70px;"
-                                           value="${proc.Nivel_Planificacion || 0}" 
-                                           onchange="updateProcessPriority('${proc.IdOrden}', this.value)">
+                                           value="${proc.Nivel_Planificacion || 0}">
                                 </td>
                                 <td class="small">${proc.Proceso}</td>
                                 <td class="text-center"><span class="badge bg-light text-dark border">${proc.MaquinaNombre || '-'}</span></td>
                                 <td class="text-center">${parseFloat(proc.Cantidad || 0).toFixed(0)}</td>
                                 <td class="pe-4 text-center fw-bold ${isCompleted ? 'text-muted' : 'text-danger'}">${pendiente.toFixed(2)}</td>
                             `;
+
+                            // Add change listener to checkbox programmatically to prevent string escaping errors
+                            const checkbox = row.querySelector('.process-checkbox');
+                            checkbox.addEventListener('change', function() {
+                                updateProcessSelection(macroPk, this);
+                            });
+
+                            // Add change listener to priority input programmatically to prevent string escaping errors
+                            const priorityInput = row.querySelector('.process-priority-input');
+                            priorityInput.addEventListener('change', function() {
+                                updateProcessPriority(proc.IdOrden, this.value);
+                            });
+
                             tbody.appendChild(row);
                         });
                         
@@ -2823,95 +2918,5 @@
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
     </style>
-    <script>
-        console.log("🛠️ Script de Planificación cargado al final del DOM.");
-
-        window.confirmSelection = async function() {
-            try {
-                console.log("🚀 FUNCION confirmSelection EJECUTÁNDOSE...");
-                let finalSelection = [];
-                let piecePriorities = {};
-
-                // 1. Recolección de datos
-                for (const mPk in selectedOpsByArticle) {
-                    if (enabledArticles[mPk]) {
-                        finalSelection = finalSelection.concat(selectedOpsByArticle[mPk]);
-                        const prioInput = document.querySelector(`.article-priority-input[data-macropk="${mPk}"]`);
-                        piecePriorities[mPk] = prioInput ? parseInt(prioInput.value) || 1 : 1;
-                    }
-                }
-                
-                const payload = {
-                    id_ordens: finalSelection,
-                    piece_priorities: piecePriorities,
-                    scenario_id: new URLSearchParams(window.location.search).get('scenario_id'),
-                    project_code: currentProjectToSelect,
-                    force: true
-                };
-
-                console.log("🚀 MANDANDO DATOS:", JSON.stringify(payload));
-
-                if (finalSelection.length === 0) {
-                    alert("No hay procesos seleccionados en los artículos activos.");
-                    return;
-                }
-
-                const btn = document.getElementById('btnConfirmSelect');
-                btn.disabled = true;
-                btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Cargando...';
-
-                // 2. Fetch con manejo de errores
-                const response = await fetch('/api/confirm_selected_tasks/', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRFToken': getCookie('csrftoken') || document.querySelector('[name=csrfmiddlewaretoken]')?.value
-                    },
-                    body: JSON.stringify(payload)
-                });
-                
-                console.log("📡 Respuesta del servidor:", response.status);
-
-                if (response.ok) {
-                    const respData = await response.json();
-                    alert("✅ Planificación cargada correctamente.");
-                    if (respData.scenario_id) {
-                        window.location.href = '/planificacion/?scenario_id=' + respData.scenario_id;
-                    } else {
-                        location.reload();
-                    }
-                } else {
-                    const errData = await response.json();
-                    console.error("❌ Error del servidor:", errData);
-                    alert("Error al guardar: " + (errData.message || 'Error desconocido'));
-                }
-            } catch (e) {
-                console.error("❌ ERROR EN SCRIPT:", e);
-                alert("Error interno: " + e.message);
-            } finally {
-                const btn = document.getElementById('btnConfirmSelect');
-                if (btn) {
-                    btn.disabled = false;
-                    btn.innerHTML = '<i class="fas fa-check-double me-2"></i>Confirmar y Cargar Planificación';
-                }
-            }
-        };
-
-        // Función auxiliar para el token CSRF
-        function getCookie(name) {
-            let cookieValue = null;
-            if (document.cookie && document.cookie !== '') {
-                const cookies = document.cookie.split(';');
-                for (let i = 0; i < cookies.length; i++) {
-                    const cookie = cookies[i].trim();
-                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
-                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                        break;
-                    }
-                }
-            }
-            return cookieValue;
-        }
-    </script>
 </body>
 </html>

@@ -162,7 +162,77 @@ def reset_planning(request):
         return JsonResponse({'error': str(e)}, status=500)
 
 @csrf_exempt
+def commit_gantt_snapshot(request):
+    """
+    API que congela el estado actual de las planillas como Snapshot para el Gantt.
+    
+    Lógica:
+    1. Resetea enviado_a_gantt=False en TODAS las tareas del escenario (limpia el snapshot viejo).
+    2. Excluye las tareas ocultas por el usuario (HiddenTask).
+    3. Marca enviado_a_gantt=True en las tareas visibles restantes.
+    4. Devuelve los project codes congelados para que el frontend navegue al Gantt.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'error': 'Method not allowed'}, status=405)
+    
+    try:
+        active_scenario = get_active_scenario(request)
+        
+        # Validar si hay tareas en la planificación actual en lugar de requerir un escenario
+        qs_planned = PlannedTask.objects.using('default')
+        if active_scenario:
+            qs_planned = qs_planned.filter(scenario=active_scenario)
+        else:
+            qs_planned = qs_planned.filter(scenario__isnull=True)
+            
+        if not qs_planned.exists():
+            return JsonResponse({'error': 'No hay tareas en la planificación actual'}, status=400)
+        
+        # Paso 1: Resetear el snapshot anterior completo
+        qs_planned.update(enviado_a_gantt=False)
+        
+        # Paso 2: Obtener IDs de tareas ocultas en este escenario
+        qs_hidden = HiddenTask.objects.using('default')
+        if active_scenario:
+            qs_hidden = qs_hidden.filter(scenario=active_scenario)
+        else:
+            qs_hidden = qs_hidden.filter(scenario__isnull=True)
+            
+        hidden_ids = list(qs_hidden.values_list('id_orden', flat=True))
+        
+        # Paso 3: Marcar como "en el Gantt" solo las tareas visibles
+        updated = qs_planned.exclude(id_orden__in=hidden_ids).update(enviado_a_gantt=True)
+        
+        # Paso 4: Leer los proyectos congelados para devolver al frontend
+        qs_frozen = PlannedTask.objects.using('default').filter(enviado_a_gantt=True)
+        if active_scenario:
+            qs_frozen = qs_frozen.filter(scenario=active_scenario)
+        else:
+            qs_frozen = qs_frozen.filter(scenario__isnull=True)
+            
+        frozen_projects = list(qs_frozen.exclude(
+            proyecto_code__isnull=True
+        ).exclude(proyecto_code='').values_list(
+            'proyecto_code', flat=True
+        ).distinct())
+        
+        scenario_name = active_scenario.nombre if active_scenario else 'Sin Escenario'
+        print(f"DEBUG: [Snapshot] Escenario '{scenario_name}' — {updated} tareas congeladas. Proyectos: {frozen_projects}")
+        
+        return JsonResponse({
+            'status': 'ok',
+            'tasks_frozen': updated,
+            'proyectos': frozen_projects,
+            'scenario_id': active_scenario.id if active_scenario else None,
+        })
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())
+        return JsonResponse({'error': str(e)}, status=500)
+
+@csrf_exempt
 def hide_task(request):
+
     """
     API to hide a task from the list (virtual delete).
     """
@@ -511,11 +581,14 @@ def planificacion_list(request):
 
         # 0. Fetch PrioridadManual levels to merge into data
         planned_metadata = {}
+        proyecto_prioridades_map = {}
         if active_scenario:
             pm_list = PrioridadManual.objects.using('default').filter(scenario=active_scenario).values('id_orden', 'nivel_manual')
-            planned_metadata = {p['id_orden']: p['nivel_manual'] for p in pm_list if p['nivel_manual'] is not None}
+            planned_metadata = {str(p['id_orden']).strip(): p['nivel_manual'] for p in pm_list if p['nivel_manual'] is not None}
+            
+            # Map by OP instead of Project Code to match frontend save behavior
+            proyecto_prioridades_map = planned_metadata
 
-        
         # Determine response format
         if request.GET.get('format') == 'json':
              return JsonResponse({'data': data}, safe=False)
@@ -568,7 +641,17 @@ def planificacion_list(request):
             except:
                 t_id_val = 0
 
-            # Attach piece priority removed (unified with nivel_manual)
+            # Prioridad de Proyecto (HTML Table Display)
+            op_id_str = str(t_id_val).strip()
+            
+            # Fetch from map, if missing, keep existing or 0
+            if op_id_str in proyecto_prioridades_map:
+                item['Idprioridad'] = proyecto_prioridades_map[op_id_str]
+            else:
+                if 'Idprioridad' not in item or item['Idprioridad'] is None:
+                    item['Idprioridad'] = 0
+            
+            # Attach piece priority removed (unified con nivel_manual)
 
             # Update Machine Name based on Local Config if active
             native_code = str(item.get('Idmaquina', '')).strip()
@@ -724,12 +807,14 @@ def planificacion_list(request):
                     m_item['OrdenVisual'] = (idx + 1) * 5000.0 # Wide spacing for default
 
             # 2. Sort by OrdenSecuencia (Primary), Nivel_Planificacion DESCENDING (Secondary) and OrdenVisual ASCENDING (Tertiary)
+            # Group by Project first, then apply priority sorting
             machine_items.sort(key=lambda x: (
+                x.get('ProyectoCode', ''),  # Group tasks by project first
                 x.get('OrdenSecuencia', 999999),
                 -int(x.get('Nivel_Planificacion') or 0), 
                 x.get('OrdenVisual', 999999.0)
             ))
-            
+
             # 3. Solo re-asignamos OrdenVisual interno si es necesario para mantener el "snap" del Gantt,
             # pero NO tocamos Idprioridad para respetar el valor original del ERP.
             for idx, m_item in enumerate(machine_items):
@@ -2146,10 +2231,23 @@ def planificacion_visual(request):
     from django.utils import timezone
     from .models import Scenario
     
-    if 'scenario_id' not in request.GET:
+    scenario_id_param = request.GET.get('scenario_id', None)
+    
+    if scenario_id_param and scenario_id_param != 'null':
+        try:
+            scenario_id = int(scenario_id_param)
+        except ValueError:
+            scenario_id = None
+    else:
+        scenario_id = None
+        
+    if not scenario_id:
         active_scenario = get_active_scenario(request)
         if active_scenario:
             params = request.GET.copy()
+            # Quitar el posible 'null' en string sucio
+            if 'scenario_id' in params:
+                del params['scenario_id']
             params['scenario_id'] = active_scenario.id
             return redirect(f"{request.path}?{params.urlencode()}")
             
@@ -2164,9 +2262,14 @@ def planificacion_visual(request):
     
     if not proyectos_value and active_scenario:
         from .models import PlannedTask
-        db_proyectos = list(PlannedTask.objects.using('default').filter(scenario=active_scenario).values_list('proyecto_code', flat=True).distinct())
+        # SNAPSHOT RULE: Solo leer proyectos de las tareas ya confirmadas al Gantt.
+        # Sin este filtro, proyectos nuevos sin confirmar contaminan la vista.
+        db_proyectos = list(PlannedTask.objects.using('default').filter(
+            scenario=active_scenario,
+            enviado_a_gantt=True
+        ).values_list('proyecto_code', flat=True).distinct())
         if db_proyectos:
-            proyectos_value = ','.join(db_proyectos)
+            proyectos_value = ','.join(p for p in db_proyectos if p)
             
     plan_mode = request.GET.get('plan_mode') or request.session.get('last_plan_mode', 'manual')
 
@@ -3011,16 +3114,30 @@ def proyectos_prioridades(request):
     active_scenario = get_active_scenario(request, scenario_id=scenario_id)
 
         
-    # Query Directa sobre las Tareas Planificadas para obtener TODOS los proyectos con presencia real
+    proyectos_list = []
+    
+    # 1. Leer desde URL si viene, o sesión
+    proyectos_str = request.GET.get('proyectos', '')
+    if not proyectos_str:
+        proyectos_str = request.session.get('proyectos_seleccionados', '')
+        
+    if proyectos_str:
+        proyectos_list.extend([p.strip() for p in str(proyectos_str).split(',') if p.strip()])
+
+    # 2. Leer desde el Escenario (Campo proyectos)
+    if active_scenario and active_scenario.proyectos:
+        proyectos_list.extend([p.strip() for p in active_scenario.proyectos.split(',') if p.strip()])
+
+    # 3. Query Directa sobre las Tareas Planificadas (Fallback/Complemento)
     if active_scenario:
-        proyectos_list = list(PlannedTask.objects.using('default').filter(
+        proyectos_planned = list(PlannedTask.objects.using('default').filter(
             scenario=active_scenario
         ).values_list('proyecto_code', flat=True).distinct())
         
-        # Filtrar nulos o vacíos
-        proyectos_list = [p.strip() for p in proyectos_list if p and p.strip()]
-    else:
-        proyectos_list = []
+        proyectos_list.extend([p.strip() for p in proyectos_planned if p and p.strip()])
+        
+    # Unificar sin duplicados, manteniendo orden original
+    proyectos_list = list(dict.fromkeys(proyectos_list))
     
     # Aislamiento: Si no encontramos proyectos en el escenario, la tabla va vacía
     if not proyectos_list:
@@ -3087,6 +3204,10 @@ def update_proyecto_prioridad(request):
     try:
         data = json.loads(request.body)
         scenario_id = data.get('scenario_id')
+        
+        if scenario_id == 'null' or scenario_id == '':
+            scenario_id = None
+            
         updates = data.get('updates', [])
         
         scenario = None
@@ -3344,8 +3465,13 @@ def redistribute_tasks(request):
         scenario = Scenario.objects.using('default').filter(pk=scenario_id).first() if scenario_id else None
         if not scenario:
             scenario = Scenario.objects.using('default').filter(es_principal=True).first()
+            
+        # NUEVA LÓGICA: Validar si hay tareas planificadas en lugar de exigir el objeto escenario
         if not scenario:
-            return JsonResponse({'success': False, 'error': 'No hay escenario activo'}, status=400)
+            from .models import PlannedTask
+            has_tasks = PlannedTask.objects.using('default').filter(scenario__isnull=True).exists()
+            if not has_tasks:
+                return JsonResponse({'success': False, 'error': 'No hay tareas en la planificación actual'}, status=400)
 
         # 2. Buscar Factor de Eficiencia por Equivalencia
         equivalencia = MaquinaEquivalencia.objects.using('default').filter(
@@ -3688,12 +3814,13 @@ def api_confirm_selected_tasks(request):
         
         active_scenario = get_active_scenario(request, scenario_id=scenario_id)
         
-        # If the user is working on a clean state but get_active_scenario returns the "es_principal"
-        # we might need to force a temporary scenario creation if there is no session explicitly set.
-        # But let's first log what it's finding.
         print(f"DEBUG SELECTOR: Guardando procesos bajo el Scenario ID: {active_scenario.id if active_scenario else 'NONE'}, (Session last_scenario_id: {request.session.get('last_scenario_id')})")
         
-        if not active_scenario or (not request.session.get('last_scenario_id') and not scenario_id):
+        # BUG FIX: Solo crear un escenario temporal si realmente no hay ninguno disponible.
+        # La condición anterior creaba un escenario nuevo incluso cuando ya existía uno válido
+        # (porque el fallback del principal hacía que last_scenario_id no coincidiera),
+        # lo que desvinculaba los datos guardados del escenario que la nueva sesión usaba.
+        if not active_scenario:
             from .models import Scenario
             import datetime
             timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -3704,6 +3831,11 @@ def api_confirm_selected_tasks(request):
             request.session['last_scenario_id'] = str(active_scenario.id)
             request.session.modified = True
             print(f"DEBUG SELECTOR: Creado nuevo Scenario ID: {active_scenario.id}")
+        elif str(active_scenario.id) != str(request.session.get('last_scenario_id', '')):
+            # Sincronizar la sesión con el escenario que se acaba de resolver
+            request.session['last_scenario_id'] = str(active_scenario.id)
+            request.session.modified = True
+            print(f"DEBUG SELECTOR: Sesión sincronizada con Scenario ID: {active_scenario.id}")
         
         # Backend Security Layer: Check if already planned unless forced
         if not force and project_code:
@@ -3732,13 +3864,13 @@ def api_confirm_selected_tasks(request):
                 v2 = project_code.replace('-', '.')
                 v3 = project_code.replace('.', '-')
                 codes = list({v1, v2, v3})
-                ps = [f"%{c}%" for c in codes]
 
                 from django.db import connections
                 with connections['production'].cursor() as cursor:
-                    where_clauses = " OR ".join(["Formula LIKE %s"] * len(ps))
+                    # FIX: Use exact match to avoid destroying unrelated projects with similar substrings
+                    where_clauses = " OR ".join(["Formula = %s"] * len(codes))
                     sql = f"SELECT Idorden FROM Tman050 WHERE ({where_clauses})"
-                    cursor.execute(sql, ps)
+                    cursor.execute(sql, codes)
                     project_op_ids = [str(row[0]) for row in cursor.fetchall()]
                 
                 if project_op_ids:
@@ -3747,19 +3879,34 @@ def api_confirm_selected_tasks(request):
                         id_orden__in=project_op_ids
                     ).delete()
             
-            # 2. Resguardamos los niveles manuales existentes (si los hay) para no perderlos
-            existing_niveles = {}
+            # 2. Resguardamos TODOS los datos manuales existentes para estas OPs
+            # BUG FIX: Incluimos 'maquina' en el backup para preservar movimientos manuales de máquina.
+            # Antes solo se guardaba nivel_manual y tiempo_manual, pero no la máquina de destino,
+            # por lo que los movimientos manuales entre máquinas se perdían al restaurar.
+            existing_pms_data = {}
             if id_ordens:
                 existing_pms = PrioridadManual.objects.using('default').filter(
                     id_orden__in=id_ordens,
                     scenario=active_scenario
-                ).values('id_orden', 'nivel_manual')
+                ).values('id_orden', 'nivel_manual', 'tiempo_manual', 'maquina', 'prioridad', 'orden_secuencia')
                 for pm in existing_pms:
-                    if pm['nivel_manual'] is not None:
-                        existing_niveles[str(pm['id_orden'])] = pm['nivel_manual']
+                    oid_key = str(pm['id_orden'])
+                    # Guardar si hay cualquier dato útil (no solo tiempos y niveles)
+                    has_data = (
+                        pm['nivel_manual'] is not None or
+                        pm['tiempo_manual'] is not None or
+                        pm['prioridad'] is not None
+                    )
+                    if has_data:
+                        existing_pms_data[oid_key] = {
+                            'nivel_manual': pm['nivel_manual'],
+                            'tiempo_manual': pm['tiempo_manual'],
+                            'maquina': pm['maquina'],          # Preservar máquina asignada manualmente
+                            'prioridad': pm['prioridad'],
+                            'orden_secuencia': pm['orden_secuencia'],
+                        }
 
             # 3. Borramos prioridades manuales y estado 'oculto' previo de las OPs que estamos guardando ahora
-            # (Para que aparezcan y arranquen en su máquina original del ERP)
             PrioridadManual.objects.using('default').filter(
                 id_orden__in=id_ordens, 
                 scenario=active_scenario
@@ -3771,7 +3918,6 @@ def api_confirm_selected_tasks(request):
             ).delete()
 
             # 4. Guardamos las nuevas OPs en PlannedTask
-            # Si project_code no vino desde el frontend, lo inferimos de Tman050 para no perderlo (Proyecto Desconocido)
             if not project_code and id_ordens:
                 with connections['production'].cursor() as cursor:
                     cursor.execute("SELECT TOP 1 Formula FROM Tman050 WHERE Idorden = %s", [id_ordens[0]])
@@ -3790,10 +3936,9 @@ def api_confirm_selected_tasks(request):
             if tasks_to_create:
                 PlannedTask.objects.using('default').bulk_create(tasks_to_create)
 
-            # 5. Sincronizamos el Nivel Planificación en PrioridadManual (RESTORED ONLY FOR EXPLICIT USER OVERRIDES)
-            # Restauramos ÚNICAMENTE los niveles manuales que existían previamente (los que el usuario editó a mano)
-            # Para las OPs sin nivel manual preexistente, NO creamos registro (así usan el nivel base del ERP)
-            # Asignador de secuencias incrementales por máquina
+            # 5. Restauramos los overrides manuales respetando la máquina ORIGINAL del override
+            # BUG FIX: Antes se consultaba Tman050 para obtener la máquina, perdiendo los movimientos
+            # manuales. Ahora usamos la máquina del backup (la que el usuario había configurado).
             machine_max_seqs = {}
             def get_next_seq(maq_name):
                 if maq_name not in machine_max_seqs:
@@ -3805,25 +3950,27 @@ def api_confirm_selected_tasks(request):
                     machine_max_seqs[maq_name] += 1
                 return machine_max_seqs[maq_name]
 
-            if existing_niveles:
-                # Obtenemos las máquinas originales del ERP
-                op_machines = {}
-                with connections['production'].cursor() as cursor:
-                    placeholders = ', '.join(['%s'] * len(id_ordens))
-                    sql_m = f"SELECT Idorden, Idmaquina FROM Tman050 WHERE Idorden IN ({placeholders})"
-                    cursor.execute(sql_m, id_ordens)
-                    op_machines = {str(row[0]): str(row[1]).strip() for row in cursor.fetchall()}
-
-                for oid_s, nivel_val in existing_niveles.items():
-                    maquina = op_machines.get(oid_s, 'SIN ASIGNAR')
+            if existing_pms_data:
+                for oid_s, pm_data in existing_pms_data.items():
+                    # Usar la máquina del registro original (no del ERP), para preservar movimientos manuales
+                    maquina = pm_data['maquina'] or 'SIN ASIGNAR'
                     next_seq = get_next_seq(maquina)
+                    
+                    defaults_dict = {'orden_secuencia': next_seq}
+                    if pm_data['nivel_manual'] is not None:
+                        defaults_dict['nivel_manual'] = pm_data['nivel_manual']
+                    if pm_data['tiempo_manual'] is not None:
+                        defaults_dict['tiempo_manual'] = pm_data['tiempo_manual']
+                    if pm_data['prioridad'] is not None:
+                        defaults_dict['prioridad'] = pm_data['prioridad']
+                        
                     PrioridadManual.objects.using('default').update_or_create(
                         id_orden=oid_s,
                         scenario=active_scenario,
                         maquina=maquina,
-                        defaults={'nivel_manual': nivel_val, 'orden_secuencia': next_seq}
+                        defaults=defaults_dict
                     )
-                    print(f"RESTORED MANUAL LEVEL: OP {oid_s} -> Nivel {nivel_val} | Seq: {next_seq}")
+                    print(f"RESTORED MANUAL DATA: OP {oid_s} -> Maquina {maquina} | Nivel {pm_data['nivel_manual']} | Tiempo {pm_data['tiempo_manual']} | Seq: {next_seq}")
 
             # 6. Apply NEW piece priorities from the frontend to PrioridadManual
             # We want to apply it to ALL articles sent, even if they have 0 selected OPs!

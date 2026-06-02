@@ -86,6 +86,14 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
     else:
         for h in maquina.horarios.all().order_by('hora_inicio'):
             schedules[h.dia].append({'start': h.hora_inicio, 'end': h.hora_fin})
+            
+        # USER REQUIREMENT: "Unificá los bloques horarios para que consideren la franja del viernes como continua."
+        # Merge all blocks in a single day to eliminate gaps like lunch breaks
+        for day in list(schedules.keys()):
+            if schedules[day]:
+                first_start = min(s['start'] for s in schedules[day])
+                last_end = max(s['end'] for s in schedules[day])
+                schedules[day] = [{'start': first_start, 'end': last_end}]
 
         if not schedules:
             # Fallback 07:00 - 16:00 LV
@@ -101,8 +109,23 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
     current_time = start_date
     calculated_tasks = []
 
+    # CRUZAR PRIORIDAD DE PROYECTO (Ya inyectada desde gantt_logic u otro origen)
+    try:
+        # APLICAR DOBLE CRITERIO DE ORDENAMIENTO (Multi-sort)
+        # proyecto__prioridad se inyecta antes de llamar a esta función para respetar el escenario activo.
+        for task in tasks:
+            try:
+                task['id_orden'] = int(float(task.get('Idorden', 0) or 0))
+            except:
+                task['id_orden'] = 999999
+                
+        tasks.sort(key=lambda x: (x.get('proyecto__prioridad', 999999), x.get('id_orden', 999999)))
+    except Exception as e:
+        print(f"Error ordenando en service: {e}")
+
     for idx, task in enumerate(tasks):
         # task is a dict from get_planificacion_data
+
         
         # 'Tiempo' is Unit Time (Time per piece)
         unit_time = float(task.get('Tiempo', 0) or 0)
@@ -165,6 +188,7 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
         # No constraints, current_time remains as is (or machine availability)
 
         # ONLY IF NOT FORCED (Manual override wins over Physics)
+        found_min_start = None
         if not forced_time and task_min_start_times:
             raw_id = task.get('Idorden')
             t_ids_to_try = []
@@ -195,10 +219,23 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
                          found_min_start = start_candidate
             
             if found_min_start:
+                 # NORMALIZACIÓN TIMEZONE: Aseguramos que ambos datetime están en la misma
+                 # zona horaria local antes de comparar. Sin esto, un found_min_start en UTC
+                 # puede parecer "menor" que current_time en local (ej: 08:40 UTC = 05:40 local)
+                 # haciendo que la condición sea False y la tarea empiece al día siguiente.
+                 from django.utils import timezone as dj_tz
+                 if found_min_start is not None:
+                     if dj_tz.is_naive(found_min_start):
+                         found_min_start = dj_tz.make_aware(found_min_start)
+                     found_min_start = dj_tz.localtime(found_min_start)
+                 
+                 if dj_tz.is_naive(current_time):
+                     current_time = dj_tz.make_aware(current_time)
+                 current_time = dj_tz.localtime(current_time)
+                 
                  # Ensure we don't start before the dependency ends
                  if found_min_start > current_time:
                      current_time = found_min_start
-                     # print(f"DEBUG: Task {raw_id} delayed start to {current_time} due to dependency")
         
         # Instead of one block per task, create multiple segments if task spans multiple days
         task_segments = []
@@ -491,6 +528,10 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
                     
         # Add all segments to calculated_tasks
         calculated_tasks.extend(task_segments)
+        
+        # Update current_time to last segment's end time for next task
+        if task_segments:
+            current_time = task_segments[-1]['end_date']
         
     return calculated_tasks
 

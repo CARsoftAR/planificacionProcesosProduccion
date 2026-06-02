@@ -185,10 +185,10 @@
             <span>Prioridades de Proyecto</span>
         </a>
         
-        <!-- 4. Ver Gantt -->
-        <a href="#" id="btn-ver-gantt" class="nav-button btn-green {% if url_name == 'planificacion_visual' %}active{% else %}inactive{% endif %}" onclick="navigateWithParams(event, '{% url 'planificacion_visual' %}', true)">
+        <!-- 3. Visualización Gantt (NUEVO) -->
+        <a href="#" id="btn-ver-gantt" class="nav-button btn-green {% if url_name == 'planificacion_visual' %}active{% else %}inactive{% endif %}" onclick="navigateWithParams(event, '{% url 'planificacion_visual' %}', false)">
             <i class="fas fa-chart-gantt"></i>
-            <span>Ver Gantt</span>
+            <span>Planificación Visual</span>
         </a>
 
         <script>
@@ -225,9 +225,28 @@
             if (inputEl && inputEl.value.trim()) proyectos = inputEl.value.trim();
             
             if (proyectos) params.set('proyectos', proyectos);
-            if (scenarioId) params.set('scenario_id', scenarioId);
+            if (scenarioId && scenarioId !== 'null') params.set('scenario_id', scenarioId);
             params.set('plan_mode', planMode);
-            if (forceRun) params.set('run', '1');
+            
+            // Evaluar condición de persistencia en memoria del frontend
+            let ganttYaGraficado = false;
+            try {
+                ganttYaGraficado = sessionStorage.getItem('ganttYaGraficado') === 'true';
+            } catch(e) {}
+
+            if (baseUrl.includes('planificacion/visual')) {
+                // SNAPSHOT RULE: Al navegar al Gantt, NO pasamos ?proyectos= desde el DOM.
+                // El Gantt debe determinar qué proyectos mostrar EXCLUSIVAMENTE desde
+                // su propia base de datos (PlannedTask con enviado_a_gantt=True).
+                // Si pasamos el input del usuario aquí, contaminaríamos el snapshot con
+                // proyectos nuevos que todavía no fueron confirmados al Gantt.
+                params.delete('proyectos');
+                if (ganttYaGraficado || forceRun) {
+                    params.set('graficar', '1');
+                }
+            } else if (forceRun) {
+                params.set('run', '1');
+            }
             
             const finalUrl = baseUrl + (params.toString() ? '?' + params.toString() : '');
 

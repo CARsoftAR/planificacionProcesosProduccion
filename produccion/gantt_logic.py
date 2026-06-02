@@ -220,23 +220,33 @@ def get_gantt_data(request, force_run=False):
     Shared logic for Visual Scheduler and Excel Export.
     Returns a dictionary with calculated timeline data and grid configuration.
     """
-    from .models import Scenario, TaskDependency # Import here to avoid circular
+    from django.utils import timezone
+    from datetime import timedelta
+    from .models import MaquinaConfig, PrioridadManual, TaskDependency, Scenario
+    import json
     import urllib.parse
     
+    # User requested control prints
+    active_scenario_id = request.GET.get('scenario_id') or request.session.get('active_scenario_id')
+    active_scenario = None
+    if active_scenario_id:
+         active_scenario = Scenario.objects.using('default').filter(id=active_scenario_id).first()
+    else:
+         active_scenario = Scenario.objects.using('default').filter(es_principal=True).first()
+         
+    if active_scenario:
+         print(f"Antes de procesar Gantt - Proyectos en DB: {active_scenario.proyectos}")
+
     # --- PERSISTENCE LOGIC (Remember last selection) ---
     # Strict Filtering: Only use projects from the current GET request
     raw_proyectos = request.GET.get('proyectos', '')
     if raw_proyectos:
         raw_proyectos = urllib.parse.unquote(raw_proyectos).replace('%2C', ',').strip()
     
-    # HARD RESET: If no projects in URL or clear flag set, ignore all cached data
+    # No Hard Reset logic here anymore per user request (read-only visualization)
     clear_flag = request.GET.get('clear', '0') == '1'
     if clear_flag or raw_proyectos == '':
         raw_proyectos = None
-        # Clean session to avoid poisoning other views
-        if 'last_proyectos_filter' in request.session:
-            del request.session['last_proyectos_filter']
-        request.session['gantt_needs_clear'] = True
 
     # ID Orden
     id_orden = request.GET.get('id_orden')
@@ -300,10 +310,15 @@ def get_gantt_data(request, force_run=False):
             
     if not raw_proyectos and active_scenario:
         from .models import PlannedTask
-        # Busca los proyectos únicos que ya existen en los procesos de este escenario como plan de respaldo
-        db_proyectos = list(PlannedTask.objects.using('default').filter(scenario=active_scenario).values_list('proyecto_code', flat=True).distinct())
+        # SNAPSHOT RULE: Solo leemos los proyectos de las tareas congeladas (en_gantt=True).
+        # Si no filtramos aquí, los proyectos nuevos que agregó el usuario (en_gantt=False)
+        # contaminarían el Gantt aunque el usuario no haya presionado "Graficar".
+        db_proyectos = list(PlannedTask.objects.using('default').filter(
+            scenario=active_scenario,
+            enviado_a_gantt=True
+        ).values_list('proyecto_code', flat=True).distinct())
         if db_proyectos:
-            raw_proyectos = ','.join(db_proyectos)
+            raw_proyectos = ','.join(p for p in db_proyectos if p)
             
     # Plan Mode  
     virtual_overrides = {}
@@ -355,33 +370,29 @@ def get_gantt_data(request, force_run=False):
     # --- AUTOMATIC DEPENDENCIES & SELECTIVE PLANNING ---
     from .models import PlannedTask
     deps_filter = {}
-    proyectos_list = []
-    if raw_proyectos:
-         proyectos_list = [p.strip() for p in raw_proyectos.split(',') if p.strip()]
-         deps_filter['proyectos'] = proyectos_list
-    if id_orden:
-        deps_filter['id_orden'] = id_orden
 
-    # NEW: Respect manual selections from the article selector (PlannedTask)
-    # We fetch ALL planned IDs for the scenario. The get_planificacion_data call 
-    # will later filter them by proyecto if proyectos_list is present in deps_filter.
-    planned_metadata_qs = PlannedTask.objects.using('default').filter(
-        scenario=active_scenario
-    ).values('id_orden')
+    # 1. Obtenemos el escenario válido (Ya lo tenemos en active_scenario)
     
-    planned_ids = [p['id_orden'] for p in planned_metadata_qs]
+    # 2. Extraemos la lista de proyectos vinculados a este escenario
+    # (active_scenario.proyectos guarda los proyectos separados por comas)
+    if active_scenario and active_scenario.proyectos:
+        lista_proyectos = [p.strip() for p in active_scenario.proyectos.split(',') if p.strip()]
+    else:
+        lista_proyectos = []
+        
+    print(f"Proyectos encontrados: {lista_proyectos}")
     
-    if planned_ids:
-        # Shift to strict ID-based filtering (will be ANDed with proyectos if present)
-        deps_filter['id_orden_in'] = planned_ids
+    if lista_proyectos:
+         deps_filter['proyectos'] = lista_proyectos
+    if id_orden:
+         deps_filter['id_orden'] = id_orden
 
     # Match spreadsheet logic: in manual/scenario mode, we often want to see 
     # what we planned even if the ERP thinks it is completed (e.g. for audits or manual overrides)
     show_completed = (plan_mode != 'original')
     
-    # --- 1. ENTRANCE VALIDATION (OpenCode Fix) ---
-    # User requested: "verificá si la lista de proyectos a planificar está vacía. Si no hay proyectos seleccionados, el sistema debe mostrar un aviso y no ejecutar nada."
-    has_selection = bool(proyectos_list or id_orden or (active_scenario and PlannedTask.objects.using('default').filter(scenario=active_scenario).exists()))
+    # --- 1. ENTRANCE VALIDATION ---
+    has_selection = bool(lista_proyectos or id_orden)
     
     if not has_selection and not force_run:
         print("DEBUG: [Validation] No projects or tasks selected. Aborting planning execution.")
@@ -397,17 +408,11 @@ def get_gantt_data(request, force_run=False):
             'system_alerts': [{'type': 'info', 'message': 'Seleccione proyectos para iniciar la planificación.'}]
         }
 
-    # --- 2. AUTOMATIC CACHE CLEANUP (OpenCode Fix) ---
-    # User requested: "función automática que limpie la tabla de PlanificacionTemporal antes de cada corrida"
-    # We use PlannedTask and PrioridadManual as the "Temporal" state.
-    if request.GET.get('clear_cache') == '1':
-        from django.db import transaction
-        with transaction.atomic(using='default'):
-            PlannedTask.objects.using('default').filter(scenario=active_scenario).delete()
-            PrioridadManual.objects.using('default').filter(scenario=active_scenario).delete()
-            print(f"DEBUG: [Cleanup] Cache cleared for scenario {active_scenario.id}")
-
+    # 3. Traemos las tareas cuyos proyectos estén en esa lista activa
+    # (El servicio get_planificacion_data usa __in internamente para procesar deps_filter['proyectos'])
     all_tasks_raw = get_planificacion_data(deps_filter, exclude_completed=not show_completed)
+    
+    print(f"Cantidad de tareas a graficar: {len(all_tasks_raw)}")
     
     # --- 3. ORPHAN FILTER (OpenCode Fix) ---
     # User requested: "solo intente graficar procesos que tengan un Proyecto y una Máquina válidos asignados."
@@ -589,6 +594,15 @@ def get_gantt_data(request, force_run=False):
         if s_succ not in dependency_map: dependency_map[s_succ] = []
         if s_pred not in dependency_map[s_succ]: dependency_map[s_succ].append(s_pred)
 
+    # BYPASS TEMPORAL (Aislado en memoria):
+    # Ignorar predecesores que correspondan a tareas SIN ASIGNAR o MAC00 (como la 45354)
+    unassigned_ids = {
+        str(t.get('Idorden')) for t in all_tasks_raw 
+        if str(t.get('Idmaquina', '')).strip() == '' or str(t.get('MAQUINAD', '')).strip().upper() == 'SIN ASIGNAR' or str(t.get('Idmaquina', '')).strip().upper() == 'MAC00'
+    }
+    for succ_id in list(dependency_map.keys()):
+        dependency_map[succ_id] = [p for p in dependency_map[succ_id] if p not in unassigned_ids]
+
     global_task_end_dates = {}
     unassigned_tasks = [
         t for t in all_tasks_raw 
@@ -731,10 +745,12 @@ def get_gantt_data(request, force_run=False):
                  item['Cantidadpp'] = float(virtual_overrides[p_id]['cantidad_producida_manual'])
              else:
                  item['Cantidadpp'] = item.get('cantidad_producida', 0)
+                 
+             item['proyecto__prioridad'] = proj_priorities.get(item.get('ProyectoCode'), 999)
                   
         tasks.sort(key=lambda x: (
-            x.get('OrdenSecuencia', 999999),
             proj_priorities.get(x.get('ProyectoCode'), 999),
+            x.get('OrdenSecuencia', 999999),
             -int(x.get('Nivel_Planificacion') or 0), 
             x.get('OrdenVisual', 999999)
         ))
@@ -754,15 +770,19 @@ def get_gantt_data(request, force_run=False):
     # SECOND PASS (Multi-Pass with Overlap Calculation)
     from .overlap_calculator import calcular_inicio_optimo_sucesor
     final_timeline_map = {}
-    task_info_map = {} 
-    
     for pass_idx in range(5):
+        task_info_map = {} 
         sorted_machine_items = sorted(machine_tasks_map.items(), key=lambda x: x[0])
         for machine_id, machine_data in sorted_machine_items:
             maquina = machine_data['maquina']
             tasks = machine_data['tasks']
             min_start_times = {}
             force_start_times = {}
+            
+            # Build set of task IDs on THIS machine to skip same-machine predecessors.
+            # Same-machine chaining is handled by current_time propagation in calculate_timeline.
+            # Using stale global_task_end_dates for same-machine preds creates artificial gaps.
+            current_machine_task_ids = {str(t.get('Idorden')) for t in tasks}
             
             for t in tasks:
                 t_id = str(t.get('Idorden'))
@@ -821,7 +841,10 @@ def get_gantt_data(request, force_run=False):
             final_timeline_map[machine_id] = {'machine': maquina, 'tasks': recalc}
             for ct in recalc:
                  tid = str(ct.get('Idorden'))
-                 task_info_map[tid] = {'start_date': ct['start_date'], 'end_date': ct['end_date'], 'duration': ct.get('Tiempo_Proceso', 0), 'cantidad': ct.get('Cantidad', 1)}
+                 if tid not in task_info_map:
+                     task_info_map[tid] = {'start_date': ct['start_date'], 'end_date': ct['end_date'], 'duration': ct.get('Tiempo_Proceso', 0), 'cantidad': ct.get('Cantidad', 1)}
+                 else:
+                     task_info_map[tid]['end_date'] = ct['end_date']
                  global_task_end_dates[tid] = ct['end_date']
 
     from .planning_service import get_active_maintenances
@@ -1014,6 +1037,10 @@ def get_gantt_data(request, force_run=False):
             t['Horas_Realizadas_Proyecto'] = done_h
             t['Porcentaje_Avance_Proyecto'] = pct
             t['Project_Audit_Data'] = project_audit.get(pc, []) # Pass audit to frontend
+
+    if active_scenario:
+         active_scenario.refresh_from_db(using='default')
+         print(f"Luego de procesar Gantt - Proyectos en DB: {active_scenario.proyectos}")
 
     return {
         'timeline_data': timeline_data, 'maquinas': maquinas, 'start_simulation': start_simulation,
