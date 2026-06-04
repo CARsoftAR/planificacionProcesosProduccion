@@ -2,6 +2,8 @@ from datetime import timedelta, datetime
 from .models import HorarioMaquina, Feriado
 
 def get_active_maintenances(maquina):
+    if hasattr(maquina, '_cached_maintenances'):
+        return maquina._cached_maintenances
     from .models import MantenimientoMaquina
     try:
         mants = MantenimientoMaquina.objects.filter(maquina=maquina).exclude(estado='FINALIZADO')
@@ -17,6 +19,10 @@ def get_active_maintenances(maquina):
                 if timezone.is_naive(e): e = timezone.make_aware(e)
                 else: e = timezone.localtime(e)
             res.append({'start': s, 'end': e, 'motivo': m.motivo})
+        try:
+            maquina._cached_maintenances = res
+        except:
+            pass
         return res
     except:
         return []
@@ -86,6 +92,14 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
     else:
         for h in maquina.horarios.all().order_by('hora_inicio'):
             schedules[h.dia].append({'start': h.hora_inicio, 'end': h.hora_fin})
+            
+        # USER REQUIREMENT: "Unificá los bloques horarios para que consideren la franja del viernes como continua."
+        # Merge all blocks in a single day to eliminate gaps like lunch breaks
+        for day in list(schedules.keys()):
+            if schedules[day]:
+                first_start = min(s['start'] for s in schedules[day])
+                last_end = max(s['end'] for s in schedules[day])
+                schedules[day] = [{'start': first_start, 'end': last_end}]
 
         if not schedules:
             # Fallback 07:00 - 16:00 LV
@@ -100,8 +114,51 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
             
     current_time = start_date
     calculated_tasks = []
+    last_end_by_priority = {}
 
-    for idx, task in enumerate(tasks):
+    # Strict sorting logic inside timeline generator: Proyecto (Menor a Mayor) -> Pieza (Menor a Mayor) -> Nivel ERP (Mayor a Menor)
+    def get_sort_key_internal(t):
+        p_proj = t.get('prioridad_proyecto')
+        try:
+            p_proj_val = int(p_proj) if p_proj is not None else 999
+        except (ValueError, TypeError):
+            p_proj_val = 999
+            
+        p_pieza = t.get('prioridad_pieza')
+        try:
+            p_pieza_val = int(p_pieza) if p_pieza is not None else 9999
+        except (ValueError, TypeError):
+            p_pieza_val = 9999
+            
+        nivel = t.get('Nivel_Planificacion')
+        try:
+            nivel_val = int(nivel) if nivel is not None else 0
+        except (ValueError, TypeError):
+            nivel_val = 0
+            
+        sec = t.get('secuencia_proceso')
+        try:
+            sec_val = int(sec) if sec is not None else 999
+        except (ValueError, TypeError):
+            sec_val = 999
+            
+        ord_sec = t.get('OrdenSecuencia')
+        try:
+            ord_sec_val = float(ord_sec) if ord_sec is not None else 999999.0
+        except (ValueError, TypeError):
+            ord_sec_val = 999999.0
+            
+        ord_vis = t.get('OrdenVisual')
+        try:
+            ord_vis_val = float(ord_vis) if ord_vis is not None else 999999.0
+        except (ValueError, TypeError):
+            ord_vis_val = 999999.0
+            
+        return (p_proj_val, p_pieza_val, -nivel_val, sec_val, ord_sec_val, ord_vis_val)
+
+    sorted_tasks = sorted(tasks, key=get_sort_key_internal)
+
+    for idx, task in enumerate(sorted_tasks):
         # task is a dict from get_planificacion_data
         
         # 'Tiempo' is Unit Time (Time per piece)
@@ -165,6 +222,7 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
         # No constraints, current_time remains as is (or machine availability)
 
         # ONLY IF NOT FORCED (Manual override wins over Physics)
+        found_min_start = None
         if not forced_time and task_min_start_times:
             raw_id = task.get('Idorden')
             t_ids_to_try = []
@@ -195,10 +253,48 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
                          found_min_start = start_candidate
             
             if found_min_start:
+                 # NORMALIZACIÓN TIMEZONE: Aseguramos que ambos datetime están en la misma
+                 # zona horaria local antes de comparar. Sin esto, un found_min_start en UTC
+                 # puede parecer "menor" que current_time en local (ej: 08:40 UTC = 05:40 local)
+                 # haciendo que la condición sea False y la tarea empiece al día siguiente.
+                 from django.utils import timezone as dj_tz
+                 if found_min_start is not None:
+                     if dj_tz.is_naive(found_min_start):
+                         found_min_start = dj_tz.make_aware(found_min_start)
+                     found_min_start = dj_tz.localtime(found_min_start)
+                 
+                 if dj_tz.is_naive(current_time):
+                     current_time = dj_tz.make_aware(current_time)
+                 current_time = dj_tz.localtime(current_time)
+                 
                  # Ensure we don't start before the dependency ends
                  if found_min_start > current_time:
                      current_time = found_min_start
-                     # print(f"DEBUG: Task {raw_id} delayed start to {current_time} due to dependency")
+
+        # Enforce rigid project sequencing fence: task of project priority P
+        # cannot start before the latest calculated end date of all projects with priority < P.
+        # This prevents lower priority tasks from backfilling gaps within higher priority projects.
+        proj_prio = task.get('prioridad_proyecto')
+        try:
+            proj_prio_val = int(proj_prio) if proj_prio is not None else 999
+        except (ValueError, TypeError):
+            proj_prio_val = 999
+
+        if not forced_time:
+            fence_time = None
+            for prev_prio, max_end in last_end_by_priority.items():
+                if prev_prio < proj_prio_val:
+                    if fence_time is None or max_end > fence_time:
+                        fence_time = max_end
+            if fence_time:
+                from django.utils import timezone as dj_tz
+                if dj_tz.is_aware(fence_time) and dj_tz.is_naive(current_time):
+                    current_time = dj_tz.make_aware(current_time)
+                elif dj_tz.is_naive(fence_time) and dj_tz.is_aware(current_time):
+                    current_time = dj_tz.make_naive(current_time)
+                
+                if fence_time > current_time:
+                    current_time = fence_time
         
         # Instead of one block per task, create multiple segments if task spans multiple days
         task_segments = []
@@ -217,7 +313,7 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
             # PRIMERO: Verificar si es un feriado no laborable
             if is_non_working_holiday(current_time, non_working_days):
                 # Es feriado que NO se trabaja - saltar al siguiente día laborable
-                print(f"    FERIADO detectado en {current_time.date()}, saltando...")
+                # print(f"    FERIADO detectado en {current_time.date()}, saltando...")
                 
                 if segment_start is not None:
                     # Cerrar segmento actual antes del feriado
@@ -249,7 +345,7 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
                 # Saltar al siguiente día laborable (inicio del horario)
                 next_day = (current_time + timedelta(days=1)).replace(hour=0, minute=0, second=0)
                 current_time = _jump_to_next_start(next_day, schedules, non_working_days, half_day_holidays)
-                print(f"    Saltando a: {current_time}")
+                # print(f"    Saltando a: {current_time}")
                 continue
             
             # --- MAINTENANCE CHECK ---
@@ -284,7 +380,7 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
                 
                 # Jump to end of maintenance
                 current_time = maint_end_time
-                print(f"    MANTENIMIENTO: Saltando a {current_time}")
+                # print(f"    MANTENIMIENTO: Saltando a {current_time}")
                 continue
 
             # Ensure current_time is Aware and strictly Local for comparison with TimeFields
@@ -491,6 +587,13 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
                     
         # Add all segments to calculated_tasks
         calculated_tasks.extend(task_segments)
+        
+        # Update current_time to last segment's end time for next task
+        if task_segments:
+            current_time = task_segments[-1]['end_date']
+            end_date = task_segments[-1]['end_date']
+            if proj_prio_val not in last_end_by_priority or end_date > last_end_by_priority[proj_prio_val]:
+                last_end_by_priority[proj_prio_val] = end_date
         
     return calculated_tasks
 

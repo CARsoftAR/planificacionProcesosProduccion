@@ -201,30 +201,30 @@ def get_planificacion_data(filtros=None, exclude_completed=True):
     # Si hay una lista de proyectos/ordenes especificas
     if 'proyectos' in filtros and filtros['proyectos']:
         proyectos_input = filtros['proyectos']
+        # Desempaquetar string o listas anidadas con comas
+        proyectos_list = []
         if isinstance(proyectos_input, str):
             proyectos_list = [p.strip() for p in proyectos_input.split(',') if p.strip()]
         else:
-            proyectos_list = proyectos_input
+            for p in proyectos_input:
+                proyectos_list.extend([x.strip() for x in str(p).split(',') if x.strip()])
 
-        clauses = []
-        for val in proyectos_list:
-            val = val.strip()
+        if proyectos_list:
+            vals_to_check = set()
+            for val in proyectos_list:
+                if val:
+                    vals_to_check.add(val)
+                    # User specifically requested searching by Formula for project codes like '25.006'
+                    vals_to_check.add(val.replace('.', '-'))
+                    vals_to_check.add(val.replace('-', '.'))
             
-            # User specifically requested searching by Formula for project codes like '25.006'
-            # We generate variations to handle '25-006' vs '25.006' mismatch
-            vals_to_check = {val}
-            vals_to_check.add(val.replace('.', '-'))
-            vals_to_check.add(val.replace('-', '.'))
-
-            for v in vals_to_check:
-                 clauses.append("T2.Formula LIKE %s")
-                 params.append(f"%{v}%")
-                 
-                 clauses.append("T.Formula LIKE %s")
-                 params.append(f"%{v}%")
-        
-        if clauses:
-            where_clauses.append(" AND (" + " OR ".join(clauses) + ")")
+            if vals_to_check:
+                # Use strict IN clause as requested by the user
+                placeholders = ', '.join(['%s'] * len(vals_to_check))
+                where_clauses.append(f" AND (LTRIM(RTRIM(T2.Formula)) IN ({placeholders}) OR LTRIM(RTRIM(T.Formula)) IN ({placeholders}))")
+                # Add params twice (one for T2.Formula, one for T.Formula)
+                params.extend(list(vals_to_check))
+                params.extend(list(vals_to_check))
 
     if 'machine_ids' in filtros and filtros['machine_ids']:
         # machine_ids matches T3.IdMaquina (Engineering BOM assignment)
@@ -262,9 +262,20 @@ def get_planificacion_data(filtros=None, exclude_completed=True):
     op_to_nivel = {}
     if results and active_scenario:
         op_ids = [r['Idorden'] for r in results]
+        # Collect all Master OP IDs to ensure we query their priorities too
+        mst_ids = []
+        for r in results:
+            mst = r.get('Mstnmbr')
+            if mst:
+                try:
+                    mst_ids.append(int(float(mst)))
+                except:
+                    pass
+        query_ids = list(set(op_ids + mst_ids))
+        
         p_manual_db = PrioridadManual.objects.using('default').filter(
             scenario=active_scenario,
-            id_orden__in=op_ids
+            id_orden__in=query_ids
         ).values('id_orden', 'nivel_manual')
         op_to_nivel = {p['id_orden']: p['nivel_manual'] for p in p_manual_db if p['nivel_manual'] is not None}
         
@@ -282,13 +293,32 @@ def get_planificacion_data(filtros=None, exclude_completed=True):
             group.sort(key=lambda x: int(x.get('Idorden') or 0))
             for i, r in enumerate(group):
                 oid = r.get('Idorden')
-                if oid in op_to_nivel:
-                    r['Nivel_Planificacion'] = int(op_to_nivel[oid])
-                else:
-                    desc = r.get('Descri', '').upper()
-                    if 'RECEPCION DE ORDEN DE COMPRA' in desc:
-                        r['Nivel_Planificacion'] = 20
-                    else:
-                        r['Nivel_Planificacion'] = int(i + 1)
+                
+                # 1. Secuencia correlativa de procesos
+                r['secuencia_proceso'] = i + 1
+                
+                # 2. Prioridad de pieza (nivel_manual en SQLite)
+                try:
+                    clean_oid = int(float(oid))
+                except:
+                    clean_oid = oid
+                
+                prio = op_to_nivel.get(clean_oid)
+                # Si no tiene prioridad manual a nivel de esta OP, buscamos si la tiene en la OP Master (mst)
+                if prio is None and mst:
+                    try:
+                        clean_mst = int(float(mst))
+                    except:
+                        clean_mst = mst
+                    prio = op_to_nivel.get(clean_mst)
+                
+                r['prioridad_pieza'] = int(prio) if prio is not None else None
+                
+                # Nivel_Planificacion: usar SIEMPRE el valor nativo del ERP (columna NIVEL de TMAN002).
+                # NO sobreescribir con índices calculados (i+1) ni con valores inventados.
+                # El valor ya viene correcto desde la subconsulta SQL (línea 71 de la query).
+                # Solo lo normalizamos a int para garantizar tipos consistentes.
+                erp_nivel = r.get('Nivel_Planificacion')
+                r['Nivel_Planificacion'] = int(erp_nivel) if erp_nivel is not None else 0
 
     return results

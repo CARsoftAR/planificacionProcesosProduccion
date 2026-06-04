@@ -89,6 +89,138 @@ def start_django(port):
         import traceback
         traceback.print_exc()
 
+SPLASH_HTML = """
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            overflow: hidden;
+            box-sizing: border-box;
+            border: 1px solid rgba(255, 255, 255, 0.7);
+        }
+        .container {
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        .logo-container {
+            position: relative;
+            width: 80px;
+            height: 80px;
+            margin-bottom: 24px;
+        }
+        .logo-glow {
+            position: absolute;
+            top: -10px;
+            left: -10px;
+            width: 100px;
+            height: 100px;
+            background: radial-gradient(circle, rgba(99, 102, 241, 0.35) 0%, rgba(168, 85, 247, 0.05) 75%);
+            border-radius: 50%;
+            filter: blur(12px);
+            animation: pulse-glow 3s infinite ease-in-out;
+        }
+        .logo {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(135deg, #818cf8 0%, #c084fc 100%);
+            border-radius: 24px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            box-shadow: 0 10px 25px rgba(129, 140, 248, 0.2);
+            animation: float 4s infinite ease-in-out;
+        }
+        .logo-icon {
+            color: white;
+            font-size: 36px;
+            font-weight: 800;
+        }
+        h1 {
+            margin: 0 0 8px 0;
+            font-size: 26px;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            color: #1f2937;
+        }
+        h1 span {
+            color: #6366f1;
+        }
+        p {
+            margin: 0;
+            font-size: 14px;
+            color: #6b7280;
+            font-weight: 500;
+        }
+        .loader-track {
+            width: 200px;
+            height: 4px;
+            background: rgba(99, 102, 241, 0.1);
+            border-radius: 10px;
+            margin-top: 32px;
+            overflow: hidden;
+            position: relative;
+        }
+        .loader-bar {
+            width: 80px;
+            height: 100%;
+            background: linear-gradient(90deg, #818cf8, #c084fc);
+            border-radius: 10px;
+            position: absolute;
+            animation: loading 1.8s infinite ease-in-out;
+        }
+        @keyframes float {
+            0% { transform: translateY(0px) rotate(0deg); }
+            50% { transform: translateY(-8px) rotate(2deg); }
+            100% { transform: translateY(0px) rotate(0deg); }
+        }
+        @keyframes pulse-glow {
+            0% { transform: scale(0.9); opacity: 0.5; }
+            50% { transform: scale(1.2); opacity: 0.9; }
+            100% { transform: scale(0.9); opacity: 0.5; }
+        }
+        @keyframes loading {
+            0% { left: -80px; }
+            50% { left: 100px; width: 100px; }
+            100% { left: 200px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo-container">
+            <div class="logo-glow"></div>
+            <div class="logo">
+                <div class="logo-icon">A</div>
+            </div>
+        </div>
+        <h1>ABBAMAT <span>PROD</span></h1>
+        <p>Iniciando sistema de planificación...</p>
+        <div class="loader-track">
+            <div class="loader-bar"></div>
+        </div>
+    </div>
+</body>
+</html>
+"""
+
 def main():
     # Obtener puerto dinámico para evitar conflictos si hay otra cosa en el 8000
     port = get_free_port()
@@ -97,24 +229,38 @@ def main():
     django_thread = threading.Thread(target=start_django, args=(port,), daemon=True)
     django_thread.start()
     
-    # Esperar 2 segundos para dar tiempo a que Django inicialice la base de datos y sirva las páginas
-    time.sleep(2)
-    
-    # Abrir la ventana de escritorio con pywebview
-    url = f"http://127.0.0.1:{port}"
-    print(f"[WebView] Abriendo {url}...")
-    
-    window = webview.create_window(
-        'ABBAMAT PROD - Desktop',
-        url,
-        width=1280,
-        height=800,
-        min_size=(800, 600),
-        frameless=False
+    # Crear ventana de splash (cargando)
+    splash = webview.create_window(
+        'ABBAMAT PROD - Cargando...',
+        html=SPLASH_HTML,
+        width=500,
+        height=320,
+        frameless=True,
+        easy_drag=True,
+        on_top=True
     )
     
-    # Iniciar el motor web (Chrome/Edge en Windows)
-    webview.start()
+    def check_and_launch():
+        # Esperamos 3 segundos a que Django levante
+        time.sleep(3)
+        
+        # Crear ventana principal
+        url = f"http://127.0.0.1:{port}"
+        print(f"[WebView] Abriendo {url}...")
+        
+        webview.create_window(
+            'ABBAMAT PROD - Desktop',
+            url,
+            width=1280,
+            height=800,
+            min_size=(800, 600),
+            frameless=False
+        )
+        
+        # Cerrar el splash
+        splash.destroy()
+        
+    webview.start(check_and_launch)
 
 if __name__ == '__main__':
     main()

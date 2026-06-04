@@ -48,6 +48,7 @@ urlpatterns = [
     path('api/hide_task/', views.hide_task, name='hide_task'),
     path('api/reactivar_op/', views.reactivar_op, name='reactivar_op'),
     path('api/reset_planning/', views.reset_planning, name='reset_planning'),
+    path('api/commit_gantt_snapshot/', views.commit_gantt_snapshot, name='commit_gantt_snapshot'),
     
     # Scenario Management
     path('api/scenarios/create/', views.create_scenario, name='create_scenario'),
