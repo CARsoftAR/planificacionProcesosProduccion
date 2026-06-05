@@ -5,7 +5,7 @@ a = Analysis(
     ['desktop_run.py'],
     pathex=[],
     binaries=[],
-    datas=[('planificacion', 'planificacion'), ('produccion/templates', 'produccion/templates'), ('produccion/static', 'produccion/static'), ('db.sqlite3', '.')],
+    datas=[('planificacion', 'planificacion'), ('planificacion/produccion/templates', 'produccion/templates'), ('planificacion/produccion/static', 'produccion/static'), ('db.sqlite3', '.')],
     hiddenimports=['webview', 'webview.platforms.winforms', 'django', 'django.core.management', 'django.db.backends.sqlite3', 'produccion'],
     hookspath=[],
     hooksconfig={},

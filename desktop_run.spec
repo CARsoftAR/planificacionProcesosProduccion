@@ -8,8 +8,8 @@ a = Analysis(
     binaries=[],
     datas=[
         ('planificacion', 'planificacion'),
-        ('produccion/templates', 'produccion/templates'),
-        ('produccion/static', 'produccion/static'),
+        ('planificacion/produccion/templates', 'produccion/templates'),
+        ('planificacion/produccion/static', 'produccion/static'),
         ('db.sqlite3', '.'),
     ],
     hiddenimports=[
