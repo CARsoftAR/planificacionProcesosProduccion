@@ -9,7 +9,7 @@ a = Analysis(
     datas=[
         ('planificacion', 'planificacion'),
         ('planificacion/produccion/templates', 'produccion/templates'),
-        ('planificacion/produccion/static', 'produccion/static'),
+        ('produccion/static', 'produccion/static'),
         ('db.sqlite3', '.'),
     ],
     hiddenimports=[
