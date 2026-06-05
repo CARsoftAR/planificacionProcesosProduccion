@@ -17,10 +17,9 @@ pip install --upgrade clr-loader pywebview pyinstaller
 pip install "pythonnet>=3.0.3"
 
 echo [2/3] Empaquetando con PyInstaller (--onedir)...
-REM -y: Sobrescribir output previo
-REM --windowed: No mostrar consola de Windows al ejecutar (solo GUI)
-REM --add-data: Incluir plantillas y archivos estáticos
-REM --hidden-import: Asegurar que apps de django no falten
+REM Limpieza de cache y directorios previos para evitar arrastre de código viejo
+if exist build rmdir /s /q build
+if exist dist rmdir /s /q dist
 echo [2/3] Empaquetando con PyInstaller usando desktop_run.spec...
 pyinstaller --clean -y desktop_run.spec
 
