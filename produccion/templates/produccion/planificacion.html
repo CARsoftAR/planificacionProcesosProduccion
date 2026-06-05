@@ -584,9 +584,6 @@
                                 data-maquina="{{ item.MAQUINA_ID }}" 
                                 data-priority="{{ item.OrdenVisual }}" 
                                 data-proyecto="{{ item.ProyectoCode|default:'' }}"
-                                data-prioridad-proyecto="{{ item.prioridad_proyecto|default:999 }}"
-                                data-prioridad-pieza="{{ item.prioridad_pieza|default:'' }}"
-                                data-nivel-planificacion="{{ item.Nivel_Planificacion|default:'0' }}"
                                 class="{% if item.is_hidden %}hidden-row{% endif %}"
                                 style="cursor: grab;">
                                 <td class="text-center actions-column" style="white-space: nowrap;">
@@ -616,7 +613,7 @@
                                  <td style="min-width: 150px; white-space: normal;" title="{{ item.Denominacion }}">{{ item.Denominacion }}</td>
                                 <td>{{ item.Idorden }}</td>
                                  <td style="min-width: 250px; white-space: normal;" title="{{ item.Descri }}">{{ item.Descri }}</td>
-                                <td class="text-center fw-bold">{{ item.prioridad_pieza }}</td>
+                                <td class="text-center row-priority-cell">{{ item.prioridad_pieza }}</td>
                                 <td class="text-end fw-bold editable-nivel" 
                                     contenteditable="true"
                                     title="Click para editar Nivel Planificación"
@@ -889,6 +886,8 @@
         let currentLevel2MacroPk = ""; // Tracker for the active article in detail view
 
         document.addEventListener('DOMContentLoaded', function() {
+            // Las prioridades de pieza vienen del backend (item.prioridad_pieza),
+            // NO se renumeran en cliente.
             // Activar panel de proyectos inicialmente y observar cambios
             updateActiveProjectsPanel();
             const tabContent = document.getElementById('myTabContent');
@@ -1780,6 +1779,7 @@
                         });
                         
                         if (response.ok) {
+                            const parent = row.parentNode;
                             row.remove();
                         } else {
                             const data = await response.json();
@@ -2270,13 +2270,13 @@
 
             // --- SCENARIO MANAGEMENT (NUEVO, GUARDAR, CARGAR) ---
             
-            // 1. NUEVO: Start a blank scenario locally (Frontend only)
+            // 1. NUEVO: Start a blank scenario
             const btnNewScenario = document.getElementById('btnNewScenario');
             if (btnNewScenario) {
                 btnNewScenario.addEventListener('click', async function() {
                     const result = await Swal.fire({
                         title: '¿Empezar Plan Nuevo?',
-                        text: 'Se limpiará la pantalla para iniciar un escenario vacío en memoria. No se creará nada en la base de datos hasta que presione GUARDAR.',
+                        text: 'Se iniciará un escenario de planificación vacío. Los planes existentes guardados no se modificarán.',
                         icon: 'question',
                         showCancelButton: true,
                         confirmButtonText: 'Sí, empezar nuevo',
@@ -2285,35 +2285,40 @@
                     });
                     
                     if (result.isConfirmed) {
-                        // Reset variables de estado global y del DOM en memoria local
-                        window.activeScenarioId = "";
-                        window.activeScenarioName = "Nuevo Plan";
-                        
-                        // Limpiar el input visual del nombre en el modal de guardado
-                        const txtScenarioName = document.getElementById('newScenarioName');
-                        if (txtScenarioName) {
-                            txtScenarioName.value = "Nuevo Plan";
+                        try {
+                            const response = await fetch('/api/scenarios/create/', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'X-CSRFToken': '{{ csrf_token }}'
+                                },
+                                body: JSON.stringify({
+                                    nombre: 'Nuevo Plan',
+                                    proyectos: ''
+                                })
+                            });
+                            
+                            const data = await response.json();
+                            if (response.ok) {
+                                // Redirect to the new scenario with NO projects in query params
+                                window.location.href = `?scenario_id=${data.scenario.id}`;
+                            } else {
+                                Swal.fire({
+                                    title: 'Error',
+                                    text: data.error || 'No se pudo crear el escenario nuevo.',
+                                    icon: 'error',
+                                    customClass: { popup: 'premium-swal' }
+                                });
+                            }
+                        } catch (e) {
+                            console.error(e);
+                            Swal.fire({
+                                title: 'Error',
+                                text: 'No se pudo comunicar con el servidor.',
+                                icon: 'error',
+                                customClass: { popup: 'premium-swal' }
+                            });
                         }
-                        
-                        // Limpiar el campo de filtro de proyectos
-                        const proyectosInput = document.getElementById('proyectos');
-                        if (proyectosInput) {
-                            proyectosInput.value = "";
-                        }
-                        
-                        // Vaciar visualmente todas las grillas/tablas de planificación
-                        document.querySelectorAll('.tab-content table tbody').forEach(tbody => {
-                            tbody.innerHTML = "";
-                        });
-                        
-                        Swal.fire({
-                            title: 'Nuevo Plan',
-                            text: 'Pantalla limpia. Ingrese proyectos y presione GUARDAR para persistir.',
-                            icon: 'info',
-                            timer: 2000,
-                            showConfirmButton: false,
-                            customClass: { popup: 'premium-swal' }
-                        });
                     }
                 });
             }
@@ -2357,20 +2362,15 @@
                             rows.forEach((row, index) => {
                                 let idOrden = row.getAttribute('data-id');
                                 let maquina = row.getAttribute('data-maquina');
-                                
-                                // EXTRACCIÓN DIRECTA DESDE ATRIBUTOS ORIGINALES:
-                                let prioridadPieza = parseInt(row.getAttribute('data-prioridad-pieza')) || 0;
-                                let nivelPlanificacion = parseInt(row.getAttribute('data-nivel-planificacion')) || 0;
-                                let prioridadProyecto = parseInt(row.getAttribute('data-prioridad-proyecto')) || 0;
+                                let nivelCell = row.querySelector('.editable-nivel');
+                                let prioridadManual = nivelCell ? parseInt(nivelCell.innerText) || 0 : 0;
                                 
                                 if (idOrden) {
                                     secuencias.push({
                                         id_orden: idOrden,
                                         maquina: maquina,
                                         orden_secuencia: index,
-                                        prioridad_pieza: prioridadPieza,
-                                        nivel_planificacion: nivelPlanificacion,
-                                        prioridad_proyecto: prioridadProyecto
+                                        prioridad_manual: prioridadManual
                                     });
                                 }
                             });
@@ -2382,16 +2382,14 @@
                             secuencias: secuencias
                         };
 
-                        // Corrección estricta de asignación de escenario
-                        if (activeScenarioId) {
-                            // Si existe un ID activo en memoria, estamos editando o sobreescribiendo en caliente.
+                        // Word/Excel style flow:
+                        // If current name is "Nuevo Plan" or they input the exact same name, update in place.
+                        // Otherwise, clone it to a new scenario.
+                        if (activeScenarioName === 'Nuevo Plan' || name === activeScenarioName) {
                             payload.id = activeScenarioId;
                             payload.update_id = activeScenarioId;
                         } else {
-                            // Si activeScenarioId es nulo/vacío, es un PLAN REALMENTE NUEVO.
-                            // NO debe enviar id ni update_id para que el backend cree el registro una sola vez al guardar.
-                            payload.id = null;
-                            payload.update_id = null;
+                            payload.copy_from_id = activeScenarioId;
                         }
 
                         try {
@@ -2411,9 +2409,6 @@
 
                             const data = await response.json();
                             if (response.ok) {
-                                if (typeof activeScenarioId !== 'undefined') {
-                                     window.activeScenarioId = data.scenario.id;
-                                 }
                                 saveScenarioModal.hide();
                                 Swal.fire({
                                     title: '¡Guardado!',

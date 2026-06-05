@@ -139,6 +139,43 @@
             color: #2563eb;
         }
 
+        /* Full page loading spinner */
+        #page-loader {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.9);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            transition: opacity 0.5s ease;
+        }
+        [data-theme="dark"] #page-loader {
+            background: rgba(11, 14, 20, 0.95);
+        }
+        .spinner-inner {
+            width: 60px;
+            height: 60px;
+            border: 4px solid var(--accent);
+            border-top: 4px solid transparent;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .loader-text {
+            margin-top: 20px;
+            font-weight: 700;
+            color: var(--accent);
+            letter-spacing: 1px;
+        }
+
         .btn-ai {
             background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
             border: none;
@@ -178,11 +215,17 @@
             display: flex;
             flex-direction: column;
             overflow: hidden;
-            height: 90vh;
+            height: 86vh;
             margin: 10px;
             border-radius: 12px;
             border: 1px solid var(--border);
             background: var(--bg-deep);
+            transition: all 0.3s ease;
+        }
+
+        .gantt-container.gantt-expanded {
+            height: 93vh;
+            margin-top: 5px;
         }
 
         .gantt-header {
@@ -191,7 +234,7 @@
             border-bottom: 2px solid var(--border);
             position: sticky;
             top: 0;
-            z-index: 10;
+            z-index: 1050; /* Changed from 10 to 1050 to keep dropdowns above the Gantt inner header (z-100) */
         }
 
         .gantt-body {
@@ -212,7 +255,7 @@
         }
 
         .machine-header-cell {
-            height: 50px;
+            height: 65px;
             border-bottom: 1px solid var(--border);
             display: flex;
             align-items: center;
@@ -247,38 +290,93 @@
         
         /* Time Header */
         .time-header-row {
-            height: 50px;
+            height: 65px;
             display: flex;
             background: var(--bg-header);
             border-bottom: 1px solid var(--border);
         }
 
         .time-hour {
-            width: 40px;
+            width: 100px;
+            box-sizing: border-box;
             flex-shrink: 0;
             border-right: 1px solid var(--border);
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            font-size: 0.7rem;
+            font-size: 0.85rem;
             color: var(--text-muted);
+            transition: background-color 0.2s;
         }
 
         .time-hour.day-start {
-            border-left: 2px solid var(--accent);
-            background: rgba(59, 130, 246, 0.1);
+            background: rgba(59, 130, 246, 0.03);
         }
 
-        /* Task Bars */
+        /* Day Gap Separator Styles */
+        .day-gap-separator {
+            width: 10px;
+            box-sizing: border-box;
+            flex-shrink: 0;
+            background-color: #f1f5f9; /* Slate 100 */
+            background-image: repeating-linear-gradient(
+                45deg,
+                transparent,
+                transparent 5px,
+                rgba(0, 0, 0, 0.05) 5px,
+                rgba(0, 0, 0, 0.05) 10px
+            );
+            border-left: 1px solid var(--border);
+            border-right: 1px solid var(--border);
+            height: 100%;
+        }
+
+        [data-theme="dark"] .day-gap-separator {
+            background-color: #1e293b; /* Slate 800 */
+            background-image: repeating-linear-gradient(
+                45deg,
+                transparent,
+                transparent 5px,
+                rgba(255, 255, 255, 0.05) 5px,
+                rgba(255, 255, 255, 0.05) 10px
+            );
+            border-left: 1px solid #334155;
+            border-right: 1px solid #334155;
+        }
+
+
+        /* Task Bars background and Grid */
         .task-row {
             height: 80px;
             border-bottom: 1px solid var(--border);
             position: relative;
             background-color: var(--bg-row);
-            background-image: 
-                linear-gradient(to right, var(--border) 1px, transparent 1px);
-            background-size: 40px 80px;
+            display: flex;
+            /* isolation: isolate removido - generaba stacking context separado que impedía z-index del SVG */
+        }
+
+        .grid-bg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            display: flex;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        .grid-cell {
+            width: 100px;
+            height: 100%;
+            box-sizing: border-box;
+            flex-shrink: 0;
+            border-right: 1px solid var(--border);
+        }
+
+        /* Highlight current day column if needed */
+        .grid-cell.current-day-col {
+            background: rgba(59, 130, 246, 0.05);
         }
         
         /* =========================================
@@ -288,31 +386,31 @@
         ========================================= */
         .task-block {
             position: absolute;
-            top: 12px;           /* Compensamos el badge que sobresale arriba */
-            height: 60px;
-            z-index: 3;
+            top: 12px;
+            height: 62px;
+            z-index: 10 !important; /* Elevamos sobre las flechas */
             background: #FFFFFF;
-            border-radius: 6px;
-            padding: 4px 8px;
+            border-radius: 8px;
+            padding: 8px 8px;
             font-size: 0.68rem;
-            overflow: visible;   /* CLAVE: permite que los badges floten por encima */
-            cursor: grab;
-            transition: transform 0.18s ease, box-shadow 0.18s ease;
-            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+            overflow: visible;
+            cursor: default;
+            transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.2s ease;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
             box-sizing: border-box;
             display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: flex-start;
-            margin-left: 2px;
-            width: calc(100% - 2px);
+            border: 1px solid rgba(0,0,0,0.05);
+            /* NO min-width: el backend garantiza min 22px via visual_width */
         }
         
         .task-block:hover {
-            transform: translateY(-3px);
-            z-index: 100;
-            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
-            cursor: pointer;
+            transform: translateY(-4px) scale(1.02); /* Mayor elevación */
+            z-index: 200; /* Aseguramos que vuele sobre el resto */
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
+            cursor: default;
         }
 
         /* Texto interno de la card: ID de Proyecto */
@@ -366,17 +464,21 @@
             }
         }
 
-        .task-block.critical-task {
+        body.show-cp .task-block.critical-task {
             border-top: 2px solid #ef4444 !important;
             border-right: 1px solid rgba(239,68,68,0.4) !important;
             border-bottom: 1px solid rgba(239,68,68,0.4) !important;
             animation: criticalPulse 2.5s ease-in-out infinite;
+            /* CRITICAL UX: Hardware acceleration to fix Chromium backdrop-filter bug when offcanvas opens */
+            transform: translateZ(0);
+            will-change: box-shadow, border-color, transform;
             /* NO override de background para mantener el fondo blanco de la card */
         }
 
         .task-block.critical-task:hover {
             box-shadow: 0 0 25px rgba(239, 68, 68, 0.7), 0 0 50px rgba(239, 68, 68, 0.3);
             border-color: #f97316 !important;
+            transform: translateY(-4px) scale(1.02) translateZ(0) !important; /* Mantener translateZ en hover */
         }
 
         /* =========================================
@@ -385,6 +487,7 @@
            Requiere overflow:visible en .task-block.
         ========================================= */
         .critical-badge {
+            display: none;
             position: absolute;
             top: -11px;          /* Flota 50% por encima de la card */
             right: 8px;
@@ -402,11 +505,15 @@
             line-height: 1.5;
             pointer-events: none;
         }
+        body.show-cp .critical-badge {
+            display: flex;
+        }
 
         .delay-badge {
             position: absolute;
-            top: -11px;          /* Flota 50% por encima de la card */
-            left: 10px;
+            top: -14px;
+            left: 6px;            /* Anclado al borde izq de su card */
+            max-width: calc(100% + 0px); /* No supera el ancho del card+badge calculado */
             font-size: 0.58rem;
             background: linear-gradient(135deg, #dc2626, #991b1b);
             color: white;
@@ -414,7 +521,7 @@
             padding: 2px 7px;
             font-weight: 700;
             letter-spacing: 0.4px;
-            z-index: 20;         /* Por encima de la card */
+            z-index: 20;
             white-space: nowrap;
             box-shadow: 0 2px 6px rgba(220,38,38,0.5);
             text-transform: uppercase;
@@ -446,13 +553,28 @@
             text-transform: uppercase;
             border: 1px solid rgba(255,255,255,0.2);
         }
+        
+        /* Visibilidad Condicional */
+        body:not(.show-delays) .delay-badge {
+            display: none !important;
+        }
+        
+        /* hide-tooltips handled via #global-tooltip.tt-visible logic */
+
+
+        /* Contenedor de Controles Flotantes */
+        .planning-controls {
+            position: fixed;
+            bottom: 24px;
+            right: 18px; /* Ajustado para estar cerca del borde pero con aire */
+            display: flex;
+            flex-direction: row-reverse; /* Alineados de derecha a izquierda */
+            gap: 12px;
+            z-index: 1000;
+        }
 
         /* Critical path legend toggle button */
         .cp-legend-btn {
-            position: fixed;
-            bottom: 24px;
-            right: 24px;
-            z-index: 999;
             background: linear-gradient(135deg, #ef4444, #f97316);
             color: white;
             border: none;
@@ -466,12 +588,38 @@
             align-items: center;
             gap: 6px;
             transition: all 0.3s ease;
+            white-space: nowrap;
         }
         .cp-legend-btn:hover {
             transform: translateY(-2px);
             box-shadow: 0 8px 25px rgba(239,68,68,0.5);
         }
         .cp-legend-btn.dimmed {
+            background: linear-gradient(135deg, #6b7280, #9ca3af);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+
+        .dt-legend-btn {
+            background: linear-gradient(135deg, #f59e0b, #d97706); /* Orange/Amber */
+            color: white;
+            border: none;
+            border-radius: 50px;
+            padding: 8px 16px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(245,158,11,0.4);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.3s ease;
+            white-space: nowrap;
+        }
+        .dt-legend-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(245,158,11,0.5);
+        }
+        .dt-legend-btn.dimmed {
             background: linear-gradient(135deg, #6b7280, #9ca3af);
             box-shadow: 0 4px 15px rgba(0,0,0,0.2);
         }
@@ -593,7 +741,9 @@
         
         #global-tooltip {
             position: fixed;
-            display: none;
+            display: block;
+            visibility: hidden;
+            opacity: 0;
             background: rgba(15, 23, 42, 0.98);
             backdrop-filter: blur(16px);
             color: #fff;
@@ -601,14 +751,24 @@
             border-radius: 16px;
             min-width: 330px;
             max-width: 400px;
-            z-index: 10000;
+            z-index: 15000;
             font-size: 0.8rem;
             white-space: normal;
             box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
             border: 1px solid rgba(59, 130, 246, 0.4);
             line-height: 1.4;
             pointer-events: none;
-            transition: opacity 0.15s ease;
+            transition: opacity 0.15s ease, visibility 0.15s ease;
+        }
+
+        #global-tooltip.tt-visible {
+            visibility: visible;
+            opacity: 1;
+        }
+
+        body.hide-tooltips #global-tooltip {
+            visibility: hidden !important;
+            opacity: 0 !important;
         }
 
         .tooltip-section {
@@ -630,19 +790,163 @@
             color: #f8fafc;
         }
 
-        /* Dependency Arrows */
+        /* Dependency Arrows SVG layer - always in layout tree but invisible until toggled */
         #dependency-layer {
-            display: none;
-            filter: drop-shadow(0 0 2px rgba(0, 242, 255, 0.3));
-        }
-
-        #dependency-layer.visible {
-            display: block !important;
+            position: absolute !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100% !important;
+            height: 100% !important;
+            z-index: 0 !important; /* Capa de fondo: debajo de tarjetas (z-10) */
+            pointer-events: none !important;
+            display: none; /* Oculto por defecto, el botón lo activa */
         }
 
         .dependency-path {
             stroke-dasharray: none;
-            /* Animation removed as requested */
+        }
+
+        /* OP Filter Sidebar */
+        #op-filter-sidebar {
+            position: fixed;
+            top: 0;
+            right: -340px;
+            width: 320px;
+            height: 100vh;
+            background: rgba(255, 255, 255, 0.92);
+            backdrop-filter: blur(20px) saturate(180%);
+            -webkit-backdrop-filter: blur(20px) saturate(180%);
+            border-left: 1px solid rgba(0,0,0,0.08);
+            box-shadow: -8px 0 32px rgba(0,0,0,0.12);
+            z-index: 10000;
+            transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        #op-filter-sidebar.open {
+            right: 0;
+        }
+        #op-filter-sidebar .sidebar-header {
+            padding: 1.2rem 1.4rem;
+            border-bottom: 1px solid rgba(0,0,0,0.07);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+        }
+        #op-filter-sidebar .sidebar-header h6 {
+            margin: 0;
+            font-weight: 700;
+            font-size: 0.85rem;
+            color: #1e293b;
+            letter-spacing: -0.3px;
+        }
+        #op-filter-sidebar .sidebar-search {
+            padding: 0.8rem 1rem;
+            border-bottom: 1px solid rgba(0,0,0,0.06);
+            flex-shrink: 0;
+        }
+        #op-filter-sidebar .sidebar-search input {
+            width: 100%;
+            padding: 0.45rem 0.75rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 0.8rem;
+            background: rgba(255,255,255,0.8);
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        #op-filter-sidebar .sidebar-search input:focus {
+            border-color: #3b82f6;
+        }
+        #op-filter-sidebar .sidebar-actions {
+            padding: 0.5rem 1rem;
+            display: flex;
+            gap: 0.5rem;
+            border-bottom: 1px solid rgba(0,0,0,0.06);
+            flex-shrink: 0;
+        }
+        #op-filter-sidebar .sidebar-actions button {
+            flex: 1;
+            padding: 0.3rem 0.5rem;
+            font-size: 0.72rem;
+            font-weight: 600;
+            border-radius: 6px;
+            border: 1px solid #e2e8f0;
+            background: white;
+            cursor: pointer;
+            color: #475569;
+            transition: all 0.15s;
+        }
+        #op-filter-sidebar .sidebar-actions button:hover {
+            background: #f1f5f9;
+            color: #1e293b;
+        }
+        #op-filter-sidebar .sidebar-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0.5rem 0;
+        }
+        #op-filter-sidebar .sidebar-list::-webkit-scrollbar {
+            width: 4px;
+        }
+        #op-filter-sidebar .sidebar-list::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 2px;
+        }
+        .op-filter-item {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.55rem 1rem;
+            cursor: pointer;
+            transition: background 0.15s;
+            border-bottom: 1px solid rgba(0,0,0,0.03);
+        }
+        .op-filter-item:hover {
+            background: rgba(59, 130, 246, 0.05);
+        }
+        .op-filter-item .color-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+        .op-filter-item label {
+            font-size: 0.75rem;
+            color: #334155;
+            cursor: pointer;
+            flex: 1;
+            line-height: 1.3;
+            font-weight: 500;
+        }
+        .op-filter-item label span {
+            display: block;
+            font-size: 0.65rem;
+            color: #94a3b8;
+            font-weight: 400;
+        }
+        .op-filter-item input[type=checkbox] {
+            accent-color: #3b82f6;
+            width: 15px;
+            height: 15px;
+            flex-shrink: 0;
+            cursor: pointer;
+        }
+        #op-filter-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.2);
+            z-index: 9999;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s;
+        }
+        #op-filter-overlay.open {
+            opacity: 1;
+            pointer-events: all;
         }
 
         /* Scrollbar styling */
@@ -666,7 +970,10 @@
         .top-bar {
             background: var(--bg-header);
             border-bottom: 1px solid var(--border);
-            padding: 1rem 1.5rem;
+            padding: 0.5rem 1.5rem;
+            position: sticky;
+            top: 65px;
+            z-index: 1000;
         }
 
         .glass {
@@ -680,10 +987,44 @@
             transform: translateY(-1px);
         }
         
+        /* Dynamic active states - preserve original button color */
+        .btn-glass[data-color="red"].active, 
+        .active-glass.color-attention {
+            background: rgba(239, 68, 68, 0.15) !important;
+            border-left: 4px solid #ef4444 !important;
+            box-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
+            color: #991b1b !important;
+        }
+        
+        .btn-glass[data-color="green"].active,
+        .active-glass.color-success {
+            background: rgba(16, 185, 129, 0.15) !important;
+            border-left: 4px solid #10b981 !important;
+            box-shadow: 0 0 8px rgba(16, 185, 129, 0.4);
+            color: #065f46 !important;
+        }
+        
+        .btn-glass[data-color="yellow"].active,
+        .active-glass.color-warning {
+            background: rgba(245, 158, 11, 0.15) !important;
+            border-left: 4px solid #f59e0b !important;
+            box-shadow: 0 0 8px rgba(245, 158, 11, 0.4);
+            color: #92400e !important;
+        }
+        
+        .btn-glass[data-color="blue"].active,
+        .active-glass.color-info {
+            background: rgba(59, 130, 246, 0.15) !important;
+            border-left: 4px solid #3b82f6 !important;
+            box-shadow: 0 0 8px rgba(59, 130, 246, 0.4);
+            color: #1d4ed8 !important;
+        }
+
         .active-glass {
-            background: rgba(255, 255, 255, 0.5) !important;
-            border-color: #3b82f6 !important;
-            box-shadow: 0 0 10px rgba(59, 130, 246, 0.2);
+            background: rgba(59, 130, 246, 0.1) !important;
+            border-left: 4px solid #3b82f6 !important;
+            box-shadow: 0 0 8px rgba(59, 130, 246, 0.3);
+            color: #1d4ed8 !important;
         }
 
         /* Load Levels Colors */
@@ -833,67 +1174,98 @@
         }
     </style>
 </head>
-<body>
+<body class="show-cp show-delays">
+    <!-- Premium Loading Spinner -->
+    <div id="page-loader">
+        <div class="spinner-inner"></div>
+        <div class="loader-text text-uppercase smaller">Calculando Planificación...</div>
+    </div>
+
+    {% include "produccion/global_navbar.html" %}
     <div class="container-fluid p-0">
-        <div class="top-bar d-flex justify-content-between align-items-center">
-            <div class="d-flex align-items-center">
-                <div class="bg-primary p-2 rounded-3 me-3" style="box-shadow: 0 8px 20px rgba(59, 130, 246, 0.3);">
-                    <i class="fas fa-chart-gantt text-white fs-4"></i>
-                </div>
-                <div>
-                    <h4 class="m-0 fw-bold" style="letter-spacing: -0.5px; font-size: 1.25rem;">Planificación <span class="text-primary">Visual</span></h4>
-                    <small class="text-muted" style="font-size: 0.7rem;">Control de línea ABBAMAT</small>
-                </div>
-            </div>
-            
+
+        <div class="gantt-header">
+        <div class="top-bar d-flex justify-content-end align-items-center">
              <div class="d-flex align-items-center gap-2">
 
-                 <!-- 1. Mode Group -->
-                 <div class="bg-light p-1 rounded-pill border d-flex me-2">
-                     <a href="#" id="toggleOriginalMode"
-                        class="btn-modern rounded-pill px-3 py-1 {% if request.GET.plan_mode == 'original' %}btn-primary-modern shadow-sm{% else %}text-muted{% endif %}"
-                        style="font-size: 0.8rem; height: 32px;"
-                        title="Automático: Datos SQL">
-                         <i class="fas fa-magic"></i> Auto
-                     </a>
-                     <a href="#" id="toggleManualMode"
-                        class="btn-modern rounded-pill px-3 py-1 {% if request.GET.plan_mode != 'original' %}btn-primary-modern shadow-sm{% else %}text-muted{% endif %}"
-                        style="font-size: 0.8rem; height: 32px;"
-                        title="Manual: Ajustes manuales">
-                         <i class="fas fa-hand-pointer"></i> Manual
-                     </a>
-                 </div>
 
                  <!-- 2. AI Button -->
-                  <button id="btn-request-ai" class="btn-modern btn-ai rounded-pill px-3" style="height: 34px; font-size: 0.8rem;" title="Optimizar con IA">
-                      <i class="fas fa-brain"></i> Sugerencia IA
-                  </button>
+
 
                   <div class="vr mx-2 bg-secondary opacity-25" style="height: 25px;"></div>
                   
-                  <!-- 3. Actions Dropdown -->
-                  <div class="dropdown me-1">
-                      <button class="btn-modern glass rounded-pill no-caret px-3" style="height: 34px; border-color: #e2e8f0; color: #475569;" type="button" data-bs-toggle="dropdown">
-                          <i class="fas fa-plus-circle text-primary"></i> Herramientas
+                  <!-- Visual Toggles (Direct Inline Control) -->
+                  <div class="d-flex align-items-center gap-1">
+                      <button id="btn-toggle-projects" 
+                              class="btn-modern glass rounded-pill px-2 d-none" 
+                              style="height: 34px; border-color: #e2e8f0; color: #475569;" 
+                              data-bs-toggle="offcanvas" 
+                              data-bs-target="#activeProjectsOffcanvas" 
+                              title="Proyectos en Plan">
+                          <i class="fas fa-project-diagram text-primary"></i> <span id="activeProjectsCountBadge" class="badge bg-secondary ms-1">0</span>
                       </button>
-                      <ul class="dropdown-menu dropdown-menu-end dropdown-menu-premium mt-2">
-                          <li>
-                              <a class="dropdown-item dropdown-item-premium" href="#" id="btn-toggle-arrows">
-                                  <i class="fas fa-project-diagram me-2 text-primary"></i> Ver Dependencias
-                              </a>
-                          </li>
-                          <li><hr class="dropdown-divider"></li>
-                          <li>
-                              <a class="dropdown-item dropdown-item-premium" href="#" id="btnPlanillasDiarias" onclick="openPlanillasDiarias()">
-                                  <i class="fas fa-file-alt me-2 text-warning"></i> Planillas Diarias
-                              </a>
-                          </li>
-                          <li>
-                              <a class="dropdown-item dropdown-item-premium" href="#" id="btnExport">
-                                  <i class="fas fa-file-excel me-2 text-success"></i> Exportar Excel
-                              </a>
-                          </li>
-                      </ul>
+                      <button id="btn-toggle-arrows" 
+                              class="btn-modern glass rounded-pill px-2" 
+                              style="height: 34px; border-color: #e2e8f0; color: #475569;" 
+                              onclick="this.classList.toggle('active-glass'); document.getElementById('dependency-layer').classList.toggle('visible'); requestAnimationFrame(function(){ requestAnimationFrame(function(){ if(typeof window.drawDependencies==='function') window.drawDependencies(); }); });"
+                              title="Ver Dependencias">
+                          <i class="fas fa-project-diagram"></i>
+                      </button>
+                      <button id="btn-toggle-cp" class="btn-modern glass rounded-pill px-2 btn-glass" data-color="red" style="height: 34px; border-color: #e2e8f0; color: #475569;" onclick="toggleCriticalPath();" title="Toggle Ruta Crítica">
+                          <i class="fas fa-fire text-danger"></i>
+                      </button>
+                      <button id="btn-toggle-delays" class="btn-modern glass rounded-pill px-2 btn-glass" data-color="yellow" style="height: 34px; border-color: #e2e8f0; color: #475569;" onclick="toggleDelayIndicators();" title="Toggle Atrasos">
+                          <i class="fas fa-clock text-warning"></i>
+                      </button>
+                      <button id="btn-toggle-tooltips" class="btn-modern glass rounded-pill px-2 btn-glass" data-color="blue" style="height: 34px; border-color: #e2e8f0; color: #475569;" onclick="toggleTooltips();" title="Toggle Tooltips">
+                          <i class="fas fa-comment text-primary"></i>
+                      </button>
+                      <button id="btn-filter-ops" 
+                              class="btn-modern glass rounded-pill px-2" 
+                              style="height: 34px; border-color: #e2e8f0; color: #475569;" 
+                              onclick="window.toggleOpFilterSidebar()" 
+                              title="Filtrar Visibilidad de OPs">
+                          <i class="fas fa-filter" style="color: #06b6d4;"></i>
+                      </button>
+                  </div>
+
+                  <div class="vr mx-2 bg-secondary opacity-25" style="height: 25px;"></div>
+                  
+                  <!-- 3. Actions & Cleanup -->
+                  <div class="d-flex align-items-center gap-1">
+                      <button id="btn-graficar-gantt" 
+                              class="btn-modern btn-primary-modern rounded-pill px-3" 
+                              style="height: 34px; border: none;" 
+                              onclick="window.triggerGraficarGantt()"
+                              title="Graficar Gantt">
+                          <i class="fas fa-play me-1"></i> Graficar Gantt
+                      </button>
+
+                      <button id="btn-borrar-plan" 
+                              class="btn-modern glass rounded-pill px-3" 
+                              style="height: 34px; border-color: rgba(239, 68, 68, 0.4); color: #ef4444;" 
+                              onclick="window.confirmClearPlanning()"
+                              title="Limpiar Planificación Visual">
+                          <i class="fas fa-trash-alt me-1"></i> Borrar Plan
+                      </button>
+
+                      <div class="dropdown me-1">
+                          <button class="btn-modern glass rounded-pill no-caret px-3" style="height: 34px; border-color: #e2e8f0; color: #475569;" type="button" data-bs-toggle="dropdown">
+                              <i class="fas fa-tools text-primary"></i> Reportes
+                          </button>
+                          <ul class="dropdown-menu dropdown-menu-end dropdown-menu-premium mt-2">
+                              <li>
+                                  <a class="dropdown-item dropdown-item-premium" href="#" id="btnPlanillasDiarias" onclick="openPlanillasDiarias()">
+                                       <i class="fas fa-file-alt me-2 text-warning"></i> Planillas Diarias
+                                  </a>
+                              </li>
+                              <li>
+                                  <a class="dropdown-item dropdown-item-premium" href="#" id="btnExport">
+                                      <i class="fas fa-file-excel me-2 text-success"></i> Exportar Excel
+                                  </a>
+                              </li>
+                          </ul>
+                      </div>
                   </div>
 
                   <!-- 4. Alerts -->
@@ -919,6 +1291,75 @@
                   <a href="{% url 'planificacion_view' %}?{{ request.GET.urlencode }}" class="btn-modern bg-white rounded-pill border shadow-sm px-3" style="height: 34px; color: #64748b;" title="Volver">
                      <i class="fas fa-chevron-left"></i>
                   </a>
+            </div>
+        </div>
+
+        <!-- Toolbar oculta inputs para compatibilidad JS -->
+        <input type="hidden" name="proyectos" id="proyectos" value="{{ proyectos_value|default:'' }}">
+        <input type="hidden" name="plan_mode" id="plan_mode_hidden" value="{{ plan_mode|default:'manual' }}">
+
+
+        <!-- Modal Guardar Escenario -->
+        <div class="modal fade" id="saveScenarioModal" tabindex="-1" aria-labelledby="saveScenarioModalLabel" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content rounded-4 shadow border-0 overflow-hidden">
+                    <div class="modal-header bg-success text-white py-3 border-0">
+                        <h5 class="modal-title fw-bold" id="saveScenarioModalLabel">
+                            <i class="fas fa-save me-2"></i>Guardar Escenario
+                        </h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body p-4">
+                        <div class="mb-4">
+                            <label class="form-label fw-bold text-muted small text-uppercase mb-3">Opciones de Guardado</label>
+                            <div class="form-check p-3 mb-2 rounded-3 border transition-all hover-bg-light" id="opt-new-container" style="cursor: pointer;">
+                                <input class="form-check-input" type="radio" name="saveOption" id="radioNew" value="new" checked>
+                                <label class="form-check-label w-100" for="radioNew" style="cursor: pointer;">
+                                    <div class="fw-bold text-dark"><i class="fas fa-plus-circle me-1 text-primary"></i>Crear uno nuevo</div>
+                                    <div class="smaller text-muted">Guarda una captura de los movimientos actuales con un nuevo nombre.</div>
+                                </label>
+                            </div>
+                            <div class="form-check p-3 rounded-3 border transition-all hover-bg-light" id="opt-existing-container" style="cursor: pointer;">
+                                <input class="form-check-input" type="radio" name="saveOption" id="radioExisting" value="existing">
+                                <label class="form-check-label w-100" for="radioExisting" style="cursor: pointer;">
+                                    <div class="fw-bold text-dark"><i class="fas fa-edit me-1 text-warning"></i>Sobrescribir existente</div>
+                                    <div class="smaller text-muted">Aplica los cambios actuales sobre un escenario ya guardado.</div>
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <div id="divNewScenario">
+                            <div class="mb-3">
+                                <label for="newScenarioName" class="form-label fw-bold small">Nombre del nuevo escenario:</label>
+                                <input type="text" class="form-control rounded-3" id="newScenarioName" placeholder="Ej: Plan Alternativo B">
+                            </div>
+                        </div>
+                        
+                        <div id="divExistingScenario" style="display: none;">
+                            <div class="mb-3">
+                                <label for="existingScenarioSelect" class="form-label fw-bold small">Seleccionar escenario:</label>
+                                <select class="form-select rounded-3" id="existingScenarioSelect">
+                                    <option value="">-- Seleccionar --</option>
+                                    {% for scenario in all_scenarios %}
+                                        {% if not scenario.es_principal %}
+                                            <option value="{{ scenario.id }}">{{ scenario.nombre }}</option>
+                                        {% endif %}
+                                    {% endfor %}
+                                </select>
+                                <div class="mt-2 p-2 bg-danger bg-opacity-10 text-danger rounded-3 smaller">
+                                    <i class="fas fa-exclamation-triangle me-1"></i>
+                                    Atención: Se perderán los movimientos previos del escenario seleccionado.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer bg-light border-0 py-3">
+                        <button type="button" class="btn btn-outline-secondary rounded-pill px-4" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="button" class="btn btn-success rounded-pill px-4 fw-bold" id="btnConfirmSave">
+                            <i class="fas fa-check me-1"></i>Confirmar Guardado
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -1050,10 +1491,112 @@
                 </div>
             </div>
         </div>
+
+        <!-- Offcanvas para Proyectos Activos (Filtro Gantt) -->
+        <div class="offcanvas offcanvas-end shadow" tabindex="-1" id="activeProjectsOffcanvas" aria-labelledby="activeProjectsOffcanvasLabel" style="width: 380px; border-left: none; z-index: 1060;">
+            <div class="offcanvas-header bg-light border-bottom py-3 px-4">
+                <h5 class="offcanvas-title fw-bold text-dark d-flex align-items-center gap-2" id="activeProjectsOffcanvasLabel">
+                    <i class="fas fa-filter text-primary"></i> Filtro de Proyectos
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+            </div>
+            <div class="offcanvas-body p-0 bg-white">
+                <div class="p-3 bg-light border-bottom text-muted small">
+                    <i class="fas fa-info-circle me-1"></i> Destilda proyectos para ocultarlos del Gantt y liberar el espacio visualmente.
+                </div>
+                <div id="activeProjectsList" class="list-group list-group-flush">
+                    <div class="text-center py-4 text-muted small">Calculando proyectos...</div>
+                </div>
+            </div>
+        </div>
         
         <script>
             // Global State
             const ACTIVE_SCENARIO_ID = "{{ active_scenario.id|default:'' }}";
+
+            // Cleanup function for OpenCode Fix
+            window.executeClearPlanning = function() {
+                try {
+                    // 1. Remover únicamente los bloques de tareas en el timeline
+                    const blocks = document.querySelectorAll('.task-block, [class*="task-block"]');
+                    blocks.forEach(b => b.remove());
+
+                    // 2. Remover únicamente las líneas y rutas SVG de las dependencias
+                    const svgLines = document.querySelectorAll('svg line, svg path');
+                    svgLines.forEach(l => l.remove());
+
+                    console.log("Gantt limpiado visualmente con éxito.");
+                } catch (error) {
+                    console.error("Error al limpiar el DOM:", error);
+                }
+            };
+
+            window.confirmClearPlanning = function() {
+                const modalId = 'clear-planning-modal';
+                if (document.getElementById(modalId)) return;
+
+                const overlay = document.createElement('div');
+                overlay.id = modalId;
+                const s = { 
+                  overlay: {
+                    position:'fixed', inset:0, display:'flex', alignItems:'center', justifyContent:'center', 
+                    backgroundColor:'rgba(15, 23, 42, 0.65)', zIndex: 30000, backdropFilter: 'blur(8px)',
+                    animation: 'fadeIn 0.3s ease'
+                  }, 
+                  card: {
+                    backgroundColor:'white', padding:'40px', borderRadius:'24px', textAlign:'center',
+                    maxWidth: '400px', width: '92%', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)',
+                    animation: 'slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
+                  }, 
+                  iconCircle: {
+                    margin:'0 auto 24px', borderRadius:'50%', width:'72px', height:'72px',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', fontSize: '32px'
+                  }, 
+                  title: { fontSize: '1.4rem', fontWeight: '800', color: '#1e293b', marginBottom: '12px', letterSpacing: '-0.5px' },
+                  text: { fontSize: '1rem', color: '#64748b', marginBottom: '32px', lineHeight: '1.6' },
+                  btnContainer: { display: 'flex', flexDirection: 'column', gap: '12px' },
+                  confirmBtn: {
+                    borderRadius:'16px', padding:'14px', color:'white', fontWeight:'bold', 
+                    backgroundColor:'#ef4444', border:'none', cursor:'pointer', transition:'all 0.2s'
+                  },
+                  cancelBtn: {
+                    background:'none', border:'none', color:'#64748b', cursor:'pointer', fontWeight:'600', padding:'8px'
+                  }
+                };
+
+                Object.assign(overlay.style, s.overlay);
+                overlay.innerHTML = `
+                    <div style="background:white; padding:40px; border-radius:24px; text-align:center; max-width:400px; width:92%; box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);">
+                        <div id="icon-circle" style="margin:0 auto 24px; border-radius:50%; width:72px; height:72px; display:flex; align-items:center; justify-content:center; background:rgba(239,68,68,0.1); color:#ef4444; font-size:32px;">
+                            <i class="fas fa-trash-alt"></i>
+                        </div>
+                        <h3 style="font-size:1.4rem; font-weight:800; color:#1e293b; margin-bottom:12px;">¿Limpiar Planificación?</h3>
+                        <p style="font-size:1rem; color:#64748b; margin-bottom:32px;">Esta acción eliminará visualmente todas las tareas del Gantt. Los cambios no se guardarán en el servidor.</p>
+                        <div style="display:flex; flex-direction:column; gap:12px;">
+                            <button id="confirm-clear-btn" style="border-radius:16px; padding:14px; color:white; font-weight:bold; background:#ef4444; border:none; cursor:pointer;">Sí, limpiar Gantt</button>
+                            <button id="cancel-clear-btn" style="background:none; border:none; color:#64748b; cursor:pointer; font-weight:600;">Cancelar</button>
+                        </div>
+                    </div>
+                `;
+
+                document.body.appendChild(overlay);
+
+                const closeModal = () => overlay.remove();
+
+                const confirmBtn = document.getElementById('confirm-clear-btn');
+                const cancelBtn = document.getElementById('cancel-clear-btn');
+
+                confirmBtn.addEventListener('click', function(e) {
+                    e.preventDefault(); // CORTE DE PETICIONES DE RED
+                    e.stopPropagation();
+                    window.executeClearPlanning(); // EJECUCIÓN QUIRÚRGICA
+                    closeModal(); // CIERRE INSTANTÁNEO
+                });
+
+                cancelBtn.addEventListener('click', closeModal);
+                overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
+            };
 
             // Toggle detail rows in analysis cards
             window.toggleDetail = function(id) {
@@ -1266,7 +1809,7 @@
     </div>
 
     <!-- Notification Center Offcanvas -->
-    <div class="offcanvas offcanvas-end glass" tabindex="-1" id="notificationCenter" aria-labelledby="notificationCenterLabel" style="width: 400px; border-left: 1px solid rgba(255,255,255,0.2);">
+    <div class="offcanvas offcanvas-end glass" data-bs-backdrop="false" tabindex="-1" id="notificationCenter" aria-labelledby="notificationCenterLabel" style="width: 400px; border-left: 1px solid rgba(255,255,255,0.2);">
         <div class="offcanvas-header bg-primary text-white">
             <h5 class="offcanvas-title fw-bold" id="notificationCenterLabel">
                 <i class="fas fa-bell me-2"></i>Centro de Notificaciones
@@ -1474,65 +2017,121 @@
         </div>
     </div>
 
-        <div class="gantt-container">
-            <!-- Header Row -->
-            <div class="d-flex">
-                <div class="machine-column">
-                    <div class="machine-header-cell border-end border-secondary border-opacity-25">MÁQUINA</div>
-                </div>
-                <div class="gantt-body" id="header-container" style="overflow: hidden; border-bottom: 1px solid var(--border);"> 
-                    <div class="time-header-row">
-                        {% for hour in time_columns %}
-                        <div class="time-hour {% ifchanged hour.date %}day-start{% endifchanged %}" style="position: relative;">
-                            {% ifchanged hour.date %}
-                            <div style="position: absolute; top: 4px; left: 6px; font-size: 0.6rem; font-weight: 800; color: var(--accent); white-space: nowrap; text-transform: uppercase;">
-                                {{ hour|date:"d M" }} <span class="opacity-50">• {{ hour|date:"D" }}</span>
-                            </div>
-                            {% endifchanged %}
-                            <span style="margin-top: 14px; font-weight: 500;">{{ hour|date:"H" }}</span>
-                        </div>
-                        {% endfor %}
-                    </div>
+        <div class="gantt-container {% if plan_mode == 'original' %}gantt-expanded{% endif %}">
+            <!-- Warning: Rendering Capped -->
+            {% if any_rendering_capped %}
+            <div class="alert alert-warning m-2 p-2 smaller d-flex align-items-center gap-2 border-warning shadow-sm" style="background: #fffbeb; position: sticky; left: 0; z-index: 1000;">
+                <i class="fas fa-exclamation-triangle text-warning"></i>
+                <div>
+                    <strong>Vista optimizada:</strong> Se ha limitado el número de bloques por máquina debido a la alta saturación.
                 </div>
             </div>
-
-            <!-- Body Rows -->
-            <div class="d-flex" id="gantt-body-scroll" style="flex: 1; overflow: auto;">
-                <div class="machine-column border-end border-secondary border-opacity-25">
-                    {% for row in timeline_data %}
-                    <div class="machine-row-cell">
-                        <span class="fw-bold text-dark mb-1">{{ row.machine.nombre }}</span>
-                        <div class="d-flex align-items-center gap-1">
-                            <span class="badge bg-secondary bg-opacity-25 text-muted fw-mono" style="font-size: 0.65rem;">ID: {{ row.machine.id_maquina }}</span>
-                            <i class="fas fa-microchip text-primary opacity-50" style="font-size: 0.7rem;"></i>
+            {% endif %}
+            
+            <div id="gantt-body-scroll" style="flex: 1; overflow: auto; display: flex; flex-direction: column; position: relative;">
+                {% if not timeline_data %}
+                <div class="d-flex flex-column align-items-center justify-content-center py-5 text-muted" style="min-height: 400px; background: var(--bg-deep); border-radius: 12px; margin: 15px;">
+                    <div class="p-4 rounded-circle bg-white shadow-sm border d-flex align-items-center justify-content-center mb-3" style="width: 80px; height: 80px;">
+                        <i class="fas fa-project-diagram fa-2x text-primary opacity-75 animate-pulse"></i>
+                    </div>
+                    <h5 class="fw-bold text-dark">Carga Limpia de Gantt</h5>
+                    <p class="small text-muted text-center px-4" style="max-width: 480px; line-height: 1.6;">
+                        El cálculo automático al ingresar ha sido desactivado para optimizar el rendimiento de la aplicación.
+                        Presioná el botón <strong class="text-primary">Graficar Gantt</strong> en la barra superior para procesar y visualizar la planificación.
+                    </p>
+                    <button class="btn btn-primary rounded-pill px-4 py-2 mt-3 shadow-sm border-0 fw-bold" style="background: linear-gradient(135deg, #2563eb, #1d4ed8); display: flex; align-items: center; gap: 8px; font-size: 0.9rem;" onclick="window.triggerGraficarGantt()">
+                        <i class="fas fa-play" style="font-size: 0.75rem;"></i> Graficar Gantt
+                    </button>
+                </div>
+                {% else %}
+                <div class="timeline-area" style="min-width: calc(200px + {{ total_width }}px); position: relative; display: flex; flex-direction: column; flex: 1;">
+                    <!-- 1. HEADER ROW (Sticky Top) -->
+                    <div class="d-flex sticky-top" style="z-index: 100; background: var(--bg-header); border-bottom: 2px solid var(--border); width: 100%;">
+                        <div class="machine-column" style="z-index: 101;">
+                            <div class="machine-header-cell border-end border-secondary border-opacity-25">MÁQUINA</div>
+                        </div>
+                        <div class="gantt-body" id="header-container" style="overflow: visible; flex: 1;"> 
+                            <div class="time-header-row" style="width: {{ total_width }}px;">
+                                {% for col in time_columns %}
+                                    {% if col.is_day_start and not forloop.first %}
+                                        <div class="day-gap-separator"></div>
+                                    {% endif %}
+                                    <div class="time-hour {% if col.is_day_start %}day-start{% endif %}" style="position: relative;">
+                                        {% if col.is_day_start %}
+                                        <div style="position: absolute; top: 6px; left: 8px; font-size: 0.85rem; font-weight: 800; color: var(--accent); white-space: nowrap; text-transform: uppercase;">
+                                            {{ col.datetime|date:"d M" }} <span class="opacity-50">• {{ col.datetime|date:"D" }}</span>
+                                        </div>
+                                        {% endif %}
+                                        <span style="margin-top: 20px; font-weight: 600;">{{ col.datetime|date:"H" }}</span>
+                                    </div>
+                                {% endfor %}
+                            </div>
                         </div>
                     </div>
-                    {% endfor %}
-                </div>
-                
-                <div class="timeline-area" style="position: relative;">
-                    <!-- SVG Layer for Dependencies -->
-                    <svg id="dependency-layer" style="position: absolute; top:0; left:0; width: 100%; height: 100%; pointer-events: none; z-index: 2;"></svg>
-                    <!-- Task Rows -->
-                    {% for row in timeline_data %}
-                    <div class="task-row" 
-                         style="width: {{ time_columns|length|multiply:40 }}px;"
-                         data-machine-id="{{ row.machine.id_maquina }}">
-                        <!-- Task blocks -->
-                        {% for task in row.tasks %}
-                            {% with proj_color=task.ProyectoCode|string_to_color %}
-                            <div class="task-block {% if task.segment_index > 0 %}task-continuation{% endif %}{% if task.is_critical %} critical-task{% endif %}"
-                                 data-task-id="{{ task.Idorden }}"
+
+                    
+                    <!-- SVG Layer for Dependencies - Master Universal Overlay -->
+                    <!-- NEVER use display:none here - it breaks getBoundingClientRect -->
+                    <svg id="dependency-layer" pointer-events="none" style="position: absolute; top:0; left:0; width: 100%; height: 100%; pointer-events: none !important; z-index: 5 !important; visibility: visible !important; display: block !important;"></svg>
+                    
+                    <!-- Safe Data Injection for Dependencies -->
+                    <script id="dependencies-data-json" type="application/json">
+                        {{ dependencies_json|safe }}
+                    </script>
+                    
+                    <!-- Diagnostic for Dependencies (Hidden by default, used for verification) -->
+                    <div id="diag-deps" data-count="{{ dependencies_json|length }}" style="display:none;"></div>
+
+                        {% for row in timeline_data %}
+                        <div class="d-flex task-row-wrapper" style="width: 100%;">
+                            <!-- Sticky Machine Label -->
+                            <div class="machine-column border-end border-secondary border-opacity-25" style="z-index: 50;">
+                                <div class="machine-row-cell">
+                                    <span class="fw-bold text-dark mb-1">{{ row.machine.nombre }}</span>
+                                    <div class="d-flex align-items-center gap-1">
+                                        <span class="badge bg-secondary bg-opacity-25 text-muted fw-mono" style="font-size: 0.65rem;">ID: {{ row.machine.id_maquina }}</span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- Task Row Content -->
+                            <div class="task-row" 
+                                 style="width: {{ total_width }}px; position: relative;"
+                                 data-machine-id="{{ row.machine.id_maquina }}">
+                                
+                                <!-- Background Grid (Hours) -->
+                                <div class="grid-bg">
+                                    {% for col in time_columns %}
+                                        {% if col.is_day_start and not forloop.first %}
+                                            <div class="day-gap-separator"></div>
+                                        {% endif %}
+                                        <div class="grid-cell {% if col.is_day_start %}day-start{% endif %}"></div>
+                                    {% endfor %}
+                                </div>
+
+                                <!-- Task blocks -->
+                                {% for task in row.tasks %}
+                                {% if task.visual_width > 0 %}
+                                {% with proj_color=task.ProyectoCode|string_to_color %}
+                                <div id="op-{{ task.Idorden }}-{{ task.segment_index }}" 
+                                     class="task-block {% if task.segment_index > 0 %}task-continuation{% endif %}{% if task.is_critical %} critical-task{% endif %}"
+                                     data-task-id="{{ task.Idorden }}"
+                                 data-project-name="{{ task.ProyectoCode|default:'S/P' }}"
                                  data-color="{% if task.ProyectoCode %}{{ proj_color }}{% else %}#3b82f6{% endif %}"
                                  data-priority="{{ task.OrdenVisual|default:0 }}"
                                  data-critical="{{ task.is_critical|yesno:'true,false' }}"
                                  style="left: {{ task.visual_left|unlocalize }}px; 
                                         width: {{ task.visual_width|unlocalize }}px;
                                         border-left: 6px solid {% if task.ProyectoCode %}{{ proj_color }}{% else %}#3b82f6{% endif %};
-                                        border-top: 1px solid {% if task.ProyectoCode %}{{ proj_color }}{% else %}#3b82f6{% endif %};
-                                        border-right: 1px solid {% if task.ProyectoCode %}{{ proj_color }}{% else %}#3b82f6{% endif %};
-                                        border-bottom: 1px solid {% if task.ProyectoCode %}{{ proj_color }}{% else %}#3b82f6{% endif %};">
+                                        border-top: 1.5px solid {% if task.ProyectoCode %}{{ proj_color }}{% else %}#3b82f6{% endif %};
+                                        border-right: 1.5px solid {% if task.ProyectoCode %}{{ proj_color }}{% else %}#3b82f6{% endif %};
+                                        border-bottom: 1.5px solid {% if task.ProyectoCode %}{{ proj_color }}{% else %}#3b82f6{% endif %};
+                                        opacity: {% if task.segment_index > 0 %}0.6{% else %}1{% endif %};">
                                 
+                                <!-- Anchors for Dependencies -->
+                                <div id="anchor-exit-{{ task.Idorden }}" class="dep-anchor exit" style="position:absolute; right:0; top:50%; width:1px; height:1px;"></div>
+                                <div id="anchor-entry-{{ task.Idorden }}" class="dep-anchor entry" style="position:absolute; left:0; top:50%; width:1px; height:1px;"></div>
+
                                 <div class="task-progress-bg" style="width: {{ task.progress_percent|unlocalize }}%;"></div>
 
                                  {% if task.is_critical and task.segment_index == 0 %}
@@ -1540,13 +2139,14 @@
                                  {% endif %}
 
                                  {% if task.is_delayed and task.segment_index == 0 %}
-                                     <div class="delay-badge" title="Proyecto con {{ task.delay_days }} días de retraso">
+                                     <div class="delay-badge"
+                                          style="{% if task.badge_stagger %}top: -32px; z-index: 21;{% endif %}">
                                          <i class="fas fa-exclamation-triangle me-1"></i>{{ task.delay_days }}d ATRASO
                                      </div>
                                  {% endif %}
 
                                  {% if task.is_moved and task.segment_index == 0 %}
-                                     <div class="moved-badge" title="Originalmente en: {{ task.original_machine_name }}">
+                                     <div class="moved-badge">
                                          <i class="fas fa-exchange-alt me-1"></i>DE: {{ task.original_machine_name }}
                                      </div>
                                  {% endif %}
@@ -1558,8 +2158,8 @@
                                         {% if task.is_pinned %}<i class="fas fa-thumbtack" style="font-size: 0.55rem; opacity: 0.7;"></i>{% endif %}
                                         {% if task.porcentaje_solapamiento > 0 %}<i class="fas fa-layer-group" style="font-size: 0.55rem; opacity: 0.7;"></i>{% endif %}
                                     </div>
-                                    <!-- Card: Línea 2 - Número de OP -->
-                                    <div class="task-card-op">OP {{ task.Idorden }}</div>
+                                    <!-- Card: Línea 2 - Denominación (Replaces OP) -->
+                                    <div class="task-card-op">{{ task.Denominacion|default:task.Idorden }}</div>
                                 {% else %}
                                     <div class="task-card-project" style="color: {% if task.ProyectoCode %}{{ proj_color }}{% else %}#3b82f6{% endif %}; opacity: 0.5;">
                                         {{ task.ProyectoCode|default:"" }}
@@ -1580,7 +2180,7 @@
                                             {% if task.is_critical %}
                                                 <span class="badge" style="background: linear-gradient(135deg,#ef4444,#f97316); font-size:0.65rem;"><i class="fas fa-fire me-1"></i>RUTA CRÍTICA</span>
                                             {% endif %}
-                                            <span class="badge bg-primary bg-opacity-25 text-primary border border-primary border-opacity-25 px-2">OP: {{ task.Idorden }}</span>
+                                            <span class="badge bg-primary text-white border-0 px-2 shadow-sm" style="font-size: 0.65rem;">OP: {{ task.Idorden }}</span>
                                         </div>
                                     </div>
 
@@ -1609,18 +2209,20 @@
                                     <!-- Hours -->
                                     <div class="tooltip-section">
                                         <div class="row g-2">
+                                            {% with h_tot=task.Tiempo|multiply:task.cantidad_final h_real=task.Tiempo|multiply:task.cantidad_producida %}
                                             <div class="col-4">
                                                 <div class="tooltip-label">Horas Totales</div>
-                                                <div class="tooltip-value">{{ task.Tiempo|multiply:task.cantidad_final|floatformat:2 }}h</div>
+                                                <div class="tooltip-value">{{ h_tot|format_hours }}</div>
                                             </div>
                                             <div class="col-4 border-start border-white border-opacity-10 ps-2">
                                                 <div class="tooltip-label">Realizadas</div>
-                                                <div class="tooltip-value text-success">{{ task.Tiempo|multiply:task.cantidad_producida|floatformat:2 }}h</div>
+                                                <div class="tooltip-value text-success">{{ h_real|format_hours }}</div>
                                             </div>
                                             <div class="col-4 border-start border-white border-opacity-10 ps-2">
                                                 <div class="tooltip-label">Por Hacer</div>
-                                                <div class="tooltip-value text-warning">{% if task.duration_task %}{{ task.duration_task|floatformat:2 }}{% else %}{{ task.duration_real|floatformat:2 }}{% endif %}h</div>
+                                                <div class="tooltip-value" style="color: #ffcc00;">{{ h_tot|subtract:h_real|format_hours }}</div>
                                             </div>
+                                            {% endwith %}
                                         </div>
                                     </div>
 
@@ -1628,29 +2230,27 @@
                                     <div class="tooltip-section">
                                         <div class="row g-2 mb-2">
                                             <div class="col-6">
-                                                <div class="tooltip-label">Cant. Tarea</div>
-                                                <div class="tooltip-value">{{ task.cantidad_final|floatformat:0 }} unid.</div>
+                                                <div class="tooltip-label">PROGRESO TAREA</div>
+                                                <div class="tooltip-value">
+                                                    <span style="color: #00f2ff; font-weight: bold;">{{ task.cantidad_producida|floatformat:0 }}</span> / {{ task.cantidad_final|floatformat:0 }} piezas
+                                                </div>
                                             </div>
                                             <div class="col-6">
-                                                <div class="tooltip-label">Total Proyecto</div>
-                                                <div class="tooltip-value" style="color: #00f2ff;">{{ task.Cantidad_Proyecto|floatformat:0 }} unid.</div>
+                                                <div class="tooltip-label">OBJETIVO GLOBAL</div>
+                                                <div class="tooltip-value" style="color: #f8fafc;">{{ task.Cantidad_Proyecto|floatformat:0 }} piezas</div>
                                             </div>
                                         </div>
                                         <div class="d-flex justify-content-between align-items-end mb-2">
                                             <div>
                                                 <div class="tooltip-label">Avance Global del Proyecto</div>
-                                                <div class="tooltip-value">{{ task.cantidad_producida|floatformat:0 }} / {{ task.Cantidad_Proyecto|floatformat:0 }} unid.</div>
+                                                <div class="tooltip-value">{{ task.Horas_Realizadas_Proyecto|format_hours }} / {{ task.Horas_Totales_Proyecto|format_hours }}</div>
                                             </div>
                                             <div class="text-end">
-                                                {% with total_avance=task.cantidad_producida|multiply:100 %}
-                                                <span class="fs-5 fw-bold text-success">{{ total_avance|multiply:1|divide:task.Cantidad_Proyecto|floatformat:1 }}%</span>
-                                                {% endwith %}
+                                                <span class="fs-5 fw-bold text-success">{{ task.Porcentaje_Avance_Proyecto|floatformat:1 }}%</span>
                                             </div>
                                         </div>
                                         <div class="progress" style="height: 6px; background: rgba(255,255,255,0.1); border-radius: 10px;">
-                                            {% with pct=task.cantidad_producida|multiply:100 %}
-                                            <div class="progress-bar bg-success shadow-sm" style="width: {{ pct|multiply:1|divide:task.Cantidad_Proyecto }}%; border-radius: 10px;"></div>
-                                            {% endwith %}
+                                            <div class="progress-bar bg-success shadow-sm" style="width: {{ task.Porcentaje_Avance_Proyecto }}%; border-radius: 10px;"></div>
                                         </div>
                                     </div>
 
@@ -1670,6 +2270,7 @@
                                 </div>
                             </div>
                             {% endwith %}
+                            {% endif %}
                         {% endfor %}
 
                         <!-- Maintenance Blocks -->
@@ -1710,59 +2311,205 @@
                                 </div>
                             </div>
                         {% endfor %}
-                    </div>
-                    {% endfor %}
+                    </div> <!-- End Task Row -->
+                </div> <!-- End Task Row Wrapper -->
+                {% endfor %}
                 </div>
+                {% endif %}
             </div>
         </div>
     </div>
 
-    <!-- Critical Path Toggle Button -->
-    <button class="cp-legend-btn" id="cpToggleBtn" onclick="toggleCriticalPath()" title="Mostrar/Ocultar Ruta Crítica">
-        <i class="fas fa-fire"></i>
-        <span id="cpBtnText">Ruta Crítica</span>
-    </button>
+    <!-- Controles Flotantes eliminados por solicitud del usuario (Movidos a Herramientas) -->
     
     <script src="https://cdn.jsdelivr.net/npm/interactjs/dist/interact.min.js"></script>
     <script>
     // --- DEBUG INIT ---
     console.log("!!! SCRIPT CARGADO !!!");
 
-    // Global Configuration
-    const START_SIMULATION_ISO = "{{ today|date:'c' }}"; // ISO format for JS
+    // Global Configuration & State (Universal Scope)
+    window.START_SIMULATION_ISO = "{{ today|date:'c' }}"; 
 
-    // ============================================================
-    // CRITICAL PATH TOGGLE
-    // ============================================================
-    let cpVisible = true;
-
-    function toggleCriticalPath() {
-        cpVisible = !cpVisible;
-        const btn = document.getElementById('cpToggleBtn');
-        const btnText = document.getElementById('cpBtnText');
-        const allTasks = document.querySelectorAll('.task-block');
-        const criticalTasks = document.querySelectorAll('.task-block.critical-task');
-
-        if (!cpVisible) {
-            // Dim all non-critical tasks
-            allTasks.forEach(t => {
-                if (!t.classList.contains('critical-task')) {
-                    t.style.opacity = '0.3';
-                    t.style.filter = 'grayscale(80%)';
-                }
-            });
-            btn.classList.add('dimmed');
-            btnText.textContent = 'Mostrar Todo';
-        } else {
-            // Restore all
-            allTasks.forEach(t => {
-                t.style.opacity = '';
-                t.style.filter = '';
-            });
-            btn.classList.remove('dimmed');
-            btnText.textContent = 'Ruta Crítica';
+    window.triggerGraficarGantt = function() {
+        // Show page loader inmediatamente para feedback visual
+        const loader = document.getElementById('page-loader');
+        if (loader) {
+            loader.style.display = 'flex';
+            loader.style.opacity = '1';
         }
+
+        // ──────────────────────────────────────────────────────────────────
+        // PASO 1: Capturar parámetros actuales y estado del DOM
+        // ──────────────────────────────────────────────────────────────────
+        const currentParams = new URLSearchParams(window.location.search);
+        const scenarioId = currentParams.get('scenario_id') || '';
+        const planMode = currentParams.get('plan_mode') || 'manual';
+        
+        // Obtener proyectos directamente desde la URL o el input si existe
+        const proyectosInput = document.getElementById('proyectos');
+        const proyectosVal = proyectosInput ? proyectosInput.value.trim() : currentParams.get('proyectos');
+
+        // Marcar en sessionStorage que ya graficamos (para persistencia de navegación)
+        sessionStorage.setItem('ganttYaGraficado', 'true');
+
+        // ──────────────────────────────────────────────────────────────────
+        // PASO 2: Redirigir a planificacion/visual con graficar=1
+        // Modificado por petición del usuario: puramente de lectura (GET),
+        // sin llamadas a métodos destructivos (POST) en el backend.
+        // ──────────────────────────────────────────────────────────────────
+        const url = new URL("{% url 'planificacion_visual' %}", window.location.origin);
+        url.searchParams.set('graficar', '1');
+        if (scenarioId && scenarioId !== 'null') url.searchParams.set('scenario_id', scenarioId);
+        // Enviar explícitamente plan_mode=auto para recalcular posiciones ignorando pines
+        url.searchParams.set('plan_mode', 'auto');
+        
+        // Persistir la lista de proyectos en la redirección
+        if (proyectosVal) {
+            url.searchParams.set('proyectos', proyectosVal);
+        }
+
+        window.location.href = url.toString();
+    };
+
+    
+    // Safety check for dependencies data
+    const depDataEl = document.getElementById('dependencies-data-json');
+    try {
+        window.dependenciesData = depDataEl ? JSON.parse(depDataEl.textContent) : [];
+    } catch(e) {
+        console.error("GanttEngine: Error parsing dependency JSON", e);
+        window.dependenciesData = [];
     }
+    
+    window.tooltipsVisible = true;
+    window.delaysVisible = true;
+    window.cpVisible = true;
+    
+    console.log("GanttEngine: Global data initialized.", window.dependenciesData.length, "dependencies.");
+    
+    // --- GLOBAL INTERFACE FUNCTIONS ---
+    window.toggleTooltips = function() {
+        window.tooltipsVisible = !window.tooltipsVisible;
+        const btn  = document.getElementById('btn-toggle-tooltips');
+        const icon = btn ? btn.querySelector('i') : null;
+        const gt   = document.getElementById('global-tooltip');
+
+        if (window.tooltipsVisible) {
+            document.body.classList.remove('hide-tooltips');
+            if (btn)  btn.classList.add('active-glass');
+            if (icon) icon.className = 'fas fa-comment text-primary';
+        } else {
+            document.body.classList.add('hide-tooltips');
+            if (btn)  btn.classList.remove('active-glass');
+            if (icon) icon.className = 'fas fa-comment-slash text-secondary';
+            if (gt)   gt.classList.remove('tt-visible');
+        }
+    };
+
+    window.toggleCriticalPath = function() {
+        window.cpVisible = !window.cpVisible;
+        const body = document.body;
+        const btn = document.getElementById('btn-toggle-cp');
+        if (!window.cpVisible) {
+            body.classList.remove('show-cp');
+            if (btn) btn.classList.remove('active');
+        } else {
+            body.classList.add('show-cp');
+            if (btn) btn.classList.add('active');
+        }
+    };
+
+    window.toggleDelayIndicators = function() {
+        window.delaysVisible = !window.delaysVisible;
+        const body = document.body;
+        const btn = document.getElementById('btn-toggle-delays');
+        if (!window.delaysVisible) {
+            body.classList.remove('show-delays');
+            if (btn) btn.classList.remove('active');
+        } else {
+            body.classList.add('show-delays');
+            if (btn) btn.classList.add('active');
+        }
+    };
+
+    window.toggleTooltips = function() {
+        window.tooltipsVisible = !window.tooltipsVisible;
+        const btn = document.getElementById('btn-toggle-tooltips');
+        if (btn) {
+            if (window.tooltipsVisible) {
+                btn.classList.add('active');
+            } else {
+                btn.classList.remove('active');
+            }
+        }
+    };
+
+
+    // --- TOOLTIP ENGINE - LIMPIO Y DEFINITIVO ---
+    document.addEventListener('DOMContentLoaded', function() {
+        const gt = document.getElementById('global-tooltip');
+        if (!gt) { console.error('GanttEngine: #global-tooltip no encontrado en el DOM'); return; }
+        console.log('GanttEngine: Tooltip Engine OK');
+
+        function showTT(block, e) {
+            if (!window.tooltipsVisible) return;
+            const tmpl = block.querySelector('.task-tooltip');
+            if (!tmpl) return;
+            
+            // --- AUDIT LOGGING ---
+            const auditData = block.getAttribute('data-project-audit');
+            if (auditData) {
+                try {
+                    const data = JSON.parse(auditData);
+                    const projectCode = block.getAttribute('data-project-code');
+                    console.group(`📊 AUDIT PROYECTO: ${projectCode}`);
+                    console.log(`Auditoría de OPs para el cálculo del avance global:`);
+                    console.table(data);
+                    console.groupEnd();
+                } catch(err) {
+                    console.warn("GanttEngine: Error al leer datos de auditoría", err);
+                }
+            }
+
+            gt.innerHTML = tmpl.innerHTML;
+            gt.style.display = 'block';
+            gt.classList.add('tt-visible');
+            moveTT(e);
+        }
+
+        function moveTT(e) {
+            const pad = 20;
+            let x = e.clientX + pad;
+            let y = e.clientY - (gt.offsetHeight / 2);
+            if (x + gt.offsetWidth  > window.innerWidth  - pad) x = e.clientX - gt.offsetWidth  - pad;
+            if (y + gt.offsetHeight > window.innerHeight - pad) y = window.innerHeight - gt.offsetHeight - pad;
+            if (x < pad) x = pad;
+            if (y < pad) y = pad;
+            gt.style.left = x + 'px';
+            gt.style.top  = y + 'px';
+        }
+
+        function hideTT() {
+            gt.style.display = 'none';
+            gt.classList.remove('tt-visible');
+        }
+
+        document.addEventListener('mouseover', function(e) {
+            const block = e.target.closest('.task-block');
+            if (block) showTT(block, e);
+        });
+
+        document.addEventListener('mousemove', function(e) {
+            if (gt.classList.contains('tt-visible')) moveTT(e);
+        });
+
+        document.addEventListener('mouseout', function(e) {
+            const block = e.target.closest('.task-block');
+            if (block && (!e.relatedTarget || !block.contains(e.relatedTarget))) hideTT();
+        });
+    });
+
+
 
     // Show critical task count on load
     document.addEventListener('DOMContentLoaded', function() {
@@ -1838,286 +2585,14 @@
             });
         }
         
-        interact('.task-block').draggable({
-            listeners: {
-                start (event) {
-                    console.log('DragStart');
-                    const taskEl = event.target;
-                    taskEl.classList.add('is-dragging'); 
-                    taskEl.style.zIndex = '9999';
-                },
-                move (event) {
-                    const target = event.target;
-                    // keep the dragged position in the data-x/data-y attributes
-                    const x = (parseFloat(target.getAttribute('data-x')) || 0) + event.dx;
-                    const y = (parseFloat(target.getAttribute('data-y')) || 0) + event.dy;
+        // Drag and Drop disabled by user request. 
+        // interact('.task-block').draggable({...}) 
+
+            // Dropzone disabled by user request
+            // interact('.task-row').dropzone({...})
         
-                    target.style.transform = `translate(${x}px, ${y}px)`;
         
-                    target.setAttribute('data-x', x);
-                    target.setAttribute('data-y', y);
-                    
-                    // DISABLED drawDependencies for performance/stability during drag
-                    // if (typeof drawDependencies === 'function') drawDependencies();
-                },
-                end (event) {
-                    const taskEl = event.target;
-                    taskEl.classList.remove('is-dragging');
-                    taskEl.style.zIndex = ''; 
-                    
-                    const mouseX = event.client.x;
-                    const mouseY = event.client.y;
-                    
-                    // Reset Visuals
-                    taskEl.style.transform = 'none'; 
-                    taskEl.setAttribute('data-x', 0);
-                    taskEl.setAttribute('data-y', 0);
-
-                    // --- GEOMETRIC DROP DETECTION (MATH > DOM) ---
-                    // Reliable approach: Calculate which row index we are hovering based on Y position
-                    
-                    const bodyScroll = document.getElementById('gantt-body-scroll');
-                    const bodyRect = bodyScroll.getBoundingClientRect();
-                    
-                    // Check if drop is within the Gantt Body Area vertically and horizontally
-                    if (mouseY < bodyRect.top || mouseY > bodyRect.bottom || mouseX < bodyRect.left || mouseX > bodyRect.right) {
-                         console.warn("Drop outside Gantt Body");
-                         return;
-                    }
-
-                    // Calculate relative Y inside the scrollable area
-                    // Need to account for scroll position!
-                    // The rows are direct children of .machine-column (for names) and .timeline-area (for tasks)
-                    // We need the visual rows in .timeline-area
-                    
-                    const timelineArea = document.querySelector('.timeline-area');
-                    const timelineRect = timelineArea.getBoundingClientRect();
-                    
-                    // Check horizontal bounds of timeline (must be to the right of machine headers)
-                    const machineCol = document.querySelector('.machine-column');
-                    const machineColWidth = machineCol ? machineCol.offsetWidth : 0;
-                    
-                    // Visual check: Are we right of the headers?
-                    if (mouseX < bodyRect.left + machineColWidth) {
-                         console.warn("Drop on headers, not timeline");
-                         return;
-                    }
-                    
-                    // Calculate Row Index
-                    // Relative Y from the top of the visible timeline view (bodyRect.top)
-                    // Plus the scrollTop to get absolute Y in the list
-                    const relativeY = mouseY - bodyRect.top + bodyScroll.scrollTop;
-                    const ROW_HEIGHT = 80; // Fixed CSS height
-                    
-                    const rowIndex = Math.floor(relativeY / ROW_HEIGHT);
-                    
-                    console.log(`📏 Math Drop: Y=${mouseY} RelY=${relativeY} Index=${rowIndex}`);
-                    
-                    // Find the corresponding DOM row to get Machine ID
-                    // The rows are in .timeline-area > .task-row
-                    const rows = document.querySelectorAll('.timeline-area .task-row');
-                    
-                    if (rowIndex >= 0 && rowIndex < rows.length) {
-                        const targetRow = rows[rowIndex];
-                        const targetMachineId = targetRow.dataset.machineId;
-                        const taskId = taskEl.dataset.taskId;
-                        
-                        console.log(`🎯 TARGET HIT: Row ${rowIndex} -> Machine ${targetMachineId}`);
-                        
-                        // Calculate Time (Horizontal)
-                        const dropX = mouseX - timelineRect.left + timelineArea.scrollLeft;
-                        let hoursOffset = dropX / 40.0;
-                        if (hoursOffset < 0) hoursOffset = 0;
-                        
-                        const baseDate = new Date(START_SIMULATION_ISO);
-                        baseDate.setMinutes(baseDate.getMinutes() + (hoursOffset * 60));
-                        
-                        const yyyy = baseDate.getFullYear();
-                        const mm = String(baseDate.getMonth() + 1).padStart(2, '0');
-                        const dd = String(baseDate.getDate()).padStart(2, '0');
-                        const hh = String(baseDate.getHours()).padStart(2, '0');
-                        const mn = String(baseDate.getMinutes()).padStart(2, '0');
-                        const ss = String(baseDate.getSeconds()).padStart(2, '0');
-                        
-                        const manualStartStr = `${yyyy}-${mm}-${dd} ${hh}:${mn}:${ss}`;
-                        const newPriority = 5000 + (hoursOffset * 10);
-                        
-                        // Visual Feedback
-                        taskEl.style.opacity = '0.5';
-                        taskEl.style.cursor = 'wait';
-                        
-                        // THE API CALL WAS MOVED TO THE 'ondrop' EVENT OF THE DROPZONE
-                        // THIS 'end' LISTENER SHOULD ONLY HANDLE VISUAL RESET AND STATE
-                        console.log("Drag ended, handing over to ondrop (if applicable)");
-                        
-                        /* 
-                        // DEPRECATED REDUNDANT SAVE
-                        fetch(`/api/set_priority/${taskId}/`, { ... })
-                        */
-
-
-                    } else {
-                        console.warn("Row Index out of bounds");
-                    }
-                }
-            },
-            modifiers: [
-                interact.modifiers.restrictRect({
-                    restriction: '.gantt-container',
-                    endOnly: false
-                })
-            ],
-            inertia: true
-        });
-
-            // Make Rows Dropzones
-            interact('.task-row').dropzone({
-                accept: '.task-block',
-                overlap: 'pointer', // Use POINTER position, not element overlap
-                
-                ondropactivate: function (event) {
-                    event.target.classList.add('drop-active');
-                    console.log("DROPZONE ACTIVATE");
-                },
-                ondragenter: function (event) {
-                    var draggableElement = event.relatedTarget;
-                    var dropzoneElement = event.target;
-                    dropzoneElement.classList.add('drop-target');
-                    draggableElement.classList.add('can-drop');
-                    console.log(">>> ENTER DROPZONE: " + dropzoneElement.dataset.machineId);
-                },
-                ondragleave: function (event) {
-                    event.target.classList.remove('drop-target');
-                    event.relatedTarget.classList.remove('can-drop');
-                    console.log("<<< LEAVE DROPZONE");
-                },
-            ondrop: function (event) {
-                // IMMEDIATE FEEDBACK
-                console.log("EVENTO ONDROP DISPARADO");
-                
-                try {
-                    const taskEl = event.relatedTarget;
-                    let rowEl = event.target;
-                    
-                    // INTENTAR RECUPERAR FILA SI EL DROP CAYO EN UN HIJO O CONTENEDOR
-                    if (!rowEl.classList.contains('task-row')) {
-                        rowEl = rowEl.closest('.task-row');
-                    }
-                    
-                    if (!taskEl) {
-                        console.error("No dragged element found"); 
-                        return;
-                    }
-
-                    if (!rowEl) {
-                        Swal.fire({
-                            title: 'Error de Destino',
-                            text: 'No se detectó la máquina destino. Intenta soltar justo en el centro de la fila.',
-                            icon: 'warning',
-                            customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
-                        });
-                        return;
-                    }
-
-                    const targetMachineId = rowEl.dataset.machineId;
-                    const taskId = taskEl.dataset.taskId;
-                    
-                    if (!targetMachineId) {
-                         Swal.fire('Error Crítico', 'Fila sin ID de máquina.', 'error');
-                         return;
-                    }
-
-                    // --- Calculate Date ---
-                    const timelineContainer = document.querySelector('.timeline-area');
-                    const containerRect = timelineContainer.getBoundingClientRect();
-                    const taskRect = taskEl.getBoundingClientRect();
-                    
-                    // Simple pixel offset from container left
-                    const pixelsFromStart = (taskRect.left - containerRect.left) + timelineContainer.scrollLeft;
-                    let hoursOffset = pixelsFromStart / 40.0;
-                    if (hoursOffset < 0) hoursOffset = 0;
-                    
-                    const baseDate = new Date(START_SIMULATION_ISO);
-                    baseDate.setMinutes(baseDate.getMinutes() + (hoursOffset * 60));
-                    
-                    const offsetMs = baseDate.getTimezoneOffset() * 60000;
-                    const localDate = new Date(baseDate.getTime() - offsetMs);
-                    const manualStartStr = localDate.toISOString().replace('T', ' ').substring(0, 19);
-                    
-                    // --- Priority Logic ---
-                    const newPriority = 5000 + (hoursOffset * 10); 
-
-                    // Show Activity Indicator
-                    taskEl.style.opacity = '0.5';
-                    taskEl.style.cursor = 'wait';
-                    
-                    const payload = {
-                        maquina: targetMachineId,
-                        new_priority: newPriority,
-                        manual_start: manualStartStr
-                    };
-                    console.log("PAYLOAD:", payload);
-                    
-                    fetch(`/api/set_priority/${taskId}/`, {
-                        method: 'POST',
-                        headers: { 
-                            'Content-Type': 'application/json',
-                            'X-CSRFToken': '{{ csrf_token }}'
-                        },
-                        body: JSON.stringify({
-                            ...payload,
-                            scenario_id: ACTIVE_SCENARIO_ID
-                        })
-                    })
-                    .then(response => {
-                        if (!response.ok) throw new Error("Server Error: " + response.statusText);
-                        return response.json();
-                    })
-                    .then(data => {
-                        taskEl.style.opacity = '1';
-                        taskEl.style.cursor = 'pointer';
-                        
-                        if (data.status === 'ok') {
-                            // Visual Success Feedback
-                            taskEl.style.border = "3px solid #00ff00";
-                            taskEl.style.boxShadow = "0 0 15px #00ff00";
-                            
-                            // FORCE RELOAD
-                            setTimeout(() => {
-                                console.log("RELOADING...");
-                                window.location.reload(); 
-                            }, 200);
-                        } else {
-                            alert('⚠️ SERVER ERROR: ' + (data.error || 'Unknown'));
-                        }
-                    })
-                    .catch(err => {
-                        taskEl.style.opacity = '1';
-                        alert('❌ ERROR RED/GUARDADO: ' + err.message);
-                    });
-                    
-                } catch (e) {
-                    alert("CLIENT ERROR EXCEPTION: " + e.message);
-                    console.error(e);
-                }
-                
-                // Cleanup classes
-                try {
-                    event.target.classList.remove('drop-active');
-                    event.target.classList.remove('drop-target');
-                    if (event.relatedTarget) event.relatedTarget.classList.remove('can-drop');
-                } catch(e) {}
-            },
-
-            ondropdeactivate: function (event) {
-                event.target.classList.remove('drop-active');
-                event.target.classList.remove('drop-target');
-            }
-        });
-        
-        // --- DEPENDENCY VISUALIZATION & LINKING ---
-        // Dependency Data injected from View
-        const dependencies = JSON.parse('{{ dependencies_json|safe }}'); 
+        // Dependency Linking Logic (Uses global dependenciesData)
         
         let linkMode = false;
         let selectedPredecessor = null;
@@ -2135,98 +2610,7 @@
         // Resize initially and on window resize usually, but content is static for now
         setTimeout(resizeSVG, 1000); 
 
-        // 2. Draw Dependencies
-        function drawDependencies() {
-            if (!svgLayer) return;
-            // Clear existing
-            while (svgLayer.firstChild) {
-                svgLayer.removeChild(svgLayer.firstChild);
-            }
-            
-            // We define markers PER ARROW to support dynamic colors (SVG <marker> fill must be set)
-            dependencies.forEach(dep => {
-                const predEl = document.querySelector(`.task-block[data-task-id="${dep.pred}"]`);
-                const succEl = document.querySelector(`.task-block[data-task-id="${dep.succ}"]`);
-                
-                if (predEl && succEl) {
-                    drawArrow(predEl, succEl, dep.pred, dep.succ);
-                }
-            });
-        }
-        
-        function drawArrow(el1, el2, predId, succId) {
-            const rect1 = el1.getBoundingClientRect();
-            const rect2 = el2.getBoundingClientRect();
-            const containerRect = timelineArea.getBoundingClientRect();
-            
-            const scrollLeft = timelineArea.scrollLeft;
-            const scrollTop = timelineArea.scrollTop;
-            
-            const x1 = rect1.right - containerRect.left + scrollLeft;
-            const y1 = rect1.top + (rect1.height / 2) - containerRect.top + scrollTop;
-            
-            const x2 = rect2.left - containerRect.left + scrollLeft;
-            const y2 = rect2.top + (rect2.height / 2) - containerRect.top + scrollTop;
-            
-            // Get Dynamic Color
-            const color = el1.dataset.color || '#999';
-            
-            // Create Unique Marker for this line
-            const markerId = `arrowhead-${predId}-${succId}`;
-            
-            const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
-            const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
-            marker.setAttribute('id', markerId);
-            marker.setAttribute('markerWidth', '10');
-            marker.setAttribute('markerHeight', '7');
-            marker.setAttribute('refX', '10');
-            marker.setAttribute('refY', '3.5');
-            marker.setAttribute('orient', 'auto');
-            
-            const polygon = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
-            polygon.setAttribute('points', '0 0, 10 3.5, 0 7');
-            polygon.setAttribute('fill', color); // Set Dynamic Fill
-            
-            marker.appendChild(polygon);
-            defs.appendChild(marker);
-            svgLayer.appendChild(defs);
 
-            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            
-            const midX = (x1 + x2) / 2;
-            const controlOffset = 30;
-            const d = `M ${x1} ${y1} C ${x1 + controlOffset} ${y1}, ${x2 - controlOffset} ${y2}, ${x2} ${y2}`;
-            
-            path.setAttribute('d', d);
-            path.setAttribute('stroke', color); // Set Dynamic Stroke
-            path.setAttribute('stroke-width', '2');
-            path.setAttribute('fill', 'none');
-            path.setAttribute('marker-end', `url(#${markerId})`);
-            path.style.cursor = 'pointer';
-            path.style.pointerEvents = 'stroke'; // Clickable
-            
-            path.addEventListener('click', async (e) => {
-                const result = await Swal.fire({
-                    title: '¿Eliminar Dependencia?',
-                    text: '¿Está seguro de que desea eliminar este vínculo entre tareas?',
-                    icon: 'warning',
-                    showCancelButton: true,
-                    confirmButtonText: 'Sí, eliminar',
-                    cancelButtonText: 'Cancelar',
-                    confirmButtonColor: '#ef4444',
-                    customClass: {
-                        popup: 'premium-swal',
-                        confirmButton: 'premium-confirm',
-                        cancelButton: 'premium-cancel'
-                    }
-                });
-                if (result.isConfirmed) {
-                    unlinkTasks(el1.dataset.taskId, el2.dataset.taskId);
-                }
-            });
-            
-            svgLayer.appendChild(path);
-        }
         
         // 3. Linking Logic
         const linkToggle = document.getElementById('link-mode-toggle');
@@ -2501,69 +2885,15 @@
             });
         });
         
-        // --- Lógica de Portal Tooltip Global ---
-        const globalTooltip = document.createElement('div');
-        globalTooltip.id = 'global-tooltip';
-        document.body.appendChild(globalTooltip);
-
-        function showGlobalTooltip(taskBlock, e) {
-            const template = taskBlock.querySelector('.task-tooltip');
-            if (!template) return;
-
-            globalTooltip.innerHTML = template.innerHTML;
-            globalTooltip.style.display = 'block';
-            globalTooltip.style.opacity = '1';
-            
-            positionGlobalTooltip(e);
-        }
-
-        function positionGlobalTooltip(e) {
-            const padding = 20;
-            let x = e.clientX + padding;
-            let y = e.clientY - (globalTooltip.offsetHeight / 2);
-
-            const rect = globalTooltip.getBoundingClientRect();
-            const vw = window.innerWidth;
-            const vh = window.innerHeight;
-
-            // Colisión Derecha
-            if (x + rect.width > vw - padding) {
-                x = e.clientX - rect.width - padding;
-            }
-
-            // Colisión Abajo
-            if (y + rect.height > vh - padding) {
-                y = vh - rect.height - padding;
-            }
-
-            // Colisión Arriba
-            if (y < padding) {
-                y = padding;
-            }
-
-            globalTooltip.style.left = x + 'px';
-            globalTooltip.style.top = y + 'px';
-        }
-
-        function hideGlobalTooltip() {
-            globalTooltip.style.display = 'none';
-            globalTooltip.style.opacity = '0';
-        }
-
-        document.querySelectorAll('.task-block').forEach(block => {
-            block.addEventListener('mouseenter', (e) => showGlobalTooltip(block, e));
-            block.addEventListener('mousemove', (e) => positionGlobalTooltip(e));
-            block.addEventListener('mouseleave', () => hideGlobalTooltip());
-        });
     });
-    
     </script>
     
-    <!-- Overlap Configuration Modal Script (Separate to ensure proper event handling) -->
+    <!-- Overlap Configuration Modal Script -->
     <script>
     // Initialize global variables FIRST
     window.currentOverlapTaskId = null;
     window.currentOverlapMaquina = null;
+    
     
     document.addEventListener('DOMContentLoaded', function() {
         // ========================================================================
@@ -2774,23 +3104,25 @@
     
     <!-- We need custom template tags for maths 'multiply' and 'time_diff_hours' -->
     <script>
-        // Draw dependencies on load
-        if (typeof drawDependencies === 'function') {
-            console.log("Drawing dependencies...");
-            // Small delay to ensure layout is final
-            setTimeout(drawDependencies, 500);
-        } else {
-             console.warn("drawDependencies function not found!");
-        }
-        
-        // Re-draw on window resize
-        window.addEventListener('resize', () => {
-             if (typeof drawDependencies === 'function') drawDependencies();
+        document.addEventListener('DOMContentLoaded', function() {
+            // Draw dependencies on load
+            if (typeof window.drawDependencies === 'function') {
+                console.log("Drawing dependencies...");
+                // Small delay to ensure layout is final
+                setTimeout(window.drawDependencies, 500);
+            } else {
+                 console.warn("drawDependencies function not found!");
+            }
+            
+            // Re-draw on window resize
+            window.addEventListener('resize', () => {
+                 if (typeof window.drawDependencies === 'function') window.drawDependencies();
+            });
         });
     </script>
     
     <!-- Debug Table -->
-    <div class="mt-5 p-3 bg-white border">
+    <div class="mt-5 p-3 bg-white border" style="display: none;">
         <h5>Debug Data (Check Task 1 & 2 here)</h5>
         <table class="table table-striped table-sm" style="font-size: 0.8rem;">
             <thead>
@@ -2828,6 +3160,19 @@
             const bodyScroll = document.getElementById('gantt-body-scroll');
             const headerScroll = document.getElementById('header-container');
             
+            // Initial Draw
+            setTimeout(() => {
+                if (typeof window.drawDependencies === 'function') {
+                    window.drawDependencies();
+                }
+                // Hide loader
+                const loader = document.getElementById('page-loader');
+                if (loader) {
+                    loader.style.opacity = '0';
+                    setTimeout(() => loader.style.display = 'none', 500);
+                }
+            }, 100);
+
             // Final Initialization for Theme
             initTheme();
         });
@@ -2856,126 +3201,188 @@
             }
         }
         
-        // === DEPENDENCY ARROWS - PREMIUM IMPLEMENTATION ===
-        const dependenciesData = JSON.parse('{{ dependencies_json|safe }}');
-        
-        window.drawArrow = function(el1, el2, predId, succId) {
-            const svgLayer = document.getElementById('dependency-layer');
-            const timelineArea = document.querySelector('.timeline-area');
-            
-            if (!svgLayer || !timelineArea) return;
-            
-            const rect1 = el1.getBoundingClientRect();
-            const rect2 = el2.getBoundingClientRect();
-            const containerRect = timelineArea.getBoundingClientRect();
-            
-            const scrollLeft = timelineArea.scrollLeft;
-            const scrollTop = timelineArea.scrollTop;
-            
-            const x1 = rect1.right - containerRect.left + scrollLeft;
-            const y1 = rect1.top + (rect1.height / 2) - containerRect.top + scrollTop;
-            
-            const x2 = rect2.left - containerRect.left + scrollLeft;
-            const y2 = rect2.top + (rect2.height / 2) - containerRect.top + scrollTop;
-            
-            const color = el1.dataset.color || '#3b82f6';
-            const markerId = `arrowhead-${predId}-${succId}`;
-            
-            // Create marker for arrowhead
-            const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
-            const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
-            marker.setAttribute('id', markerId);
-            marker.setAttribute('markerWidth', '10');
-            marker.setAttribute('markerHeight', '10');
-            marker.setAttribute('refX', '9');
-            marker.setAttribute('refY', '5');
-            marker.setAttribute('orient', 'auto');
-            
-            const pathHead = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            pathHead.setAttribute('d', 'M0,0 L10,5 L0,10 Z');
-            pathHead.setAttribute('fill', color);
-            marker.appendChild(pathHead);
-            defs.appendChild(marker);
-            svgLayer.appendChild(defs);
-            
-            // Create the path (Bézier curve for premium look)
-            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            const cp1x = x1 + (x2 - x1) * 0.4;
-            const cp2x = x1 + (x2 - x1) * 0.6;
-            
-            const d = `M ${x1} ${y1} C ${cp1x} ${y1}, ${cp2x} ${y2}, ${x2} ${y2}`;
-            
-            path.setAttribute('d', d);
-            path.setAttribute('stroke', color);
-            path.setAttribute('stroke-width', '2');
-            path.setAttribute('fill', 'none');
-            path.setAttribute('marker-end', `url(#${markerId})`);
-            path.setAttribute('class', 'dependency-path');
-            path.setAttribute('opacity', '0.7');
-            path.style.transition = 'all 0.3s ease';
-            
-            // Interactive arrows
-            path.style.cursor = 'pointer';
-            path.style.pointerEvents = 'stroke';
-            
-            path.addEventListener('mouseenter', () => {
-                path.setAttribute('stroke-width', '4');
-                path.setAttribute('opacity', '1');
-            });
-            
-            path.addEventListener('mouseleave', () => {
-                path.setAttribute('stroke-width', '2');
-                path.setAttribute('opacity', '0.7');
-            });
+        // --- DEPENDENCY ENGINE - ROBUST IMPLEMENTATION ---
+            // dependenciesData ya está parseado en el scope exterior de DOMContentLoaded
 
-            path.addEventListener('click', (e) => {
-                unlinkTasks(predId, succId);
-            });
-            
-            svgLayer.appendChild(path);
-        };
-        
         window.drawDependencies = function() {
             const svgLayer = document.getElementById('dependency-layer');
-            const timelineArea = document.querySelector('.timeline-area');
-            if (!svgLayer || !timelineArea) return;
-            
-            if (!svgLayer.classList.contains('visible')) return;
+            if (!svgLayer) return;
+            // Si el SVG está oculto, no dibujamos (el botón lo activa con display:block)
+            if (svgLayer.style.display === 'none') return;
 
-            // Sync SVG size to timeline area
-            svgLayer.style.width = timelineArea.scrollWidth + 'px';
-            svgLayer.style.height = timelineArea.scrollHeight + 'px';
+            const masterScroller = document.getElementById('gantt-body-scroll');
+            if (!masterScroller) return;
+
+            const totalW = masterScroller.scrollWidth;
+            const totalH = masterScroller.scrollHeight;
+            svgLayer.setAttribute('width', totalW);
+            svgLayer.setAttribute('height', totalH);
+            svgLayer.setAttribute('viewBox', `0 0 ${totalW} ${totalH}`); // Vital para coordenadas absolutas
+            svgLayer.style.width = totalW + 'px';
+            svgLayer.style.height = totalH + 'px';
+            svgLayer.innerHTML = '';
+
+            const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+            svgLayer.appendChild(defs);
+
+            // MAPEAREMOS DOS DICCIONARIOS: Primer y Último segmento por OP
+            const taskMapFirst = {};
+            const taskMapLast = {};
             
-            // Clear existing arrows
-            while (svgLayer.firstChild) {
-                svgLayer.removeChild(svgLayer.firstChild);
-            }
-            
-            // PRE-CACHE task elements for much faster lookup
-            const taskElementsMap = {};
             document.querySelectorAll('.task-block').forEach(el => {
-                if (el.dataset.taskId) taskElementsMap[el.dataset.taskId] = el;
-            });
-
-            let count = 0;
-            // Use requestIdleCallback or chunks if dependencies exceed 500
-            const maxArrows = 1000;
-            const depsToDraw = dependenciesData.slice(0, maxArrows);
-
-            depsToDraw.forEach(dep => {
-                const predEl = taskElementsMap[dep.pred];
-                const succEl = taskElementsMap[dep.succ];
+                const tid = String(el.dataset.taskId || '').split('.')[0];
+                if (!tid) return;
                 
-                if (predEl && succEl) {
-                    window.drawArrow(predEl, succEl, dep.pred, dep.succ);
-                    count++;
+                // Si es el primero que encontramos (o el que tiene el left más pequeño)
+                if (!taskMapFirst[tid] || parseFloat(el.style.left) < parseFloat(taskMapFirst[tid].style.left)) {
+                    taskMapFirst[tid] = el;
+                }
+                // Si es el último (o el que tiene el left más grande)
+                if (!taskMapLast[tid] || parseFloat(el.style.left) > parseFloat(taskMapLast[tid].style.left)) {
+                    taskMapLast[tid] = el;
                 }
             });
-            
-            if (dependenciesData.length > maxArrows) {
-                 console.warn(`⚠️ Demasiadas dependencias (${dependenciesData.length}). Se limitaron a las primeras ${maxArrows}.`);
-            }
-            console.log(`✅ Visualización de Dependencias: ${count} flechas generadas.`);
+
+            const containerRect = masterScroller.getBoundingClientRect();
+            const sL = masterScroller.scrollLeft;
+            const sT = masterScroller.scrollTop;
+            let count = 0;
+
+            const createdMarkers = new Set();
+            const drawnLinks = new Set();
+
+            // Filtrado 1-a-1: Agrupamos para asegurar que cada sucesor tenga solo su predecesor directo más cercano
+            const succToPreds = {};
+            (window.dependenciesData || []).forEach(dep => {
+                const s_pred = String(dep.pred).split('.')[0];
+                const s_succ = String(dep.succ).split('.')[0];
+                if (!succToPreds[s_succ]) succToPreds[s_succ] = [];
+                if (!succToPreds[s_succ].includes(s_pred)) {
+                    succToPreds[s_succ].push(s_pred);
+                }
+            });
+
+            const filteredDeps = [];
+            Object.keys(succToPreds).forEach(s_succ => {
+                const box2 = taskMapFirst[s_succ];
+                if (!box2) return;
+                
+                let bestPred = null;
+                let minDistance = Infinity;
+                
+                succToPreds[s_succ].forEach(s_pred => {
+                    const box1 = taskMapLast[s_pred];
+                    if (!box1) return;
+                    
+                    const left1 = parseFloat(box1.style.left);
+                    const left2 = parseFloat(box2.style.left);
+                    
+                    if (left1 <= left2 + 10) { // Permite un leve solape de 10px
+                        const dist = Math.abs(left2 - left1);
+                        if (dist < minDistance) {
+                            minDistance = dist;
+                            bestPred = s_pred;
+                        }
+                    }
+                });
+                
+                if (bestPred) {
+                    filteredDeps.push({ pred: bestPred, succ: s_succ });
+                }
+            });
+
+            const conexionesDibujadas = new Set();
+
+            filteredDeps.forEach(dep => {
+                const s_pred = dep.pred;
+                const s_succ = dep.succ;
+                
+                // Salimos del ÚLTIMO segmento de la predecesora
+                const box1 = taskMapLast[s_pred];
+                // Entramos al PRIMER segmento de la sucesora
+                const box2 = taskMapFirst[s_succ];
+                
+                if (!box1 || !box2) return;
+                
+                // Si alguna de las tarjetas está oculta por filtro, no dibujamos la flecha
+                if (box1.style.display === 'none' || box2.style.display === 'none') return;
+
+                // Lógica de Consolidación (Group Dependencies)
+                // Usamos el ID del proyecto destino si está disponible, o el ID de la tarea
+                const source_id = dep.source_id || s_pred;
+                const target_id = dep.target_id || box2.dataset.projectName || s_succ;
+                
+                const claveUnica = `${source_id}->${target_id}`;
+                if (conexionesDibujadas.has(claveUnica)) return;
+                conexionesDibujadas.add(claveUnica);
+
+
+                // Las anclas están dentro de los bloques
+                // Usamos selectores dentro del elemento específico de la OP/segmento
+                const anchorExit = box1.querySelector('.dep-anchor.exit');
+                const anchorEntry = box2.querySelector('.dep-anchor.entry');
+                
+                const r1 = (anchorExit || box1).getBoundingClientRect();
+                const r2 = (anchorEntry || box2).getBoundingClientRect();
+
+                const x1 = (r1.right - containerRect.left) + sL;
+                const y1 = (r1.top - containerRect.top + (r1.height / 2)) + sT;
+                const x2 = (r2.left - containerRect.left) + sL;
+                const y2 = (r2.top - containerRect.top + (r2.height / 2)) + sT;
+
+                // Extraemos el color directamente del dataset (color del proyecto)
+                let color = box1.dataset.color || window.getComputedStyle(box1).borderLeftColor || '#3b82f6';
+
+
+                
+                const colorId = color.replace(/[^a-zA-Z0-9]/g, '');
+                
+                if (!createdMarkers.has(colorId)) {
+                    const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+                    marker.setAttribute('id', `arr-${colorId}`);
+                    marker.setAttribute('viewBox', '0 0 10 10');
+                    marker.setAttribute('refX', '8'); marker.setAttribute('refY', '5');
+                    marker.setAttribute('markerWidth', '5'); marker.setAttribute('markerHeight', '5');
+                    marker.setAttribute('orient', 'auto');
+                    marker.setAttribute('pointer-events', 'none');
+                    const mPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                    mPath.setAttribute('d', 'M 0 0 L 10 5 L 0 10 z');
+                    mPath.style.setProperty('fill', color, 'important'); // Forzar color
+                    mPath.setAttribute('pointer-events', 'none');
+                    marker.appendChild(mPath);
+                    defs.appendChild(marker);
+                    createdMarkers.add(colorId);
+                }
+
+                const dx = Math.abs(x2 - x1);
+                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                const curveOffset = Math.min(dx * 0.45, 120);
+                
+                path.setAttribute('d', `M${x1},${y1} C${x1 + curveOffset},${y1} ${x2 - curveOffset},${y2} ${x2},${y2}`);
+                path.setAttribute('fill', 'none');
+                path.setAttribute('marker-end', `url(#arr-${colorId})`);
+                path.classList.add('dependency-path');
+                
+                // Forzar stroke y estilos mediante style !important para evitar clases globales
+                path.style.setProperty('stroke', color, 'important');
+                path.style.setProperty('stroke-width', '2', 'important');
+                path.style.setProperty('stroke-opacity', '0.5', 'important');
+                
+                path.style.transition = 'stroke-opacity 0.2s, stroke-width 0.2s';
+                path.onmouseenter = () => { 
+                    path.style.setProperty('stroke-opacity', '1', 'important'); 
+                    path.style.setProperty('stroke-width', '3', 'important'); 
+                };
+                path.onmouseleave = () => { 
+                    path.style.setProperty('stroke-opacity', '0.5', 'important'); 
+                    path.style.setProperty('stroke-width', '2', 'important'); 
+                };
+                
+                svgLayer.appendChild(path);
+                count++;
+            });
+
+            console.log(`GanttEngine: ${count} flechas dinámicas renderizadas.`);
         };
         
         // Initial drawing and events
@@ -3014,27 +3421,35 @@
                 });
             }
 
-            // Arrow Toggle logic
+            // Arrow Toggle Logic - Reinforced
             const btnArrows = document.getElementById('btn-toggle-arrows');
             const svgLayer = document.getElementById('dependency-layer');
-            if (btnArrows && svgLayer) {
-                btnArrows.addEventListener('click', function() {
-                    svgLayer.classList.toggle('visible');
-                    this.classList.toggle('active-glass');
-                    if (svgLayer.classList.contains('visible')) {
-                        window.drawDependencies();
-                    }
-                });
-            }
             
-            // Sync scroll for body and header
-            const bodyScroll = document.getElementById('gantt-body-scroll');
-            const headerScroll = document.getElementById('header-container');
-            if (bodyScroll && headerScroll) {
-                bodyScroll.addEventListener('scroll', () => {
-                    headerScroll.scrollLeft = bodyScroll.scrollLeft;
-                    // Redraw arrows on scroll if they feel "stuck"
-                });
+            console.log("DEBUG: [Init] Dependency Button exists?", !!btnArrows);
+            console.log("DEBUG: [Init] SVG Layer exists?", !!svgLayer);
+
+            if (btnArrows && svgLayer) {
+                // Estado inicial: apagado
+                svgLayer.style.display = 'none';
+                btnArrows.classList.remove('active-glass');
+
+                btnArrows.onclick = function(e) {
+                    e.preventDefault();
+                    const isOn = svgLayer.style.display === 'none';
+                    
+                    if (isOn) {
+                        // Encender: mostrar SVG y redibujar
+                        svgLayer.style.display = 'block';
+                        this.classList.add('active-glass');
+                        if (typeof window.drawDependencies === 'function') {
+                            window.drawDependencies();
+                        }
+                    } else {
+                        // Apagar: ocultar SVG 
+                        svgLayer.style.display = 'none';
+                        this.classList.remove('active-glass');
+                    }
+                };
             }
             
             // --- SCENARIO MANAGEMENT (moved inside DOMContentLoaded) ---
@@ -3165,21 +3580,17 @@
                 });
             }
             
-            const scenarioSelector = document.getElementById('scenario-selector');
-            if (scenarioSelector) {
-                scenarioSelector.addEventListener('change', function() {
-                    const scenarioId = this.value;
-                    const url = new URL(window.location.href);
-                    url.searchParams.set('scenario_id', scenarioId);
-                    url.searchParams.set('run', '1');
-                    window.location.href = url.toString();
-                });
-            }
+            // Retirado scenarioSelector duplicado aquí para evitar SyntaxError
 
             // Url updating functionality for the new layout buttons
             function updateUrlParam(key, value) {
                 const url = new URL(window.location.href);
-                if (value === null) {
+                if (key === 'plan_mode' && value === 'manual') {
+                    url.searchParams.set('plan_mode', 'manual');
+                    // When explicitly switching to manual, the user wants "Current State", 
+                    // so we clear scenario_id to avoid "auto-loading" an old saved one.
+                    url.searchParams.delete('scenario_id');
+                } else if (value === null) {
                     url.searchParams.delete(key);
                 } else {
                     url.searchParams.set(key, value);
@@ -3193,6 +3604,198 @@
 
             const toggleManualMode = document.getElementById('toggleManualMode');
             if (toggleManualMode) toggleManualMode.addEventListener('click', (e) => { e.preventDefault(); updateUrlParam('plan_mode', 'manual'); });
+
+
+
+            // Publish Scenario
+            const btnPublishScenario = document.getElementById('btnPublishScenario');
+            if (btnPublishScenario) {
+                btnPublishScenario.addEventListener('click', async () => {
+                    const sel = document.getElementById('scenario-selector');
+                    const id = sel.value;
+                    if (!id) return alert("Seleccione un escenario primero.");
+                    
+                    const result = await Swal.fire({
+                        title: '¿Publicar Escenario?',
+                        text: "Este escenario se convertirá en el Plan Oficial.",
+                        icon: 'question',
+                        showCancelButton: true,
+                        confirmButtonText: 'Sí, Publicar',
+                        customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                    });
+                    
+                    if (result.isConfirmed) {
+                        try {
+                            const resp = await fetch(`/api/scenarios/${id}/publish/`, { 
+                                method: 'POST',
+                                headers: { 'X-CSRFToken': '{{ csrf_token }}' }
+                            });
+                            if (resp.ok) window.location.reload();
+                            else alert("Error al publicar");
+                        } catch(e) { console.error(e); }
+                    }
+                });
+            }
+
+            // Delete Scenario
+            const btnDeleteScenario = document.getElementById('btnDeleteScenario');
+            if (btnDeleteScenario) {
+                btnDeleteScenario.addEventListener('click', async () => {
+                    const sel = document.getElementById('scenario-selector');
+                    const id = sel.value;
+                    if (!id) return alert("Seleccione un escenario primero.");
+                    
+                    const opt = sel.options[sel.selectedIndex];
+                    if (opt.dataset.principal === '1') {
+                        return alert("No se puede eliminar el escenario principal.");
+                    }
+
+                    const result = await Swal.fire({
+                        title: '¿Eliminar Escenario?',
+                        text: "Esta acción no se puede deshacer.",
+                        icon: 'warning',
+                        showCancelButton: true,
+                        confirmButtonText: 'Sí, eliminar',
+                        confirmButtonColor: '#d33',
+                        customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                    });
+                    
+                    if (result.isConfirmed) {
+                        try {
+                            const resp = await fetch(`/api/scenarios/${id}/delete/`, { 
+                                method: 'POST',
+                                headers: { 'X-CSRFToken': '{{ csrf_token }}' }
+                            });
+                            if (resp.ok) window.location.href = window.location.pathname;
+                            else alert("Error al eliminar");
+                        } catch(e) { console.error(e); }
+                    }
+                });
+            }
+
+            // Reset ERP button
+            const btnResetToERP = document.getElementById('btnResetToERP');
+            if (btnResetToERP) {
+                btnResetToERP.addEventListener('click', async function() {
+                    const result = await Swal.fire({
+                        title: '¿Restablecer al Plan ERP?',
+                        text: "Se borrarán todos los ajustes manuales de este escenario y se volverá a las prioridades originales.",
+                        icon: 'warning',
+                        showCancelButton: true,
+                        confirmButtonText: 'Sí, Restablecer',
+                        cancelButtonText: 'Cancelar',
+                        confirmButtonColor: '#fbbf24',
+                        customClass: {
+                            popup: 'premium-swal',
+                            confirmButton: 'premium-confirm',
+                            cancelButton: 'premium-cancel'
+                        }
+                    });
+
+                    if (result.isConfirmed) {
+                        try {
+                            const proyectosInput = document.getElementById('proyectos');
+                            const projVal = proyectosInput ? proyectosInput.value : '';
+                            const scenarioId = document.getElementById('scenario-selector').value;
+
+                            const response = await fetch('/api/reset_planning/', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'X-CSRFToken': '{{ csrf_token }}'
+                                },
+                                body: JSON.stringify({ 
+                                    scenario_id: scenarioId,
+                                    proyectos: projVal
+                                })
+                            });
+                            
+                            if (response.ok) {
+                                Swal.fire({
+                                    title: '¡Restablecido!',
+                                    icon: 'success',
+                                    timer: 1500,
+                                    showConfirmButton: false,
+                                    customClass: { popup: 'premium-swal' }
+                                }).then(() => window.location.reload());
+                            }
+                        } catch (e) { console.error(e); }
+                    }
+                });
+            }
+
+            // Save Scenario Modal
+            const saveScenarioModalEl = document.getElementById('saveScenarioModal');
+            if (saveScenarioModalEl) {
+                const saveScenarioModal = new bootstrap.Modal(saveScenarioModalEl);
+                const radioNew = document.getElementById('radioNew');
+                const radioExisting = document.getElementById('radioExisting');
+                const divNewScenario = document.getElementById('divNewScenario');
+                const divExistingScenario = document.getElementById('divExistingScenario');
+                const btnConfirmSave = document.getElementById('btnConfirmSave');
+
+                if (radioNew && radioExisting) {
+                    radioNew.addEventListener('change', () => {
+                        divNewScenario.style.display = 'block';
+                        divExistingScenario.style.display = 'none';
+                    });
+                    document.getElementById('opt-new-container').onclick = () => { radioNew.click(); };
+                    
+                    radioExisting.addEventListener('change', () => {
+                        divNewScenario.style.display = 'none';
+                        divExistingScenario.style.display = 'block';
+                    });
+                    document.getElementById('opt-existing-container').onclick = () => { radioExisting.click(); };
+                }
+
+                const btnSaveScenarioMain = document.getElementById('btnSaveScenario');
+                if (btnSaveScenarioMain) {
+                    btnSaveScenarioMain.addEventListener('click', () => {
+                        saveScenarioModal.show();
+                    });
+                }
+
+                if (btnConfirmSave) {
+                    btnConfirmSave.addEventListener('click', async function() {
+                        const isNew = radioNew.checked;
+                        const activeScenarioId = ACTIVE_SCENARIO_ID;
+                        const proyectosInput = document.getElementById('proyectos');
+                        const proyectosList = proyectosInput ? proyectosInput.value.trim() : '';
+
+                        let payload = {
+                            proyectos: proyectosList,
+                            is_new: isNew,
+                            base_scenario_id: activeScenarioId
+                        };
+
+                        if (isNew) {
+                            payload.nombre = document.getElementById('newScenarioName').value.trim();
+                            if (!payload.nombre) return alert("Ingrese un nombre para el escenario");
+                        } else {
+                            payload.existing_id = document.getElementById('existingScenarioSelect').value;
+                            if (!payload.existing_id) return alert("Seleccione el escenario a sobrescribir");
+                        }
+
+                        try {
+                            const resp = await fetch('/api/save_scenario/', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'X-CSRFToken': '{{ csrf_token }}'
+                                },
+                                body: JSON.stringify(payload)
+                            });
+                            if (resp.ok) {
+                                const data = await resp.json();
+                                window.location.href = window.location.pathname + "?scenario_id=" + data.scenario.id + "&plan_mode=manual&run=1";
+                            } else {
+                                const data = await resp.json();
+                                alert("Error: " + data.error);
+                            }
+                        } catch (e) { console.error(e); }
+                    });
+                }
+            }
 
             // AI SUGGESTION LOGIC
             const btnRequestAi = document.getElementById('btn-request-ai');
@@ -3307,25 +3910,8 @@
         });
         
         window.addEventListener('resize', window.drawDependencies);
-
-        // --- TOOLTIP SMART POSITIONING ---
-        document.addEventListener('mouseover', function(e) {
-            const block = e.target.closest('.task-block');
-            if (block) {
-                const rect = block.getBoundingClientRect();
-                const tooltipWidth = 350; // Margen para el tooltip de 330px
-                const spaceRight = window.innerWidth - rect.right;
-                
-                if (spaceRight < tooltipWidth) {
-                    block.classList.add('tooltip-flip');
-                } else {
-                    block.classList.remove('tooltip-flip');
-                }
-            }
-        });
     </script>
 
-</html>
 
 
 <!-- AI Chat Widget -->
@@ -3431,8 +4017,379 @@
             });
 
         });
+        // ============================================================
+        // AUTO-LAYOUT / COLLISION RESOLVER (MODO AUTO)
+        // ============================================================
+        function runAutoLayout() {
+            console.log("GanttEngine: Iniciando resolución de solapes en Modo Auto...");
+            const rows = document.querySelectorAll('.task-row');
+            
+            rows.forEach(row => {
+                // Obtener todas las tareas visibles de la fila ordenadas por tiempo original (left)
+                const tasks = Array.from(row.querySelectorAll('.task-block'))
+                                   .filter(t => t.style.display !== 'none')
+                                   .sort((a, b) => {
+                                       let leftA = a.dataset.originalLeft ? parseFloat(a.dataset.originalLeft) : parseFloat(a.style.left);
+                                       let leftB = b.dataset.originalLeft ? parseFloat(b.dataset.originalLeft) : parseFloat(b.style.left);
+                                       return leftA - leftB;
+                                   });
+                
+                let lastEnd = 0;
+                const MARGIN = 4; // Margen mínimo entre bloques
+
+                tasks.forEach((task, index) => {
+                    if (!task.dataset.originalLeft) {
+                        task.dataset.originalLeft = parseFloat(task.style.left);
+                    }
+                    const origLeft = parseFloat(task.dataset.originalLeft);
+                    const currentWidth = parseFloat(task.style.width);
+                    
+                    let targetLeft = origLeft;
+                    // Si hay solape con el final del anterior (lastEnd), empujamos
+                    if (targetLeft < lastEnd + MARGIN) {
+                        targetLeft = lastEnd + MARGIN;
+                    }
+                    task.style.left = targetLeft + 'px';
+
+                    // Calculamos el final real de esta tarea incluyendo su badge si existe
+                    const delayBadge = task.querySelector('.delay-badge');
+                    let effectiveWidth = currentWidth;
+                    
+                    if (delayBadge && delayBadge.offsetWidth > currentWidth) {
+                        effectiveWidth = delayBadge.offsetWidth + 10;
+                    }
+
+                    lastEnd = targetLeft + effectiveWidth;
+                });
+            });
+
+            // Una vez reorganizado el layout, dibujamos flechas
+            if (typeof window.drawDependencies === 'function') {
+                setTimeout(window.drawDependencies, 100);
+            }
+        }
+
+        // --- FILTRO VISUAL DE PROYECTOS (SIDEBAR) ---
+        function updateActiveProjectsSidebar() {
+            const blocks = document.querySelectorAll('.task-block');
+            const projects = new Set();
+            
+            blocks.forEach(block => {
+                const proj = block.getAttribute('data-project-name');
+                if (proj && proj !== 'S/P' && proj.trim() !== '-' && proj.trim() !== '') {
+                    projects.add(proj.trim());
+                }
+            });
+            
+            const projectArray = Array.from(projects).sort();
+            const badge = document.getElementById('activeProjectsCountBadge');
+            if (badge) {
+                badge.textContent = projectArray.length;
+                if (projectArray.length > 0) {
+                    badge.classList.remove('bg-secondary');
+                    badge.classList.add('bg-primary');
+                } else {
+                    badge.classList.remove('bg-primary');
+                    badge.classList.add('bg-secondary');
+                }
+            }
+            
+            const listContainer = document.getElementById('activeProjectsList');
+            if (listContainer) {
+                if (projectArray.length === 0) {
+                    listContainer.innerHTML = '<div class="text-center py-4 text-muted small"><i class="fas fa-inbox fa-2x mb-2 opacity-25"></i><br>No hay proyectos activos en el Gantt.</div>';
+                } else {
+                    let html = '';
+                    projectArray.forEach(p => {
+                        html += `
+                        <div class="list-group-item d-flex align-items-center justify-content-between py-2 border-bottom-0 border-top">
+                            <div class="d-flex align-items-center">
+                                <div class="form-check form-switch me-3">
+                                    <input class="form-check-input project-filter-chk" type="checkbox" value="${p}" checked style="cursor: pointer; transform: scale(1.1);">
+                                </div>
+                                <div class="bg-primary bg-opacity-10 text-primary rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 35px; height: 35px;">
+                                    <i class="fas fa-code-branch"></i>
+                                </div>
+                                <div>
+                                    <h6 class="mb-0 fw-bold text-dark" style="font-size: 0.95rem;">${p}</h6>
+                                    <small class="text-muted" style="font-size: 0.75rem;">Proyecto activo</small>
+                                </div>
+                            </div>
+                            <button class="btn btn-sm btn-outline-danger border-0 p-2" onclick="deleteProjectPlanning('${p}')" title="Borrar Proyecto">
+                                <i class="fas fa-trash-alt"></i>
+                            </button>
+                        </div>`;
+                    });
+                    listContainer.innerHTML = html;
+                    
+                    document.querySelectorAll('.project-filter-chk').forEach(chk => {
+                        chk.addEventListener('change', applyGanttProjectFilter);
+                    });
+                }
+            }
+        }
+
+        window.deleteProjectPlanning = async function(projectCode) {
+            const result = await Swal.fire({
+                title: '¿Eliminar proyecto?',
+                html: `¿Estás seguro de que deseas eliminar el Proyecto <strong>${projectCode}</strong> y quitar todas sus operaciones de la planificación actual?`,
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'Sí, Eliminar',
+                cancelButtonText: 'Cancelar',
+                confirmButtonColor: '#ef4444',
+                customClass: {
+                    popup: 'premium-swal',
+                    confirmButton: 'premium-confirm',
+                    cancelButton: 'premium-cancel'
+                }
+            });
+
+            if (!result.isConfirmed) return;
+
+            try {
+                const scenarioId = new URLSearchParams(window.location.search).get('scenario_id') || "";
+                const response = await fetch('/api/delete_project_planning/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': '{{ csrf_token }}'
+                    },
+                    body: JSON.stringify({
+                        proyectos: projectCode,
+                        scenario_id: scenarioId
+                    })
+                });
+
+                if (response.ok) {
+                    Swal.fire({
+                        title: 'Proyecto Eliminado',
+                        text: `El proyecto ${projectCode} ha sido removido de la planificación.`,
+                        icon: 'success',
+                        timer: 2000,
+                        showConfirmButton: false,
+                        customClass: { popup: 'premium-swal' }
+                    }).then(() => {
+                        const params = new URLSearchParams(window.location.search);
+                        let currentProjects = params.get('proyectos') || '';
+                        let projectsArray = currentProjects.split(',').map(p => p.trim()).filter(p => p && p !== projectCode && p.replace('-', '.') !== projectCode && p.replace('.', '-') !== projectCode);
+                        params.set('proyectos', projectsArray.join(','));
+                        
+                        // Evaluar condición de persistencia en memoria del frontend para conservar visualización
+                        try {
+                            if (sessionStorage.getItem('ganttYaGraficado') === 'true') {
+                                params.set('graficar', '1');
+                            }
+                        } catch(e) {}
+                        
+                        window.location.href = window.location.pathname + '?' + params.toString();
+                    });
+                } else {
+                    throw new Error("Error al borrar la planificación del proyecto");
+                }
+            } catch (e) {
+                Swal.fire({ title: 'Error', text: e.message, icon: 'error' });
+            }
+        };
+        
+        function applyGanttProjectFilter() {
+            const unchecked = Array.from(document.querySelectorAll('.project-filter-chk:not(:checked)')).map(c => c.value);
+            
+            document.querySelectorAll('.task-block').forEach(block => {
+                const proj = block.getAttribute('data-project-name');
+                if (unchecked.includes(proj)) {
+                    block.style.display = 'none';
+                } else {
+                    block.style.display = ''; // Restaurar
+                }
+            });
+            
+            // Recalcular layout para acomodar espacios libres
+            runAutoLayout();
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            setTimeout(updateActiveProjectsSidebar, 600);
+        });
+
+        // Ejecutar si estamos en Modo Auto o al cargar
+        {% if plan_mode == 'original' %}
+            setTimeout(runAutoLayout, 850);
+        {% endif %}
+
+        // Sincronizar conectores de fragmentación (ya existente)
+        document.querySelectorAll('.task-row').forEach(row => {
+            const tasks = Array.from(row.querySelectorAll('.task-block'));
+            const ops = {};
+            
+            tasks.forEach(t => {
+                const op = t.getAttribute('data-task-id');
+                if(!op) return;
+                if(!ops[op]) ops[op] = [];
+                ops[op].push(t);
+            });
+            
+            Object.keys(ops).forEach(op => {
+                const segments = ops[op];
+                if(segments.length > 1) {
+                    segments.sort((a,b) => parseFloat(a.style.left) - parseFloat(b.style.left));
+                    const first = segments[0];
+                    const last = segments[segments.length - 1];
+                    const color = first.getAttribute('data-color') || '#cccccc';
+
+                    segments.forEach((seg, index) => {
+                        if (index < segments.length - 1) {
+                            seg.style.setProperty('border-right-style', 'dashed', 'important');
+                            seg.style.setProperty('border-right-width', '6px', 'important');
+                            seg.style.setProperty('border-right-color', color, 'important');
+                        }
+                    });
+                    
+                    const startLeft = parseFloat(first.style.left);
+                    const endLeft = parseFloat(last.style.left) + parseFloat(last.style.width);
+                    const totalWidth = endLeft - startLeft;
+                    
+                    const connector = document.createElement('div');
+                    connector.className = 'task-connector-thread';
+                    connector.style.position = 'absolute';
+                    connector.style.left = startLeft + 'px';
+                    connector.style.width = totalWidth + 'px';
+                    connector.style.height = '14px';
+                    connector.style.top = '35px';
+                    connector.style.backgroundColor = color;
+                    connector.style.opacity = '0.15';
+                    connector.style.borderRadius = '10px';
+                    connector.style.zIndex = '1';
+                    connector.style.pointerEvents = 'none';
+                    
+                    row.insertBefore(connector, row.firstChild);
+                }
+            });
+        });
     });
 </script>
+    <!-- Portal Tooltip Global -->
+    <div id="global-tooltip" style="display: none; position: absolute; z-index: 10000;"></div>
+
+    <!-- Duplicate Notification Center Removed -->
+
+    <!-- OP Visibility Filter Sidebar -->
+    <div id="op-filter-overlay" onclick="window.toggleOpFilterSidebar()"></div>
+    <aside id="op-filter-sidebar">
+        <div class="sidebar-header">
+            <h6><i class="fas fa-filter me-2 text-info"></i>Filtrar Visibilidad de los Proyectos</h6>
+            <button onclick="window.toggleOpFilterSidebar()" style="background:none;border:none;cursor:pointer;color:#64748b;font-size:1rem;"><i class="fas fa-times"></i></button>
+        </div>
+        <!-- <div class="sidebar-search">
+            <input type="text" id="op-filter-search" placeholder="Buscar proyecto u OP..." oninput="window.filterOpSearchList(this.value)">
+        </div> -->
+        <div class="sidebar-actions">
+            <button onclick="window.setAllOpsVisible(true)"><i class="fas fa-eye me-1"></i>Mostrar todo</button>
+            <button onclick="window.setAllOpsVisible(false)"><i class="fas fa-eye-slash me-1"></i>Ocultar todo</button>
+        </div>
+        <div class="sidebar-list" id="op-filter-list"></div>
+    </aside>
+
+    <script>
+    (function() {
+        var populated = false;
+
+        function collectProjects() {
+            var projects = {};
+            document.querySelectorAll('.task-block').forEach(function(el) {
+                var projectName = el.dataset.projectName || 'S/P';
+                if (!projects[projectName]) {
+                    var color = window.getComputedStyle(el).borderTopColor || '#3b82f6';
+                    projects[projectName] = {
+                        name: projectName,
+                        color: color,
+                        opCount: 0,
+                        opIds: new Set()
+                    };
+                }
+                var opId = el.dataset.taskId;
+                if (opId && !projects[projectName].opIds.has(opId)) {
+                    projects[projectName].opIds.add(opId);
+                    projects[projectName].opCount++;
+                }
+            });
+            return Object.values(projects).sort(function(a, b) { 
+                return a.name.localeCompare(b.name); 
+            });
+        }
+
+        function populateList() {
+            var listEl = document.getElementById('op-filter-list');
+            if (!listEl || populated) return;
+            var projects = collectProjects();
+            listEl.innerHTML = '';
+            
+            projects.forEach(function(proj) {
+                var item = document.createElement('label');
+                item.className = 'op-filter-item';
+                var isChecked = true;
+                
+                item.innerHTML = 
+                    '<input type="checkbox" ' + (isChecked ? 'checked' : '') + ' data-project-name="' + proj.name + '" onchange="window.applyProjectFilter(\'' + proj.name + '\', this.checked)">' +
+                    '<span class="color-dot" style="background:' + proj.color + ';flex-shrink:0;width:10px;height:10px;border-radius:50%;display:inline-block;"></span>' +
+                    '<span style="font-size:0.75rem;color:#334155;font-weight:500;flex:1;">' + 
+                        'PROJECT ' + proj.name + 
+                        '<br><small style="color:#94a3b8;font-size:0.65rem;">' + proj.opCount + ' OPs asociadas</small>' +
+                    '</span>';
+                listEl.appendChild(item);
+                
+                // Force sync visibility immediately
+                window.applyProjectFilter(proj.name, isChecked);
+            });
+            populated = true;
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            setTimeout(populateList, 300);
+        });
+
+        window.toggleOpFilterSidebar = function() {
+            var sidebar = document.getElementById('op-filter-sidebar');
+            var overlay = document.getElementById('op-filter-overlay');
+            var btn     = document.getElementById('btn-filter-ops');
+            if (!sidebar) return;
+            var isOpen = sidebar.classList.toggle('open');
+            if (overlay) overlay.classList.toggle('open', isOpen);
+            if (btn)     btn.classList.toggle('active-glass', isOpen);
+            if (isOpen && !populated) populateList();
+        };
+
+        window.applyProjectFilter = function(projectName, visible) {
+            // Ocultar/Mostrar todos los task-blocks del proyecto
+            document.querySelectorAll('.task-block[data-project-name="' + projectName + '"]').forEach(function(el) {
+                el.style.display = visible ? '' : 'none';
+            });
+            
+            // Redibujar dependencias: la lógica interna ahora ignora boxes con display:none
+            var svgLayer = document.getElementById('dependency-layer');
+            if (svgLayer && svgLayer.style.display !== 'none' && typeof window.drawDependencies === 'function') {
+                window.drawDependencies();
+            }
+        };
+
+        window.setAllOpsVisible = function(visible) {
+            document.querySelectorAll('#op-filter-list input[type=checkbox]').forEach(function(cb) {
+                cb.checked = visible;
+                window.applyProjectFilter(cb.dataset.projectName, visible);
+            });
+        };
+
+        window.filterOpSearchList = function(query) {
+            var q = query.toLowerCase();
+            document.querySelectorAll('#op-filter-list .op-filter-item').forEach(function(item) {
+                item.style.display = item.textContent.toLowerCase().includes(q) ? '' : 'none';
+            });
+        };
+
+        // Removed frontend HARD PURGE visual state logic
+    })();
+    </script>
+
 </body>
 
 </html>

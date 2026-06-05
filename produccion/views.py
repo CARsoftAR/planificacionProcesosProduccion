@@ -533,6 +533,7 @@ def planificacion_list(request):
             if p and p not in combined_projs:
                 combined_projs.append(p)
         
+
         if combined_projs:
             proyectos = ",".join(combined_projs)
             filtros['proyectos'] = combined_projs
@@ -688,34 +689,39 @@ def planificacion_list(request):
 
             if override_node:
                 target_machine_id = str(override_node['maquina']).strip()
-                priority_val = override_node['prioridad'] # La prioridad real de la pieza secuenciada (1, 2, 3...)
+                # CRÍTICO: La "Prioridad Pieza" (1, 2, 3...) se lee del campo 'nivel_manual'
+                # del registro PrioridadManual. NO usar 'prioridad' (FloatField con default 0.0
+                # usado únicamente para OrdenVisual). Esta convención la confirma services.py:280.
+                pieza_priority_val = override_node.get('nivel_manual')
 
                 current_machine_id = target_machine_id
                 current_machine_name = id_to_name.get(target_machine_id, target_machine_id)
 
-                item['OrdenVisual'] = float(priority_val)
+                item['OrdenVisual'] = float(override_node.get('prioridad', 0))
                 item['OrdenSecuencia'] = float(override_node.get('orden_secuencia', 999999))
                 item['ManualPriorityFlag'] = True
 
-                if override_node.get('tiempo_manual') is not None:
-                     item['Tiempo_Proceso'] = float(override_node['tiempo_manual'])
-                     item['CalculadoManual'] = True
-                else:
-                     item['CalculadoManual'] = False
-
-                # === ASIGNACIÓN CORREGIDA (SIN CRUCES) ===
-                # El nivel del ERP va a su variable específica
+                # Separación estricta de datos
                 if override_node.get('nivel_manual') is not None:
-                     item['nivel_planificacion'] = override_node['nivel_manual']
-                     item['NivelManualFlag'] = True
+                    item['nivel_planificacion'] = int(override_node['nivel_manual'])
+                    item['NivelManualFlag'] = True
                 else:
-                     item['NivelManualFlag'] = False
+                    item['NivelManualFlag'] = False
 
-                # La prioridad de la pieza conserva el valor secuencial real
-                item['prioridad_pieza'] = priority_val
+                # Asignación de la Prioridad de la pieza (1, 2, 3...) — desde nivel_manual, NO desde prioridad
+                if pieza_priority_val is not None:
+                    item['prioridad_pieza'] = int(float(pieza_priority_val))
+                else:
+                    item['prioridad_pieza'] = item.get('prioridad_pieza', 999)
+
+                if override_node.get('tiempo_manual') is not None:
+                    item['Tiempo_Proceso'] = float(override_node['tiempo_manual'])
+                    item['CalculadoManual'] = True
+                else:
+                    item['CalculadoManual'] = False
 
                 if override_node.get('porcentaje_solapamiento') is not None:
-                     item['porcentaje_solapamiento'] = override_node['porcentaje_solapamiento']
+                    item['porcentaje_solapamiento'] = override_node['porcentaje_solapamiento']
             else:
                 item['OrdenVisual'] = None
                 item['ManualPriorityFlag'] = False
@@ -797,32 +803,38 @@ def planificacion_list(request):
                         all_machines_list.append(m_name)
         
         # Sort items within each machine and re-assign visual IDs
+        # Sort items within each machine and re-assign visual IDs
         for m_name in grouped_data:
             machine_items = grouped_data[m_name]
             
             # 1. Fill defaults for items without manual priority
-            # We use their original SQL index to maintain the ERP order among non-moved items
             for idx, m_item in enumerate(machine_items):
                 if m_item['OrdenVisual'] is None:
-                    # We use a large offset to ensure they are usually after small manual priorities (unless manually set high)
-                    # But actually, SQL order is better. 
-                    # Let's use a per-machine index to keep priorities clean.
                     m_item['OrdenVisual'] = (idx + 1) * 5000.0 # Wide spacing for default
+
+            # Helper robusto para ordenar nivel de planificación descendente (de 10 a 7)
+            def get_nivel_sort_key(item):
+                try:
+                    val = item.get('nivel_planificacion')
+                    if val is not None and str(val).strip() != "":
+                        return -int(float(val))
+                except:
+                    pass
+                return 0
 
             # 2. Jerarquía estricta: Prioridad Proyecto (ASC) → Prioridad Pieza (ASC) → Nivel Planif. (DESC) → Secuencia Proceso (ASC)
             machine_items.sort(key=lambda x: (
-                int(x.get('prioridad_proyecto') if x.get('prioridad_proyecto') is not None else 999),  # Proyecto ASC
-                int(x.get('prioridad_pieza')    if x.get('prioridad_pieza')    is not None else 9999), # Pieza ASC
-                -int(x.get('Nivel_Planificacion') or 0),                                               # Nivel DESC
-                x.get('secuencia_proceso', 999),                                                       # Secuencia ASC
+                int(x.get('prioridad_proyecto') if x.get('prioridad_proyecto') is not None else 999),
+                int(x.get('prioridad_pieza') if x.get('prioridad_pieza') is not None else 9999),  # Asegura que 1 vaya antes que 2
+                -int(float(x.get('nivel_planificacion'))) if x.get('nivel_planificacion') else 0, # DESCENDENTE: de 10 a 7
+                x.get('secuencia_proceso', 999),
                 x.get('OrdenSecuencia', 999999),
                 x.get('OrdenVisual', 999999.0)
             ))
 
-            # 3. Solo re-asignamos OrdenVisual interno si es necesario para mantener el "snap" del Gantt,
-            # pero NO tocamos Idprioridad para respetar el valor original del ERP.
+            # 3. Asignación de la prioridad visual final correlativa post-ordenamiento
             for idx, m_item in enumerate(machine_items):
-                if m_item['OrdenVisual'] is None:
+                if not m_item.get('is_hidden', False):
                     m_item['OrdenVisual'] = (idx + 1) * 1000.0
 
         # FINAL FILTER: REMOVED per user request ("no las ocultes")
@@ -2933,12 +2945,18 @@ def create_scenario(request):
                 return JsonResponse({'status': 'ok', 'scenario': {'id': scenario.id, 'nombre': scenario.nombre}})
                 
             else:
-                # Create NEW scenario
+                # Create NEW scenario (con unicidad por nombre para evitar duplicados)
                 if not nombre:
                     return JsonResponse({'error': 'Nombre es requerido'}, status=400)
-                    
-                new_scenario = Scenario.objects.using('default').create(
-                    nombre=nombre, descripcion=descripcion, es_principal=es_principal, proyectos=proyectos
+
+                # FIX: Si ya existe un escenario con ese nombre, lo reutilizamos en lugar de crear duplicados
+                new_scenario, _created = Scenario.objects.using('default').get_or_create(
+                    nombre=nombre,
+                    defaults={
+                        'descripcion': descripcion,
+                        'es_principal': es_principal,
+                        'proyectos': proyectos,
+                    }
                 )
                 
                 # Clone overrides if requested
@@ -4038,7 +4056,7 @@ def api_confirm_selected_tasks(request):
                                 id_orden=oid_str,
                                 scenario=active_scenario,
                                 maquina=maquina,
-                                defaults={'nivel_manual': int(prio_val), 'orden_secuencia': next_seq}
+                                defaults={'prioridad': int(prio_val), 'orden_secuencia': next_seq}
                             )
 
             # --- SYNC: Actualizamos el campo 'proyectos' del escenario para persistencia ---

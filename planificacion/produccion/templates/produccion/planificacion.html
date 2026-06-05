@@ -1,0 +1,2922 @@
+{% load static %}
+{% load l10n %}
+{% load produccion_extras %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Planificación de Procesos</title>
+    <!-- Use CDN for Bootstrap 5 for easy tabs and styling -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{% static 'css/styles.css' %}?v=5">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <style>
+        /* Modern SweetAlert2 Custom Styles */
+        .swal2-popup.premium-swal {
+            background-color: var(--card-bg) !important;
+            border-radius: 20px;
+            padding: 2.5rem;
+            font-family: 'Inter', sans-serif;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+            border: 1px solid var(--border-color);
+        }
+        .swal2-title {
+            font-weight: 800;
+            color: var(--text-main) !important;
+            font-size: 1.6rem;
+            margin-bottom: 1rem;
+        }
+        .swal2-html-container {
+            color: var(--text-muted) !important;
+            font-size: 1.05rem;
+            line-height: 1.6;
+        }
+        .swal2-confirm.premium-confirm {
+            border-radius: 50px !important;
+            padding: 12px 35px !important;
+            font-weight: 600 !important;
+            font-size: 0.95rem !important;
+            box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3) !important;
+        }
+        .swal2-cancel.premium-cancel {
+            border-radius: 50px !important;
+            padding: 12px 35px !important;
+            font-weight: 600 !important;
+            font-size: 0.95rem !important;
+            background: var(--header-bg) !important;
+            color: var(--text-muted) !important;
+            border: 1px solid var(--border-color) !important;
+        }
+        .swal2-icon {
+            border: none !important;
+            width: 5em !important;
+            height: 5em !important;
+            margin: 1.25em auto 1.875em !important;
+            border-radius: 50% !important;
+            background: var(--background-color) !important;
+            transition: all 0.3s ease;
+            box-sizing: content-box;
+        }
+        /* Soften the inner marks */
+        .swal2-icon .swal2-icon-content {
+            font-size: 2rem !important;
+        }
+        .swal2-x-mark, .swal2-success-fix, .swal2-success-ring {
+            /* Scale down SWAL internal SVG/elements slightly for a cleaner look */
+            transform: scale(0.75);
+        }
+        .swal2-icon.swal2-warning {
+            background: rgba(245, 158, 11, 0.1) !important;
+            color: #f59e0b !important;
+        }
+        .swal2-icon.swal2-error {
+            background: rgba(239, 68, 68, 0.1) !important;
+            color: #ef4444 !important;
+        }
+        .swal2-icon.swal2-success {
+            background: rgba(16, 185, 129, 0.1) !important;
+            color: #10b981 !important;
+        }
+        .swal2-icon.swal2-question {
+            background: rgba(59, 130, 246, 0.1) !important;
+            color: #3b82f6 !important;
+        }
+        .swal2-icon.swal2-info {
+            background: rgba(59, 130, 246, 0.1) !important;
+            color: #3b82f6 !important;
+        }
+
+        /* Audit Mode Styles */
+        .hidden-row {
+            opacity: 0.5;
+            background-color: #f8fafc !important;
+        }
+        .hidden-row:hover {
+            opacity: 0.8;
+        }
+        .btn-audit-active {
+            background-color: #f59e0b !important; /* Orange */
+            color: white !important;
+            border-color: #d97706 !important;
+            box-shadow: 0 0 12px rgba(245, 158, 11, 0.4);
+        }
+
+        /* Toggle buttons based on row state */
+        .hidden-row .btn-normal-action { display: none !important; }
+        tr:not(.hidden-row) .btn-audit-action { display: none !important; }
+
+        .dropdown-item-premium.active {
+            background-color: #eff6ff !important;
+            color: #2563eb !important;
+            font-weight: 700;
+        }
+
+        /* Machine Selection Modal Styling */
+        .btn-select-machine-modal {
+            transition: all 0.2s ease;
+            border: 1px solid #e2e8f0;
+            background: #f8fafc;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 80px;
+        }
+        .btn-select-machine-modal:hover {
+            border-color: #3b82f6 !important;
+            background: #eff6ff !important;
+            color: #2563eb !important;
+            transform: translateY(-3px);
+            box-shadow: 0 10px 15px -3px rgba(59, 130, 246, 0.2) !important;
+        }
+        .machine-item.hidden {
+            display: none !important;
+        }
+        .open-machine-modal {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+            height: 100%;
+            padding: 8px 12px;
+            text-decoration: none !important;
+            color: #1e293b;
+            font-weight: 700;
+            font-size: 0.78rem;
+            transition: all 0.2s ease;
+            background: transparent;
+            border: none;
+        }
+        .open-machine-modal:hover {
+            background-color: #f1f5f9;
+            color: #2563eb;
+        }
+
+
+        /* 🛠️ NAVIGATION SCROLLBAR REFINEMENT */
+        .nav-tabs {
+            padding-bottom: 12px; /* Separación para que el scroll no pise las etiquetas */
+            overflow-x: auto;
+            flex-wrap: nowrap;
+        }
+        .nav-tabs::-webkit-scrollbar {
+            height: 20px;
+        }
+        .nav-tabs::-webkit-scrollbar-track { 
+            background: #edf2f7;
+            border-radius: 10px;
+        }
+        .nav-tabs::-webkit-scrollbar-thumb {
+            background-color: #2b6cb0;
+            border-radius: 10px;
+        }
+        .nav-tabs::-webkit-scrollbar-thumb:hover { 
+            background-color: #1a365d; 
+        }
+
+        /* 🛠️ TABS VISUAL IMPROVEMENTS */
+        /* Pestañas con carga (Inactivas) */
+        .nav-tabs .nav-link.con-carga {
+            background-color: #f0f7ff !important; /* Azul pastel muy sutil */
+            color: #1e40af !important; /* Azul oscuro y definido */
+            font-weight: 700 !important;
+            border-color: #cbd5e0 !important;
+        }
+        .nav-tabs .nav-link.con-carga .badge {
+            background-color: #2563eb !important; /* Azul vibrante */
+            color: #ffffff !important;
+        }
+
+        /* Pestañas seleccionadas (Active) - Sobrescribe con carga */
+        .nav-tabs .nav-link.active {
+            background-color: #ffffff !important;
+            border-top: 4px solid #1d4ed8 !important; /* Borde superior azul intenso */
+            border-left: 1px solid #dee2e6 !important;
+            border-right: 1px solid #dee2e6 !important;
+            border-bottom: 1px solid transparent !important;
+            color: #0f172a !important;
+            font-weight: 800 !important;
+            box-shadow: 0 -4px 12px rgba(59, 130, 246, 0.05);
+        }
+        .nav-tabs .nav-link.active.con-carga .badge {
+            background-color: #1d4ed8 !important; /* Azul más oscuro e intenso */
+            color: #ffffff !important;
+        }
+
+        /* Pestañas vacías (0 procesos) - Estética actual/por defecto */
+        .nav-tabs .nav-link:not(.con-carga):not(.active) {
+            background-color: #f8fafc !important; /* Grisáceo muy tenue */
+            color: #64748b !important; /* Gris apagado */
+            font-weight: normal !important;
+            border-color: #e2e8f0 !important;
+        }
+        .nav-tabs .nav-link:not(.con-carga) .badge {
+            background-color: #94a3b8 !important; /* Gris apagado constante, incluso si está activa */
+            color: #ffffff !important;
+        }
+        .nav-tabs .nav-link.active:not(.con-carga) .badge {
+            background-color: #94a3b8 !important; /* Forzar gris neutro cuando está seleccionada pero vacía */
+            color: #ffffff !important;
+        }
+
+        /* 💎 PREMIUM MODAL SCALING (Forzado Global 1600px) */
+        #selectorProduccionModal .modal-dialog {
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            max-width: 1600px !important;
+            width: 95% !important;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        /* Optimización de Tablas: No-Wrap y Espaciado Contenido (Global para Selector) */
+        #selectorProduccionModal table th, 
+        #selectorProduccionModal table td {
+            white-space: nowrap !important;
+            padding-left: 0.8rem !important;
+            padding-right: 0.8rem !important;
+        }
+
+        /* Inputs de Prioridad */
+        .article-priority-input {
+            width: 80px;
+            text-align: center;
+            font-weight: bold;
+            color: #0d6efd;
+            border-radius: 50px;
+            border: 1px solid #e2e8f0;
+            padding: 0.25rem 0.5rem;
+            transition: all 0.2s ease;
+            margin: 0 auto;
+        }
+        .article-priority-input:focus {
+            box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.15);
+            border-color: #3b82f6;
+            outline: none;
+        }
+    </style>
+</head>
+<body>
+    {% include "produccion/global_navbar.html" %}
+
+    <div class="container-fluid">
+
+        <!-- Toolbar de Planificación (Tabla) -->
+        <div class="px-4 py-2 mb-4 border rounded-4 bg-white shadow-sm d-flex align-items-center justify-content-between">
+            <form method="GET" id="plan-filter-form" class="d-flex align-items-center gap-3 flex-grow-1">
+                <div class="d-flex align-items-center gap-2">
+                    <label for="proyectos" class="smaller fw-bold text-muted mb-0"><i class="fas fa-search"></i> Proyectos:</label>
+                    <input type="text" name="proyectos" id="proyectos" class="form-control form-control-sm rounded-pill" style="width: 250px;" value="" placeholder="Ej: 26-027">
+                    <button type="submit" class="btn btn-sm btn-primary rounded-pill px-3">Filtrar</button>
+                    {% if request.GET.proyectos %}
+                    <a href="{% url 'planificacion_view' %}?plan_mode={{ request.GET.plan_mode|default:'manual' }}" class="btn btn-sm btn-outline-secondary rounded-pill px-2" title="Limpiar Filtros">
+                        <i class="fas fa-times"></i>
+                    </a>
+                    {% endif %}
+                </div>
+
+                <div class="vr bg-secondary opacity-25" style="height: 25px;"></div>
+
+                <!-- <div class="d-flex align-items-center gap-2">
+                    <label for="plan_mode" class="smaller fw-bold text-muted mb-0"><i class="fas fa-cog"></i> Modo:</label>
+                    <select name="plan_mode" id="plan-mode-selector" class="form-select form-select-sm rounded-pill border-secondary border-opacity-25" style="width: 160px; font-size: 0.8rem;">
+                        <option value="manual" {% if request.GET.plan_mode != 'original' %}selected{% endif %}>Optimizado (Manual)</option>
+                        <option value="original" {% if request.GET.plan_mode == 'original' %}selected{% endif %}>Original (ERP)</option>
+                    </select>
+                </div> -->
+
+                <input type="hidden" name="scenario_id" id="active-scenario-id-input" value="{{ active_scenario_id|default:'' }}">
+                <div class="d-flex align-items-center gap-3 ms-2">
+                    <!-- <div class="d-flex align-items-center gap-2">
+                        <span class="smaller fw-bold text-muted mb-0"><i class="fas fa-file-alt"></i> Plan Activo:</span>
+                        <span class="fw-bold text-dark bg-light px-3 py-1 rounded-pill border border-secondary border-opacity-25" style="font-size: 0.8rem;">
+                            {{ active_scenario.nombre|default:"Nuevo Plan" }}
+                        </span>
+                    </div> -->
+
+                    <div class="d-flex gap-1">
+                        <!-- Botón Mostrar Ocultos (Audit Mode) -->
+                        <button type="button" id="btnToggleAudit" class="btn btn-sm {% if request.GET.audit_mode == '1' %}btn-warning{% else %}btn-outline-warning{% endif %} rounded-pill px-3 fw-bold d-inline-flex align-items-center gap-1" title="Mostrar Procesos Ocultos/Borrados">
+                            <i class="fas {% if request.GET.audit_mode == '1' %}fa-eye-slash{% else %}fa-eye{% endif %}"></i>
+                            {% if request.GET.audit_mode == '1' %}Ocultar Restaurables{% else %}Mostrar Ocultos{% endif %}
+                        </button>
+                        <div class="vr bg-secondary opacity-25 mx-1" style="height: 28px;"></div>
+                        <!-- Botón Proyectos Activos -->
+                        <button type="button" id="btnActiveProjectsToggle" class="btn btn-sm btn-outline-danger rounded-pill px-3 fw-bold d-inline-flex align-items-center gap-1" data-bs-toggle="offcanvas" data-bs-target="#activeProjectsOffcanvas" aria-controls="activeProjectsOffcanvas" title="Ver proyectos actualmente en plan">
+                            <i class="fas fa-project-diagram"></i> Proyectos: <span id="activeProjectsCountBadge" class="badge bg-primary ms-1">0</span>
+                        </button>
+                        <!-- Botón NUEVO -->
+                        <button type="button" id="btnNewScenario" class="btn btn-sm btn-outline-primary rounded-pill px-3 fw-bold d-inline-flex align-items-center gap-1" title="Empezar un escenario en blanco (Nuevo Plan)">
+                            <i class="fas fa-file"></i> NUEVO
+                        </button>
+                        <!-- Botón GUARDAR -->
+                        <button type="button" id="btnSaveScenario" class="btn btn-sm btn-outline-success rounded-pill px-3 fw-bold d-inline-flex align-items-center gap-1" title="Guardar escenario actual">
+                            <i class="fas fa-save"></i> GUARDAR
+                        </button>
+                        <!-- Botón CARGAR -->
+                        <button type="button" id="btnLoadScenario" class="btn btn-sm btn-outline-info rounded-pill px-3 fw-bold d-inline-flex align-items-center gap-1" title="Cargar escenario guardado">
+                            <i class="fas fa-folder-open"></i> CARGAR
+                        </button>
+                        <!-- Botón BORRAR -->
+                        <button type="button" id="btnDeleteScenario" class="btn btn-sm btn-outline-danger rounded-pill px-3 fw-bold d-inline-flex align-items-center gap-1" title="Borrar planificación guardada para este proyecto">
+                            <i class="fas fa-trash-alt"></i> BORRAR
+                        </button>
+                    </div>
+                </div>
+
+                <!-- <div class="ms-auto d-flex align-items-center gap-2">
+                    <button type="button" id="btnToggleAudit" class="btn btn-sm btn-outline-secondary rounded-pill px-3 fw-bold {% if audit_mode %}btn-audit-active{% endif %}" title="Ver u ocultar procesos eliminados visualmente">
+                        <i class="fas {% if audit_mode %}fa-eye-slash{% else %}fa-eye{% endif %} me-1"></i> 
+                        {% if audit_mode %}Ocultar Modificados{% else %}Ver Ocultos{% endif %}
+                    </button>
+                    <button type="button" id="btnResetToERP" class="btn btn-sm btn-warning rounded-pill px-3 fw-bold shadow-sm" style="background: #fbbf24; border: none; color: #78350f;" title="Restablecer al Plan Original del ERP">
+                        <i class="fas fa-history me-1"></i> Reset ERP
+                    </button>
+                    <button type="button" id="btnClearPlanning" class="btn btn-sm btn-danger rounded-pill px-3 fw-bold shadow-sm" style="background: #dc2626; border: none;" title="Vaciar todas las tablas de planificación">
+                        <i class="fas fa-trash-alt me-1"></i> Vaciar Tablas
+                    </button>
+                </div> -->
+
+                <input type="hidden" name="run" value="1">
+            </form>
+        </div>
+
+        <!-- Modal Guardar Escenario -->
+        <div class="modal fade" id="saveScenarioModal" tabindex="-1" aria-labelledby="saveScenarioModalLabel" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content border-0 shadow" style="border-radius: 12px; overflow: hidden;">
+                    <div class="modal-header bg-success text-white border-0 py-3 px-4">
+                        <h5 class="modal-title fw-bold" id="saveScenarioModalLabel">
+                            <i class="fas fa-save me-2"></i>Guardar Escenario
+                        </h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body p-4 bg-light">
+                        <div class="mb-3">
+                            <label for="newScenarioName" class="form-label fw-bold text-muted small uppercase">Nombre del plan:</label>
+                            <input type="text" class="form-control rounded-pill border-secondary border-opacity-25" id="newScenarioName" placeholder="Ej: Planificación de Mayo" style="padding: 0.6rem 1.2rem;" value="{% if active_scenario and active_scenario.nombre != 'Nuevo Plan' %}{{ active_scenario.nombre }}{% endif %}">
+                        </div>
+                    </div>
+                    <div class="modal-footer border-0 bg-white px-4 pb-4 pt-0">
+                        <button type="button" class="btn btn-light rounded-pill px-4 fw-bold" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="button" class="btn btn-success rounded-pill px-4 fw-bold shadow-sm" id="btnConfirmSave">
+                            <i class="fas fa-check me-2"></i>Confirmar Guardado
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal Cargar Escenario -->
+        <div class="modal fade" id="loadScenarioModal" tabindex="-1" aria-labelledby="loadScenarioModalLabel" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content border-0 shadow" style="border-radius: 12px; overflow: hidden;">
+                    <div class="modal-header bg-primary text-white border-0 py-3 px-4">
+                        <h5 class="modal-title fw-bold" id="loadScenarioModalLabel">
+                            <i class="fas fa-folder-open me-2"></i>Cargar Escenario
+                        </h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body p-4 bg-light">
+                        <div class="mb-3">
+                            <label for="loadScenarioSelect" class="form-label fw-bold text-muted small uppercase">Seleccionar plan guardado:</label>
+                            <select class="form-select rounded-pill border-secondary border-opacity-25" id="loadScenarioSelect" style="padding: 0.6rem 1.2rem;">
+                                <option value="">-- Seleccionar un Plan --</option>
+                                {% for scenario in all_scenarios %}
+                                    <option value="{{ scenario.id }}" data-proyectos="{{ scenario.proyectos|default:'' }}">
+                                        {{ scenario.nombre }}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="modal-footer border-0 bg-white px-4 pb-4 pt-0">
+                        <button type="button" class="btn btn-light rounded-pill px-4 fw-bold" data-bs-dismiss="modal">Cancelar</button>
+                        <button type="button" class="btn btn-primary rounded-pill px-4 fw-bold shadow-sm" id="btnConfirmLoad">
+                            <i class="fas fa-check me-2"></i>Aceptar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal Borrar Escenarios Guardados -->
+        <div class="modal fade" id="deleteProjectModal" tabindex="-1" aria-labelledby="deleteProjectModalLabel" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content border-0 shadow" style="border-radius: 12px; overflow: hidden;">
+                    <div class="modal-header bg-danger text-white border-0 py-3 px-4">
+                        <h5 class="modal-title fw-bold" id="deleteProjectModalLabel">
+                            <i class="fas fa-trash-alt me-2"></i>Borrar Escenarios Guardados
+                        </h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body p-4 bg-light">
+                        <div class="mb-1">
+                            <label class="form-label fw-bold text-muted small uppercase mb-3"><i class="fas fa-list me-1"></i>Planes/Escenarios guardados en la base de datos:</label>
+                            <div id="deleteProjectListContainer" class="list-group rounded-3 overflow-hidden border shadow-sm" style="max-height: 350px; overflow-y: auto;">
+                                <!-- Dynamically populated list of scenarios -->
+                                <div class="text-center py-4 text-muted">
+                                    <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span> Cargando escenarios...
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer border-0 bg-white px-4 pb-4 pt-0">
+                        <button type="button" class="btn btn-light rounded-pill px-4 fw-bold" data-bs-dismiss="modal">Cerrar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- NEW: Selector de Producción Modal -->
+        <div class="modal fade" id="selectorProduccionModal" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-scrollable" id="selectorDialog" style="margin-top: 80px; height: 75vh; max-height: 75vh; width: 95% !important; max-width: 1600px !important;">
+                <div class="modal-content border-0 shadow-lg" style="border-radius: 20px; overflow: hidden; height: 100%;">
+                    <div class="modal-header border-0 bg-primary text-white p-4">
+                        <div class="d-flex align-items-center">
+                            <i class="fas fa-tasks fa-lg me-3"></i>
+                            <div>
+                                <h5 class="modal-title fw-bold m-0" id="selectorTitle">Selector de Producción</h5>
+                                <p class="small opacity-75 m-0" id="selectorSub">Proyecto: -</p>
+                            </div>
+                        </div>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close" onclick="event.stopPropagation();"></button>
+                    </div>
+                    <div class="modal-body p-4 bg-light">
+                        <!-- Level 1: Articles Table -->
+                        <div id="level1-articles">
+                            <h6 class="text-muted fw-bold mb-3 uppercase smaller"><i class="fas fa-layer-group me-1"></i> NIVEL 1: ARTÍCULOS DEL PROYECTO</h6>
+                            <div class="table-responsive rounded-4 bg-white shadow-sm border overflow-hidden">
+                                <table class="table table-hover align-middle mb-0" id="tableArticles">
+                                    <thead class="bg-light">
+                                        <tr>
+                                            <th class="ps-4 text-center" style="white-space: normal;">Planificar</th>
+                                            <th class="text-center" style="white-space: normal;">OP</th>
+                                            <th class="text-center" style="white-space: normal;">Artículo</th>
+                                            <th class="text-center" style="white-space: normal;">Denominación</th>
+                                            <th class="text-center" style="white-space: normal;">Solicitado</th>
+                                            <th class="text-center" style="white-space: normal;">Finalizado</th>
+                                            <th class="text-center" style="white-space: normal;">Seleccionados</th>
+                                            <th class="text-center" style="white-space: normal; width: 100px;">Prioridad Pieza</th>
+                                            <th class="pe-4 text-center" style="white-space: normal;">Acción</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="tbodyArticles">
+                                        <!-- Dynamic content -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- Level 2: Processes Table (Hidden by default) -->
+                        <div id="level2-processes" class="mt-4" style="display: none;">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h6 class="text-muted fw-bold m-0 uppercase smaller"><i class="fas fa-cogs me-1"></i> NIVEL 2: PROCESOS / OPERACIONES</h6>
+                                <button class="btn btn-sm btn-danger px-3" onclick="backToArticles()">
+                                    <i class="fas fa-arrow-left me-1"></i> Volver a Artículos
+                                </button>
+                            </div>
+                            <div class="bg-white rounded-4 shadow-sm border p-4 mb-3">
+                                <div class="d-flex align-items-center mb-0">
+                                    <div class="bg-info bg-opacity-10 p-2 rounded-3 me-3 text-info">
+                                        <i class="fas fa-info-circle fa-lg"></i>
+                                    </div>
+                                    <div>
+                                        <div class="fw-bold" id="detailArtName">-</div>
+                                        <div class="small text-muted" id="detailArtCode">-</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="table-responsive rounded-4 bg-white shadow-sm border overflow-hidden">
+                                <table class="table table-hover align-middle mb-0" id="tableProcesses">
+                                    <thead class="bg-light">
+                                        <tr>
+                                            <th class="ps-4 text-center" style="width: 80px;">Planificar</th>
+                                            <th class="text-center" style="width: 100px;">Nivel Planif.</th>
+                                            <th class="text-center">Descripción del Proceso</th>
+                                            <th class="text-center">Máquina</th>
+                                            <th class="text-center">Cant. Lote</th>
+                                            <th class="pe-4 text-center">Cant. Pendiente</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="tbodyProcesses">
+                                        <!-- Dynamic content -->
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer border-0 p-4 bg-white">
+                        <button type="button" class="btn btn-light rounded-pill px-4 fw-bold" data-bs-dismiss="modal" onclick="event.stopPropagation();">Cancelar</button>
+                        <button type="button" class="btn btn-success rounded-pill px-4 fw-bold shadow-sm" id="btnAcceptSelector" onclick="backToArticles()" style="display: none;">
+                            <i class="fas fa-check me-2"></i>Aceptar
+                        </button>
+                        <button type="button" class="btn btn-primary rounded-pill px-4 fw-bold shadow-sm" id="btnConfirmSelect" onclick="confirmSelection();">
+                            <i class="fas fa-check-double me-2"></i>Confirmar y Cargar Planificación
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tabs Navigation -->
+        <ul class="nav nav-tabs" id="myTab" role="tablist">
+            {% for machine in machines %}
+            {% with count=grouped_data|get_item:machine.nombre|length %}
+            <li class="nav-item" role="presentation">
+                <button class="nav-link {% if forloop.first %}active{% endif %} {% if count > 0 %}con-carga{% endif %}" 
+                        id="{{ machine.nombre|slugify }}-tab" 
+                        data-bs-toggle="tab" 
+                        data-bs-target="#{{ machine.nombre|slugify }}" 
+                        data-machine="{{ machine.id }}"
+                        type="button" 
+                        role="tab" 
+                        aria-selected="{% if forloop.first %}true{% else %}false{% endif %}">
+                    {{ machine.nombre }}
+                    <span class="badge ms-1">{{ count }}</span>
+                </button>
+            </li>
+            {% endwith %}
+            {% endfor %}
+        </ul>
+
+        <!-- Tabs Content -->
+        <div class="tab-content" id="myTabContent">
+            {% for machine in machines %}
+            <div class="tab-pane fade {% if forloop.first %}show active{% endif %}" 
+                 id="{{ machine.nombre|slugify }}" 
+                 role="tabpanel" 
+                 aria-labelledby="{{ machine.nombre|slugify }}-tab">
+                
+                <div class="machine-header bg-primary text-white p-2 mb-0">
+                    <h5 class="m-0 text-center">{{ machine.nombre }}</h5>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="table table-bordered table-hover table-sm align-middle">
+                        <thead class="table-info text-center sticky-top">
+                            <tr>
+                                <th style="white-space: normal;">Acciones</th>
+                                <th style="white-space: normal;">Proyecto</th>
+                                <th style="white-space: normal;">Denominación</th>
+                                <th style="white-space: normal;">N° de OP</th>
+                                <th style="white-space: normal;">Descripción</th>
+                                <th style="white-space: normal;">Prioridad</th>
+                                <th style="white-space: normal;">Nivel Planificación</th>
+                                <th style="white-space: normal;">Máquina</th>
+                                <th class="bg-warning-subtle" style="white-space: normal;">Tiempo</th>
+                                <th class="bg-warning-subtle" style="white-space: normal;">Tiempo Logrado</th>
+                                <th class="bg-success-subtle text-dark" style="white-space: normal;">Eficiencia (KPI)</th>
+                                <th style="white-space: normal;">Cantidad</th>
+                                <th style="white-space: normal;">Cantidad Producida</th>
+                                <th class="bg-warning-subtle" style="white-space: normal;">Cantidades Pendientes</th>
+                                <th class="bg-info-subtle" style="white-space: normal;">% Solapamiento</th>
+                                <th style="white-space: normal;">Tiempo Proceso</th>
+                             </tr>
+                        </thead>
+                        <tbody>
+                            <!-- Retrieve list for this machine from the dictionary -->
+                             {% for item in grouped_data|get_item:machine.nombre %}
+                            <tr data-id="{{ item.Idorden }}" 
+                                 data-unit-time="{{ item.Tiempo|unlocalize }}"
+                                 data-total-qty="{{ item.Cantidad|unlocalize }}"
+                                data-maquina="{{ item.MAQUINA_ID }}" 
+                                data-priority="{{ item.OrdenVisual }}" 
+                                data-proyecto="{{ item.ProyectoCode|default:'' }}"
+                                class="{% if item.is_hidden %}hidden-row{% endif %}"
+                                style="cursor: grab;">
+                                <td class="text-center actions-column" style="white-space: nowrap;">
+                                    <!-- Audit Mode Switchable Buttons -->
+                                    <button class="btn btn-sm btn-outline-success btn-reactivate btn-audit-action d-inline-flex align-items-center justify-content-center" style="width: 28px; height: 28px; padding: 0;" title="Recuperar OP">
+                                        <i class="fas fa-undo"></i>
+                                    </button>
+                                    
+                                    <div class="btn-normal-action d-inline-flex">
+                                        <button class="btn btn-sm btn-outline-primary btn-up d-inline-flex align-items-center justify-content-center" style="width: 28px; height: 28px; padding: 0; margin-right: 4px;" title="Subir">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-chevron-up" viewBox="0 0 16 16">
+                                              <path fill-rule="evenodd" d="M7.646 4.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1-.708.708L8 5.707l-5.646 5.647a.5.5 0 0 1-.708-.708l6-6z"/>
+                                            </svg>
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-secondary btn-down d-inline-flex align-items-center justify-content-center" style="width: 28px; height: 28px; padding: 0;" title="Bajar">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-chevron-down" viewBox="0 0 16 16">
+                                              <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z"/>
+                                            </svg>
+                                        </button>
+                                        <button class="btn btn-sm btn-outline-danger btn-delete d-inline-flex align-items-center justify-content-center" style="width: 28px; height: 28px; padding: 0; margin-left: 4px;" title="Borrar OP (Solo de este escenario)">
+                                            <i class="fas fa-trash-alt"></i>
+                                        </button>
+                                    </div>
+                                </td>
+      </td>
+                                <td>{{ item.ProyectoCode|default:"-" }}</td>
+                                 <td style="min-width: 150px; white-space: normal;" title="{{ item.Denominacion }}">{{ item.Denominacion }}</td>
+                                <td>{{ item.Idorden }}</td>
+                                 <td style="min-width: 250px; white-space: normal;" title="{{ item.Descri }}">{{ item.Descri }}</td>
+                                <td class="text-center row-priority-cell">{{ item.prioridad_pieza|default:"-" }}</td>
+                                <td class="text-end fw-bold editable-nivel" 
+                                    contenteditable="true"
+                                    title="Click para editar Nivel Planificación"
+                                    style="cursor: text; text-align: center; {% if item.NivelManualFlag %}background-color: #ffeeba;{% endif %}"
+                                >{{ item.Nivel_Planificacion|default:"0" }}</td>
+                                <td class="machine-cell-interactive p-0 align-middle" style="min-width: 160px;">
+                                    <button type="button" class="open-machine-modal w-100" 
+                                            data-op="{{ item.Idorden }}" 
+                                            data-current-machine-id="{{ item.MAQUINA_ID }}">
+                                        <span>{{ item.MAQUINAD }}</span>
+                                        <i class="fas fa-exchange-alt opacity-50 small"></i>
+                                    </button>
+                                </td>
+                                <td class="text-end bg-warning-lighter">{{ item.Tiempo|floatformat:3 }}</td>
+                                <td class="text-end bg-warning-lighter" title="Raw Logged: {{ item.Total_Horas_Fichadas|floatformat:2 }} hrs">{{ item.Tiempo_Logrado|floatformat:2 }}</td>
+                                <td class="text-center align-middle">
+                                    {% if item.KPI_Eficiencia == 'green' %}
+                                        <span class="badge bg-success" title="Desvío: {{ item.Desvio_Porcentaje|floatformat:1 }}% (Dentro de lo previsto)">
+                                            <i class="fas fa-check-circle"></i> Óptimo
+                                        </span>
+                                    {% elif item.KPI_Eficiencia == 'yellow' %}
+                                        <span class="badge bg-warning text-dark" title="Desvío: {{ item.Desvio_Porcentaje|floatformat:1 }}% (Retraso leve)">
+                                            <i class="fas fa-exclamation-triangle"></i> Normal
+                                        </span>
+                                    {% elif item.KPI_Eficiencia == 'orange' %}
+                                        <span class="badge bg-orange text-white" style="background-color: #fd7e14;" title="Desvío: {{ item.Desvio_Porcentaje|floatformat:1 }}% (Retraso moderado)">
+                                            <i class="fas fa-exclamation-circle"></i> Alerta
+                                        </span>
+                                    {% elif item.KPI_Eficiencia == 'red' %}
+                                        <span class="badge bg-danger" title="Desvío: {{ item.Desvio_Porcentaje|floatformat:1 }}% (Retraso grave)">
+                                            <i class="fas fa-times-circle"></i> Crítico
+                                        </span>
+                                    {% else %}
+                                        <span class="badge bg-secondary opacity-50" title="Sin datos suficientes">S/D</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end">{{ item.Cantidad|floatformat }}</td>
+                                <td class="text-end fw-bold editable-cantidad" 
+                                    contenteditable="true"
+                                    title="Click para editar Cantidad Producida"
+                                    style="cursor: text; text-align: right; {% if item.CantidadManualFlag %}background-color: #ffeeba;{% endif %}"
+                                    data-total="{{ item.Cantidad }}"
+                                >{{ item.Cantidadpp|floatformat }}</td>
+                                <td class="text-end bg-warning-lighter fw-bold cant-pendientes">
+                                    {{ item.CantidadesPendientes|floatformat }}
+                                </td>
+                                                           <td class="text-end fw-bold editable-solapamiento" 
+                                     contenteditable="true" 
+                                     title="0 para Automático, o ingrese % manual (Ej: 30)"
+                                     style="cursor: text; {% if item.porcentaje_solapamiento > 0 %}background-color: #ffeeba;{% endif %}"
+                                 >{{ item.porcentaje_solapamiento|default:"0" }}%</td>
+                                 <td class="text-end fw-bold editable-time" 
+                                     contenteditable="true" 
+                                     title="Click para editar tiempo manual"
+                                     style="cursor: text; {% if item.CalculadoManual %}background-color: #ffeeba;{% endif %}"
+                                 >{{ item.Tiempo_Proceso|floatformat:2 }}</td> 
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="15" class="text-center">No hay datos para esta máquina.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        
+        {% if error %}
+        <div class="alert alert-danger mt-4">
+            <strong>Error:</strong> {{ error }}
+        </div>
+        {% endif %}
+        
+        {% if not search_active %}
+        <div class="text-center py-5">
+            <div class="mb-4">
+                <i class="fas fa-search fa-4x text-muted opacity-50"></i>
+            </div>
+            <h3 class="text-secondary">Bienvenido al Planificador</h3>
+            <p class="lead text-muted">Ingrese un proyecto o filtro arriba para cargar los datos.</p>
+        </div>
+        {% elif not machines and not error %}
+        <div class="alert alert-info mt-4">
+            No se encontraron registros de planificación para los filtros seleccionados.
+        </div>
+        {% endif %}
+
+
+
+    </div>
+
+        <!-- Offcanvas para Proyectos Activos -->
+        <div class="offcanvas offcanvas-end shadow" tabindex="-1" id="activeProjectsOffcanvas" aria-labelledby="activeProjectsOffcanvasLabel" style="width: 380px; border-left: none;">
+            <div class="offcanvas-header bg-light border-bottom py-3 px-4">
+                <h5 class="offcanvas-title fw-bold text-dark d-flex align-items-center gap-2" id="activeProjectsOffcanvasLabel">
+                    <i class="fas fa-project-diagram text-primary"></i> Proyectos Activos
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+            </div>
+            <div class="offcanvas-body p-0 bg-white">
+                <div class="p-3 bg-light border-bottom text-muted small">
+                    <i class="fas fa-info-circle me-1"></i> Lista de proyectos con operaciones presentes en las máquinas.
+                </div>
+                <div id="activeProjectsList" class="list-group list-group-flush">
+                    <!-- Dinámico por JS -->
+                    <div class="text-center py-4 text-muted small">
+                        Calculando proyectos...
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- SortableJS for Drag and Drop -->
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+    
+    <script>
+        function openGantt(btn) {
+            // UI Feedback
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Procesando...';
+            btn.style.pointerEvents = 'none';
+
+            // Get current Input Value
+            const inputProyectos = document.getElementById('proyectos');
+            const val = inputProyectos ? inputProyectos.value : '';
+
+            // Construct URL
+            const params = new URLSearchParams(window.location.search);
+            if (val.trim()) {
+                params.set('proyectos', val.trim());
+            } else {
+                params.delete('proyectos');
+            }
+
+            // Evaluar condición de persistencia en memoria del frontend
+            try {
+                if (sessionStorage.getItem('ganttYaGraficado') === 'true') {
+                    params.set('graficar', '1');
+                }
+            } catch(e) {}
+
+            // Redirect
+            window.location.href = "{% url 'planificacion_visual' %}?" + params.toString();
+        }
+
+        function openProjectPriorities() {
+            const params = new URLSearchParams(window.location.search);
+            window.location.href = "{% url 'proyectos_prioridades' %}?" + params.toString();
+        }
+
+        function openPlanillasDiarias() {
+            const params = new URLSearchParams(window.location.search);
+            params.set('run', '1'); // Force run calculation
+            window.location.href = "{% url 'planillas_diarias' %}?" + params.toString();
+        }
+
+        function updateActiveProjectsPanel() {
+            const rows = document.querySelectorAll('.tab-content table tbody tr:not(.hidden-row)');
+            const projects = new Set();
+            
+            rows.forEach(row => {
+                const proj = row.getAttribute('data-proyecto');
+                if (proj && proj.trim() && proj.trim() !== '-') {
+                    projects.add(proj.trim());
+                }
+            });
+            
+            const projectArray = Array.from(projects).sort();
+            
+            const badge = document.getElementById('activeProjectsCountBadge');
+            if (badge) {
+                badge.textContent = projectArray.length;
+                if (projectArray.length > 0) {
+                    badge.classList.remove('bg-secondary');
+                    badge.classList.add('bg-primary');
+                } else {
+                    badge.classList.remove('bg-primary');
+                    badge.classList.add('bg-secondary');
+                }
+            }
+            
+            const listContainer = document.getElementById('activeProjectsList');
+            if (listContainer) {
+                if (projectArray.length === 0) {
+                    listContainer.innerHTML = '<div class="text-center py-4 text-muted small"><i class="fas fa-inbox fa-2x mb-2 opacity-25"></i><br>No hay proyectos activos en plan.</div>';
+                } else {
+                    let html = '';
+                    projectArray.forEach(p => {
+                        html += `
+                        <div class="list-group-item list-group-item-action d-flex align-items-center justify-content-between py-2 border-bottom-0 border-top" style="cursor: pointer;" onclick="openProductionSelector('${p}')">
+                            <div class="d-flex align-items-center">
+                                <div class="bg-primary bg-opacity-10 text-primary rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 35px; height: 35px;">
+                                    <i class="fas fa-code-branch"></i>
+                                </div>
+                                <div>
+                                    <h6 class="mb-0 fw-bold text-dark" style="font-size: 0.95rem;">${p}</h6>
+                                    <small class="text-muted" style="font-size: 0.75rem;">En planificación (Clic para editar)</small>
+                                </div>
+                            </div>
+                            <button class="btn btn-sm btn-outline-danger border-0 p-2" onclick="event.stopPropagation(); deleteProjectPlanning('${p}')" title="Borrar Proyecto">
+                                <i class="fas fa-trash-alt"></i>
+                            </button>
+                        </div>`;
+                    });
+                    listContainer.innerHTML = html;
+                }
+            }
+        }
+
+        window.deleteProjectPlanning = async function(projectCode) {
+            const result = await Swal.fire({
+                title: '¿Eliminar proyecto?',
+                html: `¿Estás seguro de que deseas eliminar el Proyecto <strong>${projectCode}</strong> y quitar todas sus operaciones de la planificación actual?`,
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonText: 'Sí, Eliminar',
+                cancelButtonText: 'Cancelar',
+                confirmButtonColor: '#ef4444',
+                customClass: {
+                    popup: 'premium-swal',
+                    confirmButton: 'premium-confirm',
+                    cancelButton: 'premium-cancel'
+                }
+            });
+
+            if (!result.isConfirmed) return;
+
+            try {
+                const scenarioId = new URLSearchParams(window.location.search).get('scenario_id') || "";
+                const response = await fetch('/api/delete_project_planning/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': '{{ csrf_token }}'
+                    },
+                    body: JSON.stringify({
+                        proyectos: projectCode,
+                        scenario_id: scenarioId
+                    })
+                });
+
+                if (response.ok) {
+                    Swal.fire({
+                        title: 'Proyecto Eliminado',
+                        text: `El proyecto ${projectCode} ha sido removido de la planificación.`,
+                        icon: 'success',
+                        timer: 2000,
+                        showConfirmButton: false,
+                        customClass: { popup: 'premium-swal' }
+                    }).then(() => {
+                        const params = new URLSearchParams(window.location.search);
+                        let currentProjects = params.get('proyectos') || '';
+                        let projectsArray = currentProjects.split(',').map(p => p.trim()).filter(p => p && p !== projectCode && p.replace('-', '.') !== projectCode && p.replace('.', '-') !== projectCode);
+                        params.set('proyectos', projectsArray.join(','));
+                        window.location.href = window.location.pathname + '?' + params.toString();
+                    });
+                } else {
+                    throw new Error("Error al borrar la planificación del proyecto");
+                }
+            } catch (e) {
+                Swal.fire({ title: 'Error', text: e.message, icon: 'error' });
+            }
+        };
+
+        let currentProjectToSelect = "";
+        let selectedOpsByArticle = {}; // { macroPk: [idOrden1, idOrden2, ...] }
+        let enabledArticles = {}; // { macroPk: true/false }
+        let currentLevel2MacroPk = ""; // Tracker for the active article in detail view
+
+        document.addEventListener('DOMContentLoaded', function() {
+            // Activar panel de proyectos inicialmente y observar cambios
+            updateActiveProjectsPanel();
+            const tabContent = document.getElementById('myTabContent');
+            if (tabContent) {
+                const observer = new MutationObserver(mutations => {
+                    updateActiveProjectsPanel();
+                });
+                observer.observe(tabContent, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+            }
+
+            // --- SELECTIVE PLANNING FLOW ---
+             const planForm = document.getElementById('plan-filter-form');
+            if (planForm) {
+                planForm.addEventListener('submit', async function(e) {
+                    const projectsInput = document.getElementById('proyectos');
+                    const projValue = projectsInput ? projectsInput.value.trim() : "";
+                    
+                    if (!projValue) return; // Si está vacío, sigue el flujo normal (limpiar filtros)
+
+                     if (!projValue.includes(',')) {
+                         // SINGLE PROJECT FLOW
+                         e.preventDefault();
+                         e.stopPropagation();
+                         
+                         const urlParams = new URLSearchParams(window.location.search);
+                         const scenarioId = urlParams.get('scenario_id') || "";
+                         
+                         try {
+                             const checkResp = await fetch(`/api/check_project_planning/?proyecto=${encodeURIComponent(projValue)}&scenario_id=${scenarioId}`);
+                             const checkData = await checkResp.json();
+                             
+                             if (checkData.exists) {
+                                 const result = await Swal.fire({
+                                     title: 'Proyecto ya planificado',
+                                     text: `El proyecto ${projValue} ya cuenta con una planificación activa en "${checkData.scenario}". ¿Desea planificarlo nuevamente?`,
+                                     icon: 'warning',
+                                     showCancelButton: true,
+                                     confirmButtonText: 'Sí, planificar otra vez',
+                                     cancelButtonText: 'Cancelar',
+                                     confirmButtonColor: '#3b82f6',
+                                     customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm', cancelButton: 'premium-cancel' }
+                                 });
+                                 if (!result.isConfirmed) return;
+                             }
+                             
+                             openProductionSelector(projValue);
+                             projectsInput.value = ""; 
+                             projectsInput.focus(); // Recuperar foco
+                         } catch (err) {
+                             console.error("Error checking planning state:", err);
+                             openProductionSelector(projValue); 
+                             projectsInput.value = "";
+                             projectsInput.focus();
+                         }
+                    } else {
+                        // MULTI PROJECT FLOW (Comma separated)
+                        e.preventDefault();
+                        const params = new URLSearchParams(window.location.search);
+                        params.set('proyectos', projValue);
+                        params.set('run', '1');
+                        
+                        projectsInput.value = ""; 
+                        window.location.href = window.location.pathname + "?" + params.toString();
+                    }
+                });
+            }
+
+            // Enfocar automáticamente el input de proyectos al cargar la página
+            const projectsInput = document.getElementById('proyectos');
+            if (projectsInput) projectsInput.focus();
+
+            window.openProductionSelector = async function(projectCode) {
+                console.log("Abriendo selector para el proyecto:", projectCode);
+                try {
+                currentProjectToSelect = projectCode;
+                selectedOpsByArticle = {};
+                enabledArticles = {};
+                document.getElementById('selectorSub').innerText = "Proyecto: " + projectCode;
+                
+                // Usar el scenarioId de la URL o el definido globalmente (Django template)
+                const urlScenarioId = new URLSearchParams(window.location.search).get('scenario_id');
+                const activeScenarioId = urlScenarioId || (typeof scenarioId !== 'undefined' ? scenarioId : '');
+                
+                const dialog = document.getElementById('selectorDialog');
+                // Permanent width for stability
+                dialog.style.maxWidth = "1600px";
+                dialog.style.width = "95%";
+                
+                // Retrieve or create Modal instance cleanly to prevent multiple backdrops/event duplicates
+                const selectorModalEl = document.getElementById('selectorProduccionModal');
+                let modalInstance = bootstrap.Modal.getInstance(selectorModalEl);
+                if (!modalInstance) {
+                    modalInstance = new bootstrap.Modal(selectorModalEl);
+                }
+                modalInstance.show();
+                
+                backToArticles();
+                
+                // Clean close: Stop event propagation to prevent any global/parent listener from redirecting to Gantt
+                const handleModalHide = function (e) {
+                    e.stopPropagation();
+                };
+                const handleModalHidden = function (e) {
+                    e.stopPropagation();
+                    const projectsInput = document.getElementById('proyectos');
+                    if (projectsInput) projectsInput.focus();
+                };
+                
+                selectorModalEl.removeEventListener('hide.bs.modal', handleModalHide);
+                selectorModalEl.removeEventListener('hidden.bs.modal', handleModalHidden);
+                
+                selectorModalEl.addEventListener('hide.bs.modal', handleModalHide);
+                selectorModalEl.addEventListener('hidden.bs.modal', handleModalHidden, { once: true });
+                
+                const tbody = document.getElementById('tbodyArticles');
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4"><i class="fas fa-sync fa-spin me-2"></i> Cargando artículos...</td></tr>';
+                
+                try {
+                    const response = await fetch(`/api/get_project_articles/?proyecto=${projectCode}&scenario_id=${activeScenarioId}`);
+                    const data = await response.json();
+                    
+                    if (data.planned_state) {
+                        selectedOpsByArticle = data.planned_state;
+                    }
+
+                    if (data.articles && data.articles.length > 0) {
+                        tbody.innerHTML = "";
+                        data.articles.forEach(art => {
+                            enabledArticles[art.MacroPK] = true;
+                            const row = document.createElement('tr');
+                            row.id = `row-art-${art.MacroPK.replace(/\s+/g, '-')}`;
+                            row.innerHTML = `
+                                <td class="ps-4 text-center">
+                                    <div class="form-check form-switch form-switch-lg d-inline-block">
+                                        <input class="form-check-input shadow-sm article-plan-checkbox" type="checkbox" checked>
+                                    </div>
+                                </td>
+                                <td class="fw-bold text-muted text-center">${art.IdOrdenMaster || '-'}</td>
+                                <td class="fw-bold text-primary article-clickable">${art.Articulo}</td>
+                                <td class="article-clickable">${art.Denominacion}</td>
+                                <td class="text-center">${parseFloat(art.Solicitado || 0).toFixed(0)}</td>
+                                <td class="text-center">${parseFloat(art.Finalizado || 0).toFixed(0)}</td>
+                                <td class="text-center"><span class="badge bg-secondary rounded-pill process-count" id="count-art-${art.MacroPK.replace(/\s+/g, '-')}">0</span></td>
+                                <td class="text-center">
+                                    <input type="number" 
+                                           class="form-control form-control-sm article-priority-input" 
+                                           value="${art.nivel_planificacion || 0}" 
+                                           min="1">
+                                </td>
+                                <td class="pe-4 text-center">
+                                    <button class="btn btn-sm btn-link text-primary article-clickable">
+                                        <i class="fas fa-chevron-right"></i>
+                                    </button>
+                                </td>
+                            `;
+
+                            // Set data attributes and event listeners programmatically to avoid quote-escaping issues in inline JS/HTML attributes
+                            const priorityInput = row.querySelector('.article-priority-input');
+                            priorityInput.dataset.macropk = art.MacroPK;
+
+                            const planCheckbox = row.querySelector('.article-plan-checkbox');
+                            planCheckbox.addEventListener('change', function() {
+                                toggleArticlePlan(art.MacroPK, this.checked);
+                            });
+
+                            row.querySelectorAll('.article-clickable').forEach(el => {
+                                el.addEventListener('click', function() {
+                                    handleArticleClick(art.MacroPK, art.Denominacion, art.Articulo);
+                                });
+                            });
+
+                            tbody.appendChild(row);
+                        });
+                        updateAllCounters();
+                    } else {
+                        tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-muted">No se encontraron artículos para este proyecto.</td></tr>';
+                    }
+                } catch (e) {
+                    tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-danger">Error al cargar artículos.</td></tr>';
+                }
+                } catch (err) {
+                    console.error("Error crítico al abrir el selector:", err);
+                }
+            };
+
+            window.toggleArticlePlan = function(macroPk, isEnabled) {
+                enabledArticles[macroPk] = isEnabled;
+                const rowId = `row-art-${macroPk.replace(/\s+/g, '-')}`;
+                const row = document.getElementById(rowId);
+                if (row) {
+                    if (isEnabled) {
+                         row.style.opacity = "1";
+                         row.classList.remove('bg-light');
+                    } else {
+                         row.style.opacity = "0.5";
+                         row.classList.add('bg-light');
+                    }
+                }
+            };
+
+            window.handleArticleClick = function(macroPk, artName, artCode) {
+                if (!enabledArticles[macroPk]) {
+                    Swal.fire({
+                         title: 'Artículo Desactivado',
+                         text: 'Active el switch de "Planificar" para ver los detalles de este artículo.',
+                         icon: 'info',
+                         timer: 2000,
+                         showConfirmButton: false,
+                         customClass: { popup: 'premium-swal' }
+                    });
+                    return;
+                }
+                showProcesses(macroPk, artName, artCode);
+            };
+
+            window.showProcesses = async function(macroPk, artName, artCode) {
+                currentLevel2MacroPk = macroPk; // Set global tracker
+                
+                document.getElementById('level1-articles').style.display = 'none';
+                document.getElementById('level2-processes').style.display = 'block';
+                document.getElementById('detailArtName').innerText = artName;
+                document.getElementById('detailArtCode').innerText = "MacroPK: " + macroPk;
+                
+                // Button management
+                document.getElementById('btnAcceptSelector').style.display = 'block';
+                document.getElementById('btnConfirmSelect').style.display = 'none';
+                
+                const tbody = document.getElementById('tbodyProcesses');
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4"><i class="fas fa-sync fa-spin me-2"></i> Cargando procesos...</td></tr>';
+                
+                try {
+                    const urlScenarioId = new URLSearchParams(window.location.search).get('scenario_id');
+                    const activeScenarioId = urlScenarioId || (typeof scenarioId !== 'undefined' ? scenarioId : '');
+                    const response = await fetch(`/api/get_article_processes/?macro_pk=${macroPk}&scenario_id=${activeScenarioId}`);
+                    const data = await response.json();
+                    
+                    if (data.processes && data.processes.length > 0) {
+                        // Ordenar por Nivel de menor a menor (Ascendente) para seguir secuencia ERP
+                        data.processes.sort((a, b) => (parseInt(a.Nivel_Planificacion) || 0) - (parseInt(b.Nivel_Planificacion) || 0));
+                        
+                        tbody.innerHTML = "";
+                        
+                        // FIXED: Only auto-select processes with real pending quantity (Pendiente > 0)
+                        const isFirstTime = !selectedOpsByArticle[macroPk];
+                        if (isFirstTime) {
+                            selectedOpsByArticle[macroPk] = data.processes
+                                .filter(p => parseFloat(p.Pendiente || 0) > 0)
+                                .map(p => p.IdOrden.toString());
+                        }
+
+                        const previouslySelected = selectedOpsByArticle[macroPk] || [];
+                        
+                        data.processes.forEach(proc => {
+                            const pendiente = parseFloat(proc.Pendiente || 0);
+                            const isChecked = previouslySelected.includes(proc.IdOrden.toString());
+                            const isCompleted = pendiente <= 0;
+                            const row = document.createElement('tr');
+                            if (isCompleted) row.style.opacity = '0.5';
+                            row.innerHTML = `
+                                <td class="ps-4 text-center">
+                                    <div class="form-check form-switch form-switch-lg d-inline-block">
+                                        <input class="form-check-input shadow-sm process-checkbox" type="checkbox" 
+                                               value="${proc.IdOrden}" ${isChecked ? 'checked' : ''}>
+                                    </div>
+                                </td>
+                                <td class="text-center">
+                                    <input type="number" class="form-control form-control-sm text-center fw-bold mx-auto process-priority-input" 
+                                           style="width: 70px;"
+                                           value="${proc.Nivel_Planificacion || 0}">
+                                </td>
+                                <td class="small">${proc.Proceso}</td>
+                                <td class="text-center"><span class="badge bg-light text-dark border">${proc.MaquinaNombre || '-'}</span></td>
+                                <td class="text-center">${parseFloat(proc.Cantidad || 0).toFixed(0)}</td>
+                                <td class="pe-4 text-center fw-bold ${isCompleted ? 'text-muted' : 'text-danger'}">${pendiente.toFixed(2)}</td>
+                            `;
+
+                            // Add change listener to checkbox programmatically to prevent string escaping errors
+                            const checkbox = row.querySelector('.process-checkbox');
+                            checkbox.addEventListener('change', function() {
+                                updateProcessSelection(macroPk, this);
+                            });
+
+                            // Add change listener to priority input programmatically to prevent string escaping errors
+                            const priorityInput = row.querySelector('.process-priority-input');
+                            priorityInput.addEventListener('change', function() {
+                                updateProcessPriority(proc.IdOrden, this.value);
+                            });
+
+                            tbody.appendChild(row);
+                        });
+                        
+                        // Sync counters for all articles
+                        updateAllCounters();
+                        // Check if all are selected to sync master checkbox
+                        syncMasterCheckbox();
+                    } else {
+                        tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-muted">No hay procesos abiertos para este artículo.</td></tr>';
+                    }
+                } catch (e) {
+                    tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4 text-danger">Error al cargar procesos.</td></tr>';
+                }
+            };
+
+            window.backToArticles = function() {
+                document.getElementById('level1-articles').style.display = 'block';
+                document.getElementById('level2-processes').style.display = 'none';
+                
+                // Button management
+                document.getElementById('btnAcceptSelector').style.display = 'none';
+                document.getElementById('btnConfirmSelect').style.display = 'block';
+            };
+
+            window.updateProcessSelection = function(macroPk, checkbox) {
+                if (!selectedOpsByArticle[macroPk]) selectedOpsByArticle[macroPk] = [];
+                const id = checkbox.value.toString();
+                if (checkbox.checked) {
+                    if (!selectedOpsByArticle[macroPk].includes(id)) {
+                        selectedOpsByArticle[macroPk].push(id);
+                    }
+                } else {
+                    selectedOpsByArticle[macroPk] = selectedOpsByArticle[macroPk].filter(x => x !== id);
+                }
+                updateCounter(macroPk);
+                syncMasterCheckbox();
+            };
+
+            window.updateCounter = function(macroPk) {
+                const badge = document.getElementById(`count-art-${macroPk.replace(/\s+/g, '-')}`);
+                if (badge) {
+                    const count = selectedOpsByArticle[macroPk] ? selectedOpsByArticle[macroPk].length : 0;
+                    badge.innerText = count;
+                    if (count > 0) {
+                        badge.classList.remove('bg-secondary');
+                        badge.classList.add('bg-primary');
+                    } else {
+                        badge.classList.remove('bg-primary');
+                        badge.classList.add('bg-secondary');
+                    }
+                }
+            };
+
+            window.updateProcessPriority = function(idOrden, nivel) {
+                console.log("Enviando ID:", idOrden, "Nivel:", nivel);
+                const scenarioId = new URLSearchParams(window.location.search).get('scenario_id');
+                return fetch('/api/update_manual_nivel/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        id_orden: idOrden,
+                        nivel_manual: nivel,
+                        scenario_id: scenarioId
+                    })
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.error) {
+                        console.error("Error saving priority:", data.error);
+                        alert("Error al guardar nivel: " + data.error);
+                    } else {
+                        console.log("Nivel guardado correctamente en DB SQLite para ID:", idOrden);
+                    }
+                    return data;
+                })
+                .catch(err => {
+                    console.error("Network error saving priority:", err);
+                    alert("Error de red al guardar nivel.");
+                });
+            };
+
+            window.updateAllCounters = function() {
+                for (const mPk in selectedOpsByArticle) {
+                    updateCounter(mPk);
+                }
+            };
+
+            function syncMasterCheckbox() {
+                const total = document.querySelectorAll('.process-checkbox').length;
+                const checked = document.querySelectorAll('.process-checkbox:checked').length;
+                const master = document.getElementById('checkAllProcesses');
+                if (master) {
+                    master.checked = total > 0 && total === checked;
+                }
+            }
+
+            window.toggleAllProcesses = function(master) {
+                const boxes = document.querySelectorAll('.process-checkbox');
+                if (!currentLevel2MacroPk) return;
+
+                if (master.checked) {
+                    // Select all
+                    selectedOpsByArticle[currentLevel2MacroPk] = Array.from(boxes).map(b => b.value.toString());
+                    boxes.forEach(b => b.checked = true);
+                } else {
+                    // Deselect all
+                    selectedOpsByArticle[currentLevel2MacroPk] = [];
+                    boxes.forEach(b => b.checked = false);
+                }
+                updateCounter(currentLevel2MacroPk);
+            };
+
+            window.confirmSelection = async function() {
+                // Collect all selected OPs but ONLY from ENABLED articles
+                let finalSelection = [];
+                // Collect priority for ALL articles, regardless of selection
+                let piecePriorities = {};
+                document.querySelectorAll('.article-priority-input').forEach(input => {
+                    const mPk = input.dataset.macropk;
+                    if (mPk && enabledArticles[mPk]) {
+                        piecePriorities[mPk] = parseInt(input.value) || 1;
+                    }
+                });
+
+                for (const mPk in selectedOpsByArticle) {
+                    if (enabledArticles[mPk]) {
+                        finalSelection = finalSelection.concat(selectedOpsByArticle[mPk]);
+                    }
+                }
+                
+                if (finalSelection.length === 0) {
+                    Swal.fire({
+                        title: 'Atención',
+                        text: 'No hay procesos seleccionados en los artículos activos.',
+                        icon: 'warning',
+                        customClass: { popup: 'premium-swal' }
+                    });
+                    return;
+                }
+
+                const scenarioId = new URLSearchParams(window.location.search).get('scenario_id');
+                const btn = document.getElementById('btnConfirmSelect');
+                const originalHtml = btn.innerHTML;
+                btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i> Cargando...';
+                btn.disabled = true;
+
+                try {
+                    const response = await fetch('/api/confirm_selected_tasks/', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': '{{ csrf_token }}'
+                        },
+                        body: JSON.stringify({
+                            id_ordens: finalSelection,
+                            piece_priorities: piecePriorities, // macroPk -> priority
+                            selected_ops_by_article: selectedOpsByArticle, // to know which OP gets which priority
+                            scenario_id: scenarioId,
+                            project_code: currentProjectToSelect,
+                            force: true
+                        })
+                    });
+                    
+                    if (response.ok) {
+                        Swal.fire({
+                            title: 'Planificación Lista',
+                            text: `Se han cargado ${finalSelection.length} procesos correctamente.`,
+                            icon: 'success',
+                            timer: 2000,
+                            showConfirmButton: false,
+                            customClass: { popup: 'premium-swal' }
+                        }).then(() => {
+                             // Hide modal cleanly
+                             const modalEl = document.getElementById('selectorProduccionModal');
+                             const modalInstance = bootstrap.Modal.getInstance(modalEl);
+                             if (modalInstance) {
+                                 modalInstance.hide();
+                             }
+                             
+                             const params = new URLSearchParams(window.location.search);
+                             const scenarioParam = params.get('scenario_id') || scenarioId;
+                             let currentProjects = params.get('proyectos') || '';
+                             let projectsArray = currentProjects.split(',').map(p => p.trim()).filter(p => p);
+                             if (currentProjectToSelect && !projectsArray.includes(currentProjectToSelect)) {
+                                 projectsArray.push(currentProjectToSelect);
+                             }
+                             
+                             params.set('scenario_id', scenarioParam);
+                             params.set('proyectos', projectsArray.join(','));
+                             
+                             // Reload current planning page with updated filters, avoiding Gantt redirection
+                             const planUrl = `${window.location.pathname}?${params.toString()}`;
+                             window.location.href = planUrl;
+                        });
+                    } else {
+                        throw new Error("Error al confirmar la selección");
+                    }
+                } catch (e) {
+                    Swal.fire({ title: 'Error', text: e.message, icon: 'error' });
+                    btn.innerHTML = originalHtml;
+                    btn.disabled = false;
+                }
+            };
+            // --- CLEAN / RESET TABLE BUTTON ---
+            const btnClean = document.getElementById('btnCleanTable');
+            if (btnClean) {
+                btnClean.addEventListener('click', async function() {
+                    const result = await Swal.fire({
+                        title: '¿RESTABLECER planificación?',
+                        html: `
+                            <div class="text-start mt-3">
+                                <div class="d-flex align-items-center mb-2">
+                                    <i class="fas fa-trash-alt text-danger me-2"></i>
+                                    <span>Se borrarán todos los movimientos manuales.</span>
+                                </div>
+                                <div class="d-flex align-items-center mb-2">
+                                    <i class="fas fa-history text-primary me-2"></i>
+                                    <span>Se restaurarán las prioridades originales.</span>
+                                </div>
+                                <div class="d-flex align-items-center mb-2">
+                                    <i class="fas fa-eye text-success me-2"></i>
+                                    <span>Reaparecerán tareas ocultas.</span>
+                                </div>
+                                <hr>
+                                <p class="text-muted small mb-0">Esta acción devolverá la planificación al estado original del ERP.</p>
+                            </div>
+                        `,
+                        icon: 'warning',
+                        showCancelButton: true,
+                        confirmButtonText: 'Sí, Restablecer',
+                        cancelButtonText: 'Cancelar',
+                        confirmButtonColor: '#ef4444',
+                        customClass: {
+                            popup: 'premium-swal',
+                            confirmButton: 'premium-confirm',
+                            cancelButton: 'premium-cancel'
+                        }
+                    });
+
+                    if (!result.isConfirmed) return;
+                    
+                    // Collect all IDs on the screen (from all tabs)
+                    // We can query all rows with data-id attribute
+                    const allRows = document.querySelectorAll('tr[data-id]');
+                    const ids = Array.from(allRows).map(r => r.dataset.id);
+                    
+                    try {
+                        const proyectosInput = document.getElementById('proyectos');
+                        const projVal = proyectosInput ? proyectosInput.value : '';
+                        const scenarioId = new URLSearchParams(window.location.search).get('scenario_id');
+
+                        const response = await fetch('/api/reset_planning/', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRFToken': '{{ csrf_token }}'
+                            },
+                            body: JSON.stringify({ 
+                                ids: ids, 
+                                scenario_id: scenarioId,
+                                proyectos: projVal
+                            })
+                        });
+                        
+                        if (response.ok) {
+                            Swal.fire({
+                                title: '¡Restablecido!',
+                                text: 'La planificación ha vuelto a su estado original.',
+                                icon: 'success',
+                                timer: 2000,
+                                showConfirmButton: false,
+                                customClass: { popup: 'premium-swal' }
+                            }).then(() => window.location.reload());
+                        } else {
+                            const data = await response.json();
+                            Swal.fire({
+                                title: 'Error',
+                                text: data.error || "No se pudo restablecer el plan.",
+                                icon: 'error',
+                                customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                            });
+                        }
+                    } catch (e) {
+                        console.error(e);
+                        alert("Error de conexión al restablecer.");
+                    }
+                });
+            }
+            // --- Tab Persistence Logic ---
+            const activeTabId = localStorage.getItem('activePlanificacionTab');
+            if (activeTabId) {
+                const tabTrigger = document.getElementById(activeTabId);
+                if (tabTrigger) {
+                    const tab = new bootstrap.Tab(tabTrigger);
+                    tab.show();
+                }
+            }
+
+            // Save tab state on change
+            const tabElsd = document.querySelectorAll('button[data-bs-toggle="tab"]');
+            tabElsd.forEach(tabEl => {
+                tabEl.addEventListener('shown.bs.tab', event => {
+                    localStorage.setItem('activePlanificacionTab', event.target.id);
+                });
+            });
+
+            // --- Horizontal Scroll with Mouse Wheel ---
+            const tabList = document.getElementById('myTab');
+            if (tabList) {
+                tabList.addEventListener('wheel', (evt) => {
+                    evt.preventDefault();
+                    tabList.scrollLeft += evt.deltaY;
+                });
+            }
+
+            // --- Manual Time Edit Logic ---
+            // Listener for editable cells
+            const editableCells = document.querySelectorAll('.editable-time');
+            editableCells.forEach(cell => {
+                // Save on Enter key
+                cell.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        this.blur(); // Trigger blur to save
+                    }
+                });
+
+                // Save on leaving the cell
+                cell.addEventListener('blur', async function() {
+                    const row = this.closest('tr');
+                    const idOrden = row.dataset.id;
+                    const newValue = this.innerText.trim();
+                const maquina = row.dataset.maquina; 
+                const scenarioId = new URLSearchParams(window.location.search).get('scenario_id');
+                
+                // Validate basic number
+                    const numVal = parseFloat(newValue.replace(',', '.')); // Handle commas
+                    if (isNaN(numVal) || numVal < 0) {
+                        alert("Por favor ingrese un número válido.");
+                        this.innerText = "0.00"; // Reset or handle error
+                        return;
+                    }
+
+                    // Visual Feedback
+                    this.style.backgroundColor = '#e2e6ea'; // Grey out while saving
+
+                    try {
+                        const response = await fetch('/api/update_manual_time/', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRFToken': '{{ csrf_token }}'
+                            },
+                            body: JSON.stringify({
+                                id_orden: idOrden,
+                                tiempo_manual: numVal,
+                                maquina: maquina,
+                                scenario_id: scenarioId
+                            })
+                        });
+
+                        if (response.ok) {
+                            // Success Feedback
+                            this.style.backgroundColor = '#ffeeba'; // Yellow flag
+                            this.innerText = numVal.toFixed(2);
+                        } else {
+                            const data = await response.json();
+                            alert("Error al guardar tiempo: " + (data.error || "Desconocido"));
+                            // Revert? Hard to revert without knowing original
+                            this.style.backgroundColor = '#f8d7da'; // Red error
+                        }
+                    } catch (e) {
+                        console.error(e);
+                        alert("Error de conexión al guardar.");
+                        this.style.backgroundColor = '#f8d7da';
+                    }
+                });
+            });
+
+            // --- Manual Nivel Edit Logic ---
+            const editableNivelCells = document.querySelectorAll('.editable-nivel');
+            editableNivelCells.forEach(cell => {
+                cell.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        this.blur();
+                    }
+                });
+
+                cell.addEventListener('blur', async function() {
+                    const row = this.closest('tr');
+                    const idOrden = row.dataset.id;
+                    const newValue = this.innerText.trim();
+                    const maquina = row.dataset.maquina; 
+                    const scenarioId = new URLSearchParams(window.location.search).get('scenario_id');
+                    
+                    // Validate basic integer
+                    const numVal = parseInt(newValue);
+                    if (isNaN(numVal) || numVal < 0) {
+                        alert("Por favor ingrese un número entero válido (nivel).");
+                        this.innerText = "0"; 
+                        return;
+                    }
+
+                    this.style.backgroundColor = '#e2e6ea'; 
+
+                    try {
+                        const response = await fetch('/api/update_manual_nivel/', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRFToken': '{{ csrf_token }}'
+                            },
+                            body: JSON.stringify({
+                                id_orden: idOrden,
+                                nivel_manual: numVal,
+                                maquina: maquina,
+                                scenario_id: scenarioId
+                            })
+                        });
+
+                        if (response.ok) {
+                            this.style.backgroundColor = '#ffeeba'; 
+                            this.innerText = numVal;
+                        } else {
+                            const data = await response.json();
+                            alert("Error al guardar nivel: " + (data.error || "Desconocido"));
+                            this.style.backgroundColor = '#f8d7da'; 
+                        }
+                    } catch (e) {
+                        console.error(e);
+                        alert("Error de conexión al guardar.");
+                        this.style.backgroundColor = '#f8d7da';
+                    }
+                });
+            });
+
+            // --- Manual Overlap Edit Logic ---
+            const editableSolapamientoCells = document.querySelectorAll('.editable-solapamiento');
+            editableSolapamientoCells.forEach(cell => {
+                cell.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        this.blur();
+                    }
+                });
+
+                cell.addEventListener('blur', async function() {
+                    const row = this.closest('tr');
+                    const idOrden = row.dataset.id;
+                    const rawValue = this.innerText.replace('%', '').trim();
+                    const maquina = row.dataset.maquina; 
+                    const scenarioId = new URLSearchParams(window.location.search).get('scenario_id');
+                    
+                    const numVal = parseFloat(rawValue);
+                    if (isNaN(numVal) || numVal < 0 || numVal > 100) {
+                        alert("Por favor ingrese un porcentaje válido (0 a 100).");
+                        this.innerText = "0%"; 
+                        return;
+                    }
+
+                    this.style.backgroundColor = '#e2e6ea'; 
+
+                    try {
+                        const response = await fetch('/api/update_overlap_percentage/', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRFToken': '{{ csrf_token }}'
+                            },
+                            body: JSON.stringify({
+                                id_orden: idOrden,
+                                porcentaje_solapamiento: numVal,
+                                maquina: maquina,
+                                scenario_id: scenarioId
+                            })
+                        });
+
+                        if (response.ok) {
+                            this.style.backgroundColor = numVal > 0 ? '#ffeeba' : 'transparent'; 
+                            this.innerText = numVal + '%';
+                        } else {
+                            const data = await response.json();
+                            alert("Error al guardar solapamiento: " + (data.error || "Desconocido"));
+                            this.style.backgroundColor = '#f8d7da'; 
+                        }
+                    } catch (e) {
+                        console.error(e);
+                        alert("Error de conexión al guardar.");
+                        this.style.backgroundColor = '#f8d7da';
+                    }
+                });
+            });
+
+
+
+            // --- Reordering Logic (Buttons) ---
+            async function moveRow(btn, direction) {
+                const row = btn.closest('tr');
+                const idOrden = row.dataset.id;
+                const maquina = row.dataset.maquina;
+                const priority = row.dataset.priority;
+                
+                let neighbor = null;
+                if (direction === 'up') {
+                    neighbor = row.previousElementSibling;
+                } else {
+                    neighbor = row.nextElementSibling;
+                }
+
+                if (!neighbor || !neighbor.dataset.id) {
+                    console.log("No neighbor to swap with");
+                    return; // Can't move
+                }
+
+                const neighborId = neighbor.dataset.id;
+                const neighborPriority = neighbor.dataset.priority;
+
+                // Call API
+                try {
+                    const response = await fetch(`/api/move_priority/${idOrden}/${direction}/`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': '{{ csrf_token }}'
+                        },
+                        body: JSON.stringify({
+                            maquina: maquina,
+                            priority: priority,
+                            neighbor_id: neighborId,
+                            neighbor_priority: neighborPriority,
+                            scenario_id: new URLSearchParams(window.location.search).get('scenario_id')
+                        })
+                    });
+
+                    if (response.ok) {
+                        // Optimistic Update (No Reload)
+                        // 1. Swap Priorities in Dataset
+                        row.dataset.priority = neighborPriority;
+                        neighbor.dataset.priority = priority;
+
+                        // 2. Swap DOM Elements
+                        if (direction === 'up') {
+                            row.parentNode.insertBefore(row, neighbor);
+                        } else {
+                            // Moving down: Insert neighbor before row (effectively swapping)
+                            row.parentNode.insertBefore(neighbor, row);
+                        }
+                    } else {
+                        const data = await response.json();
+                        alert("Error al mover la fila: " + (data.error || response.statusText));
+                    }
+                } catch (error) {
+                    console.error(error);
+                    alert("Error de conexión: " + error.message);
+                }
+            }
+
+            document.querySelectorAll('.btn-up').forEach(btn => {
+                btn.addEventListener('click', () => moveRow(btn, 'up'));
+            });
+
+            document.querySelectorAll('.btn-down').forEach(btn => {
+                btn.addEventListener('click', () => moveRow(btn, 'down'));
+            });
+
+            // --- Delete / Hide Logic ---
+            document.querySelectorAll('.btn-delete').forEach(btn => {
+                btn.addEventListener('click', async function() {
+                    const result = await Swal.fire({
+                        title: '¿Ocultar esta OP?',
+                        text: 'La tarea se ocultará de la vista actual y del Gantt, pero NO se borrará de la base de datos de SQLSERVER. Es una acción segura.',
+                        icon: 'info',
+                        showCancelButton: true,
+                        confirmButtonText: 'Sí, ocultar',
+                        cancelButtonText: 'Cancelar',
+                        confirmButtonColor: '#64748b',
+                        customClass: {
+                            popup: 'premium-swal',
+                            confirmButton: 'premium-confirm',
+                            cancelButton: 'premium-cancel'
+                        }
+                    });
+                    if (!result.isConfirmed) return;
+                    
+                    const row = this.closest('tr');
+                    const idOrden = row.dataset.id;
+                    
+                    try {
+                        const scenarioId = new URLSearchParams(window.location.search).get('scenario_id');
+                        const response = await fetch('/api/hide_task/', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRFToken': '{{ csrf_token }}'
+                            },
+                            body: JSON.stringify({ 
+                                id_orden: idOrden,
+                                scenario_id: scenarioId
+                            })
+                        });
+                        
+                        if (response.ok) {
+                            row.remove();
+                        } else {
+                            const data = await response.json();
+                            alert('Error al ocultar tarea: ' + (data.error || "Desconocido"));
+                        }
+                    } catch (e) {
+                        console.error(e);
+                        alert('Error de conexión');
+                    }
+                });
+            });
+
+            // --- Manual Quantity Produced Logic ---
+            const qtyCells = document.querySelectorAll('.editable-cantidad');
+            qtyCells.forEach(cell => {
+                cell.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        this.blur();
+                    }
+                });
+
+                cell.addEventListener('input', function() {
+                    const row = this.closest('tr');
+                    const total = parseFloat(row.dataset.totalQty) || 0;
+                    const unitTime = parseFloat(row.dataset.unitTime) || 0;
+                    const valText = this.innerText.trim().replace(',', '.');
+                    const val = parseFloat(valText) || 0;
+                    
+                    // 1. Update Pending Quantity
+                    const pendientesCell = row.querySelector('.cant-pendientes');
+                    if (pendientesCell) {
+                        pendientesCell.innerText = Math.max(0, total - val).toLocaleString('es-AR', {minimumFractionDigits: 0, maximumFractionDigits: 1});
+                    }
+
+                    // 2. Update Process Time (Automatic Recalculation)
+                    const processTimeCell = row.querySelector('.editable-time');
+                    if (processTimeCell) {
+                         const newTime = Math.max(0, (total - val) * unitTime);
+                         processTimeCell.innerText = newTime.toFixed(2);
+                         processTimeCell.style.color = '#0d6efd'; 
+                    }
+                });
+
+                cell.addEventListener('blur', async function() {
+                    const row = this.closest('tr');
+                    const idOrden = row.dataset.id;
+                    const total = parseFloat(row.dataset.totalQty) || 0;
+                    const unitTime = parseFloat(row.dataset.unitTime) || 0;
+                    let valText = this.innerText.trim().replace(',', '.');
+                    let val = parseFloat(valText) || 0;
+                    const maquina = row.dataset.maquina;
+                    const scenarioId = new URLSearchParams(window.location.search).get('scenario_id');
+
+                    if (val > total) {
+                         Swal.fire({
+                             title: 'Validación de Cantidad',
+                             text: `La cantidad producida (${val}) no puede ser superior al total (${total}).`,
+                             icon: 'warning',
+                             customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                         });
+                         val = total;
+                         this.innerText = val;
+                    }
+                    if (val < 0) val = 0;
+
+                    this.style.backgroundColor = '#e2e6ea';
+
+                    try {
+                        const response = await fetch('/api/update_cantidad_producida/', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRFToken': '{{ csrf_token }}'
+                            },
+                            body: JSON.stringify({
+                                id_orden: idOrden,
+                                cantidad_producida: val,
+                                maquina: maquina,
+                                scenario_id: scenarioId
+                            })
+                        });
+
+                        if (response.ok) {
+                            this.style.backgroundColor = '#ffeeba'; // Yellow flag
+                        } else {
+                            const data = await response.json();
+                            Swal.fire({ title: 'Error', text: data.error, icon: 'error' });
+                        }
+                    } catch (e) {
+                         console.error(e);
+                    }
+                });
+            });
+
+
+            // --- Machine Change via Modal Logic ---
+            const machineModal = new bootstrap.Modal(document.getElementById('machineSelectorModal'));
+            let currentEditingOp = null;
+            let currentOriginMachine = null;
+
+            document.querySelectorAll('.open-machine-modal').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    currentEditingOp = this.dataset.op;
+                    currentOriginMachine = this.dataset.currentMachineId;
+                    
+                    document.getElementById('modal-op-title').innerText = `OP: ${currentEditingOp}`;
+                    
+                    // Reset search
+                    const filterInput = document.getElementById('machineFilterInput');
+                    filterInput.value = '';
+                    document.querySelectorAll('.machine-item').forEach(item => item.classList.remove('hidden'));
+                    
+                    machineModal.show();
+                });
+            });
+
+            // Machine Search Filtering
+            document.getElementById('machineFilterInput').addEventListener('input', function() {
+                const term = this.value.toLowerCase();
+                document.querySelectorAll('.machine-item').forEach(item => {
+                    const name = item.querySelector('.fw-bold').innerText.toLowerCase();
+                    if (name.includes(term)) {
+                        item.classList.remove('hidden');
+                    } else {
+                        item.classList.add('hidden');
+                    }
+                });
+            });
+
+            document.querySelectorAll('.btn-select-machine-modal').forEach(btn => {
+                btn.addEventListener('click', async function() {
+                    const targetMachineId = this.dataset.targetId;
+                    const targetMachineName = this.dataset.targetName;
+                    const scenarioId = new URLSearchParams(window.location.search).get('scenario_id');
+
+                    if (currentOriginMachine === targetMachineId) {
+                        machineModal.hide();
+                        return;
+                    }
+
+                    machineModal.hide();
+
+                    const result = await Swal.fire({
+                        title: '¿Cambiar de Máquina?',
+                        html: `¿Desea mover la <b>OP ${currentEditingOp}</b> a la máquina <b>${targetMachineName}</b>?`,
+                        icon: 'question',
+                        showCancelButton: true,
+                        confirmButtonText: 'Sí, reasignar',
+                        cancelButtonText: 'Cancelar',
+                        customClass: {
+                            popup: 'premium-swal',
+                            confirmButton: 'premium-confirm',
+                            cancelButton: 'premium-cancel'
+                        }
+                    });
+
+                    if (!result.isConfirmed) return;
+
+                    Swal.fire({
+                        title: 'Procesando...',
+                        text: 'Recalculando tiempos y prioridades...',
+                        allowOutsideClick: false,
+                        didOpen: () => {
+                            Swal.showLoading();
+                        },
+                        customClass: { popup: 'premium-swal' }
+                    });
+
+                    try {
+                        const response = await fetch('/api/move_task/', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRFToken': '{{ csrf_token }}'
+                            },
+                            body: JSON.stringify({
+                                id_orden: currentEditingOp,
+                                target_machine_id: targetMachineId,
+                                new_priority: 99999, 
+                                scenario_id: scenarioId
+                            })
+                        });
+
+                        if (response.ok) {
+                            window.location.reload();
+                        } else {
+                            const data = await response.json();
+                            Swal.fire({ title: 'Error', text: data.error || 'No se pudo mover la tarea.', icon: 'error' });
+                        }
+                    } catch (err) {
+                        console.error(err);
+                        Swal.fire({ title: 'Error de Red', text: 'Desconexión con el servidor.', icon: 'error' });
+                    }
+                });
+            });
+            
+            // --- Drag and Drop Logic (SortableJS for EVERYTHING) ---
+            // We use SortableJS to handle the drag. On drop (onEnd), we check if the mouse 
+            // is over a Tab Header using elementFromPoint. If so, we treat it as a Move.
+            // Otherwise, we treat it as a Reorder.
+            
+            const tobodies = document.querySelectorAll('tbody');
+            tobodies.forEach(tbody => {
+                new Sortable(tbody, {
+                    animation: 150,
+                    handle: 'tr', // Drag by whole row
+                    ghostClass: 'table-active', // Class for the placeholder
+                    forceFallback: true, // Crucial: Ensures we can get consistent coordinates
+                    onEnd: async function (evt) {
+                        const itemEl = evt.item; 
+                        const idOrden = itemEl.dataset.id;
+                        const maquinaOrigin = itemEl.dataset.maquina; // The machine it came from
+                        
+                        // 1. CHECK FOR DROP ON TAB (Move to Machine)
+                        // We need mouse coordinates. Sortable provides a touch/mouse event in originalEvent.
+                        const touch = evt.originalEvent.changedTouches ? evt.originalEvent.changedTouches[0] : evt.originalEvent;
+                        const x = touch.clientX;
+                        const y = touch.clientY;
+                        
+                        // Hide the helper momentarily so we can see what's under it
+                        itemEl.style.display = 'none'; 
+                        const elemBelow = document.elementFromPoint(x, y);
+                        itemEl.style.display = ''; // Restore
+                        
+                        const targetTab = elemBelow ? elemBelow.closest('.nav-link') : null;
+                        
+                        if (targetTab && targetTab.getAttribute('role') === 'tab') {
+                            const targetMachine = targetTab.dataset.machine;
+                            
+                            // Prevent moving to self (tab names match)
+                            // The tab text is the machine name.
+                            if (targetMachine === maquinaOrigin) {
+                                return; // Dropped on self, treat as reorder if index changed, but safer to ignore cross-logic
+                            }
+
+                            const result = await Swal.fire({
+                                title: '¿Mover Tarea?',
+                                html: `¿Confirma que desea mover la <b>OP ${idOrden}</b> a la máquina <b>${targetMachine}</b>?`,
+                                icon: 'question',
+                                showCancelButton: true,
+                                confirmButtonText: 'Sí, mover',
+                                cancelButtonText: 'Cancelar',
+                                customClass: {
+                                    popup: 'premium-swal',
+                                    confirmButton: 'premium-confirm',
+                                    cancelButton: 'premium-cancel'
+                                }
+                            });
+
+                            if (!result.isConfirmed) {
+                                window.location.reload(); // Revert visual drag
+                                return;
+                            }
+                            
+                            // Calculate Priority: End of Target Queue
+                            // Find target tab content
+                            const contentSelector = targetTab.getAttribute('data-bs-target');
+                            const contentDiv = document.querySelector(contentSelector);
+                            let newPriority = 1000;
+                            
+                            if (contentDiv) {
+                                const rows = contentDiv.querySelectorAll('tbody tr[data-priority]');
+                                if (rows.length > 0) {
+                                    const lastRow = rows[rows.length - 1];
+                                    const lastPrio = parseFloat(lastRow.dataset.priority) || 0;
+                                    newPriority = lastPrio + 1000;
+                                }
+                            }
+                            
+                            console.log(`Moving Task ${idOrden} to ${targetMachine} (Prio: ${newPriority})`);
+
+                             try {
+                                const response = await fetch('/api/move_task/', {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                        'X-CSRFToken': '{{ csrf_token }}'
+                                    },
+                                    body: JSON.stringify({
+                                        id_orden: idOrden,
+                                        target_machine_id: targetMachine,
+                                        new_priority: newPriority,
+                                        scenario_id: new URLSearchParams(window.location.search).get('scenario_id')
+                                    })
+                                });
+                                
+                                if (response.ok) {
+                                    window.location.reload();
+                                } else {
+                                    const data = await response.json();
+                                    alert('Error: ' + data.error);
+                                    window.location.reload();
+                                }
+                            } catch (err) {
+                                alert('Error de red');
+                                window.location.reload();
+                            }
+                            return; // STOP HERE, DO NOT DO REORDER LOGIC
+                        }
+
+                        // 2. NORMAL REORDER LOGIC (Same Machine)
+                        // Check if order actually changed
+                        if (evt.oldIndex === evt.newIndex) return;
+
+                        // Find neighbors
+                        const prev = itemEl.previousElementSibling;
+                        const next = itemEl.nextElementSibling;
+                        
+                        let newPriority = 0;
+                        
+                        if (prev && next) {
+                            const p1 = parseFloat(prev.dataset.priority) || 0;
+                            const p2 = parseFloat(next.dataset.priority) || 0;
+                            newPriority = (p1 + p2) / 2; 
+                        } else if (prev) {
+                            const p = parseFloat(prev.dataset.priority) || 0;
+                            newPriority = p + 1000;
+                        } else if (next) {
+                            const p = parseFloat(next.dataset.priority) || 0;
+                            newPriority = p / 2; 
+                            if (newPriority <= 0) newPriority = 100;
+                        } else {
+                            return;
+                        }
+
+                        console.log(`Reordering ${idOrden} to Priority ${newPriority}`);
+
+                        // Call API to set new priority
+                        try {
+                            const response = await fetch(`/api/set_priority/${idOrden}/`, {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'X-CSRFToken': '{{ csrf_token }}'
+                                },
+                                body: JSON.stringify({
+                                    maquina: maquinaOrigin,
+                                    new_priority: newPriority,
+                                    scenario_id: new URLSearchParams(window.location.search).get('scenario_id')
+                                })
+                            });
+
+                            if (response.ok) {
+                                // Optimistic Update
+                                itemEl.dataset.priority = newPriority;
+                            } else {
+                                const data = await response.json();
+                                Swal.fire({
+                                    title: 'Error',
+                                    text: "Error al guardar la nueva posición: " + (data.error || response.statusText),
+                                    icon: 'error',
+                                    confirmButtonText: 'Cerrar',
+                                    customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                                }).then(() => {
+                                    window.location.reload();
+                                });                            }
+                        } catch (e) {
+                            console.error(e);
+                            Swal.fire({
+                                title: 'Error de Conexión',
+                                text: "No se pudo guardar la posición: " + e.message,
+                                icon: 'error',
+                                confirmButtonText: 'Cerrar',
+                                customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                            }).then(() => {
+                                window.location.reload();
+                            });
+                        }
+                    }
+                });
+            });
+
+            // Logic for mode selector - decouple scenario when moving to manual
+            const planModeSelector = document.getElementById('plan-mode-selector');
+            if (planModeSelector) {
+                planModeSelector.addEventListener('change', function() {
+                    if (this.value === 'manual') {
+                        // Clear scenario_id to load Current State when switching to manual
+                        const scenSel = document.getElementById('active-scenario-id-input');
+                        if (scenSel) scenSel.value = "";
+                    }
+                    this.form.submit();
+                });
+            }
+
+            // Reset ERP button
+            const btnResetToERP = document.getElementById('btnResetToERP');
+            if (btnResetToERP) {
+                btnResetToERP.addEventListener('click', async function() {
+                    const result = await Swal.fire({
+                        title: '¿Restablecer al Plan ERP?',
+                        text: "Se borrarán todos los ajustes manuales de este escenario y se volverá a las prioridades originales.",
+                        icon: 'warning',
+                        showCancelButton: true,
+                        confirmButtonText: 'Sí, Restablecer',
+                        cancelButtonText: 'Cancelar',
+                        confirmButtonColor: '#fbbf24',
+                        customClass: {
+                            popup: 'premium-swal',
+                            confirmButton: 'premium-confirm',
+                            cancelButton: 'premium-cancel'
+                        }
+                    });
+
+                    if (result.isConfirmed) {
+                        try {
+                            const proyectosInput = document.getElementById('proyectos');
+                            const projVal = proyectosInput ? proyectosInput.value : '';
+                            const scenarioId = document.getElementById('active-scenario-id-input').value;
+
+                            const response = await fetch('/api/reset_planning/', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'X-CSRFToken': '{{ csrf_token }}'
+                                },
+                                body: JSON.stringify({ 
+                                    scenario_id: scenarioId,
+                                    proyectos: projVal
+                                })
+                            });
+                            
+                            if (response.ok) {
+                                Swal.fire({
+                                    title: '¡Restablecido!',
+                                    icon: 'success',
+                                    timer: 1500,
+                                    showConfirmButton: false,
+                                    customClass: { popup: 'premium-swal' }
+                                }).then(() => {
+                                    // reload with manual mode and NO scenario_id to see current clean state
+                                    window.location.href = window.location.pathname + "?plan_mode=manual&proyectos=" + encodeURIComponent(projVal);
+                                });
+                            }
+                        } catch (e) { console.error(e); }
+                    }
+                });
+            }
+
+            // --- CLEAR PLANNING ---
+            const btnClearPlanning = document.getElementById('btnClearPlanning');
+            if (btnClearPlanning) {
+                btnClearPlanning.addEventListener('click', async function() {
+                    const result = await Swal.fire({
+                        title: '¿Vaciar Planificación?',
+                        text: "Se borrarán TODOS los procesos seleccionados y sus ajustes en este escenario.",
+                        icon: 'warning',
+                        showCancelButton: true,
+                        confirmButtonText: 'Sí, Vaciar Todo',
+                        cancelButtonText: 'Cancelar',
+                        confirmButtonColor: '#dc2626',
+                        customClass: {
+                            popup: 'premium-swal',
+                            confirmButton: 'premium-confirm-danger',
+                            cancelButton: 'premium-cancel'
+                        }
+                    });
+
+                    if (result.isConfirmed) {
+                        try {
+                            const scenarioIdSelection = document.getElementById('active-scenario-id-input') ? document.getElementById('active-scenario-id-input').value : '';
+                            const response = await fetch('/api/clear_all_planning/', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'X-CSRFToken': '{{ csrf_token }}'
+                                },
+                                body: JSON.stringify({ scenario_id: scenarioIdSelection })
+                            });
+                            
+                             if (response.ok) {
+                                window.location.reload();
+                            } else {
+                                Swal.fire({
+                                    title: 'Error',
+                                    text: 'Hubo un problema al vaciar la planificación.',
+                                    icon: 'error',
+                                    confirmButtonText: 'Cerrar',
+                                    customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                                });
+                            }
+                        } catch (e) { console.error(e); }
+                    }
+                });
+            }
+
+            // --- SCENARIO MANAGEMENT (NUEVO, GUARDAR, CARGAR) ---
+            
+            // 1. NUEVO: Start a blank scenario
+            const btnNewScenario = document.getElementById('btnNewScenario');
+            if (btnNewScenario) {
+                btnNewScenario.addEventListener('click', async function() {
+                    const result = await Swal.fire({
+                        title: '¿Empezar Plan Nuevo?',
+                        text: 'Se iniciará un escenario de planificación vacío. Los planes existentes guardados no se modificarán.',
+                        icon: 'question',
+                        showCancelButton: true,
+                        confirmButtonText: 'Sí, empezar nuevo',
+                        cancelButtonText: 'Cancelar',
+                        customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                    });
+                    
+                    if (result.isConfirmed) {
+                        try {
+                            const response = await fetch('/api/scenarios/create/', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'X-CSRFToken': '{{ csrf_token }}'
+                                },
+                                body: JSON.stringify({
+                                    nombre: 'Nuevo Plan',
+                                    proyectos: ''
+                                })
+                            });
+                            
+                            const data = await response.json();
+                            if (response.ok) {
+                                // Redirect to the new scenario with NO projects in query params
+                                window.location.href = `?scenario_id=${data.scenario.id}`;
+                            } else {
+                                Swal.fire({
+                                    title: 'Error',
+                                    text: data.error || 'No se pudo crear el escenario nuevo.',
+                                    icon: 'error',
+                                    customClass: { popup: 'premium-swal' }
+                                });
+                            }
+                        } catch (e) {
+                            console.error(e);
+                            Swal.fire({
+                                title: 'Error',
+                                text: 'No se pudo comunicar con el servidor.',
+                                icon: 'error',
+                                customClass: { popup: 'premium-swal' }
+                            });
+                        }
+                    }
+                });
+            }
+
+            // 2. GUARDAR: Show save modal & confirm rename/clone
+            const saveScenarioModalEl = document.getElementById('saveScenarioModal');
+            let saveScenarioModal;
+            if (saveScenarioModalEl) {
+                saveScenarioModal = new bootstrap.Modal(saveScenarioModalEl);
+                
+                const btnSaveScenario = document.getElementById('btnSaveScenario');
+                if (btnSaveScenario) {
+                    btnSaveScenario.addEventListener('click', () => {
+                        saveScenarioModal.show();
+                    });
+                }
+
+                const btnConfirmSave = document.getElementById('btnConfirmSave');
+                if (btnConfirmSave) {
+                    btnConfirmSave.addEventListener('click', async function() {
+                        const nameInput = document.getElementById('newScenarioName');
+                        const name = nameInput ? nameInput.value.trim() : '';
+                        if (!name) { 
+                            return Swal.fire({
+                                title: 'Campo Requerido',
+                                text: 'Por favor, ingrese un nombre para el escenario.',
+                                icon: 'warning',
+                                confirmButtonText: 'Aceptar',
+                                customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                            });
+                        }
+
+                        const activeScenarioId = '{{ active_scenario_id|default:'' }}';
+                        const activeScenarioName = '{{ active_scenario.nombre|escapejs }}';
+                        const proyectosInput = document.getElementById('proyectos');
+                        const proyectosList = proyectosInput ? proyectosInput.value.trim() : '';
+
+                        let secuencias = [];
+                        document.querySelectorAll('.tab-content table tbody').forEach(tbody => {
+                            let rows = tbody.querySelectorAll('tr:not(.hidden-row)');
+                            rows.forEach((row, index) => {
+                                let idOrden = row.getAttribute('data-id');
+                                let maquina = row.getAttribute('data-maquina');
+                                let nivelCell = row.querySelector('.editable-nivel');
+                                let prioridadManual = nivelCell ? parseInt(nivelCell.innerText) || 0 : 0;
+                                
+                                if (idOrden) {
+                                    secuencias.push({
+                                        id_orden: idOrden,
+                                        maquina: maquina,
+                                        orden_secuencia: index,
+                                        prioridad_manual: prioridadManual
+                                    });
+                                }
+                            });
+                        });
+
+                        let payload = {
+                            nombre: name,
+                            proyectos: proyectosList,
+                            secuencias: secuencias
+                        };
+
+                        // Word/Excel style flow:
+                        // If current name is "Nuevo Plan" or they input the exact same name, update in place.
+                        // Otherwise, clone it to a new scenario.
+                        if (activeScenarioName === 'Nuevo Plan' || name === activeScenarioName) {
+                            payload.id = activeScenarioId;
+                            payload.update_id = activeScenarioId;
+                        } else {
+                            payload.copy_from_id = activeScenarioId;
+                        }
+
+                        try {
+                            const btn = this;
+                            btn.disabled = true;
+                            const originalHTML = btn.innerHTML;
+                            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> Guardando...';
+
+                            const response = await fetch('/api/scenarios/create/', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'X-CSRFToken': '{{ csrf_token }}'
+                                },
+                                body: JSON.stringify(payload)
+                            });
+
+                            const data = await response.json();
+                            if (response.ok) {
+                                saveScenarioModal.hide();
+                                Swal.fire({
+                                    title: '¡Guardado!',
+                                    text: 'El escenario ha sido guardado exitosamente.',
+                                    icon: 'success',
+                                    timer: 1500,
+                                    showConfirmButton: false
+                                }).then(() => {
+                                    window.location.href = `?scenario_id=${data.scenario.id}&proyectos=${encodeURIComponent(proyectosList)}`;
+                                });
+                            } else {
+                                btn.disabled = false;
+                                btn.innerHTML = originalHTML;
+                                Swal.fire({
+                                    title: 'Error',
+                                    text: data.error || "Error al guardar escenario.",
+                                    icon: 'error',
+                                    customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                                });
+                            }
+                        } catch (e) {
+                            console.error(e);
+                            this.disabled = false;
+                            this.innerHTML = '<i class="fas fa-check me-2"></i>Confirmar Guardado';
+                            Swal.fire({
+                                title: 'Error de Red',
+                                text: 'No se pudo comunicar con el servidor.',
+                                icon: 'error',
+                                confirmButtonText: 'Cerrar',
+                                customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                            });
+                        }
+                    });
+                }
+            }
+
+            // 3. CARGAR: Show load modal & load plan
+            const loadScenarioModalEl = document.getElementById('loadScenarioModal');
+            let loadScenarioModal;
+            if (loadScenarioModalEl) {
+                loadScenarioModal = new bootstrap.Modal(loadScenarioModalEl);
+                
+                const btnLoadScenario = document.getElementById('btnLoadScenario');
+                if (btnLoadScenario) {
+                    btnLoadScenario.addEventListener('click', () => {
+                        loadScenarioModal.show();
+                    });
+                }
+
+                const btnConfirmLoad = document.getElementById('btnConfirmLoad');
+                if (btnConfirmLoad) {
+                    btnConfirmLoad.addEventListener('click', function() {
+                        const select = document.getElementById('loadScenarioSelect');
+                        const selectedId = select ? select.value : '';
+                        if (!selectedId) {
+                            return Swal.fire({
+                                title: 'Selección Requerida',
+                                text: 'Por favor, seleccione un plan para cargar.',
+                                icon: 'warning',
+                                confirmButtonText: 'Aceptar',
+                                customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                            });
+                        }
+                        
+                        const selectedOption = select.options[select.selectedIndex];
+                        const projects = selectedOption.dataset.proyectos || '';
+                        
+                        loadScenarioModal.hide();
+                        window.location.href = `?scenario_id=${selectedId}&proyectos=${encodeURIComponent(projects)}`;
+                    });
+                }
+            }
+
+            // 4. BORRAR: Open delete modal and load saved scenarios dynamically
+            const deleteProjectModalEl = document.getElementById('deleteProjectModal');
+            let deleteProjectModal;
+            if (deleteProjectModalEl) {
+                deleteProjectModal = new bootstrap.Modal(deleteProjectModalEl);
+                deleteProjectModalEl.addEventListener('hidden.bs.modal', function() {
+                    // Update the select dropdown when closing the modal to ensure sync
+                    fetchAndSyncSelect();
+                });
+            }
+
+            const btnDeleteScenario = document.getElementById('btnDeleteScenario');
+            if (btnDeleteScenario && deleteProjectModal) {
+                btnDeleteScenario.addEventListener('click', function() {
+                    deleteProjectModal.show();
+                    loadScenariosList();
+                });
+            }
+
+            async function fetchAndSyncSelect() {
+                try {
+                    const response = await fetch('/api/scenarios/list/');
+                    if (response.ok) {
+                        const data = await response.json();
+                        updateLoadScenarioSelect(data.scenarios || []);
+                    }
+                } catch (e) {
+                    console.error('Error syncing scenarios select:', e);
+                }
+            }
+
+            async function loadScenariosList() {
+                const container = document.getElementById('deleteProjectListContainer');
+                if (!container) return;
+
+                // Show spinner
+                container.innerHTML = `
+                    <div class="text-center py-4 text-muted bg-white">
+                        <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span> Cargando escenarios...
+                    </div>
+                `;
+
+                try {
+                    const response = await fetch('/api/scenarios/list/');
+                    if (!response.ok) throw new Error('Error al obtener escenarios');
+                    
+                    const data = await response.json();
+                    const scenarios = data.scenarios || [];
+
+                    // Synchronize the load dropdown list
+                    updateLoadScenarioSelect(scenarios);
+
+                    if (scenarios.length === 0) {
+                        container.innerHTML = `
+                            <div class="text-center py-4 text-muted bg-white">
+                                <i class="fas fa-info-circle me-1"></i> No hay escenarios guardados.
+                            </div>
+                        `;
+                        return;
+                    }
+
+                    container.innerHTML = '';
+                    scenarios.forEach(sc => {
+                        const item = document.createElement('div');
+                        item.className = 'list-group-item d-flex justify-content-between align-items-center bg-white border-0 border-bottom px-3 py-2.5 transition-all';
+                        item.style.borderRadius = '8px';
+                        item.style.marginBottom = '4px';
+
+                        // Scenario info (Name)
+                        const infoDiv = document.createElement('div');
+                        infoDiv.className = 'd-flex align-items-center';
+                        
+                        let iconHTML = `<i class="fas fa-folder fa-md"></i>`;
+                        let badgeHTML = '';
+                        if (sc.es_principal) {
+                            iconHTML = `<i class="fas fa-star fa-md"></i>`;
+                            badgeHTML = `<span class="badge bg-secondary ms-2 text-uppercase" style="font-size: 0.65rem;">Oficial</span>`;
+                        }
+                        
+                        infoDiv.innerHTML = `
+                            <div class="bg-primary bg-opacity-10 text-primary rounded-3 p-2 me-3 d-flex align-items-center justify-content-center" style="width: 38px; height: 38px;">
+                                ${iconHTML}
+                            </div>
+                            <div>
+                                <span class="fw-bold text-dark fs-6">${sc.nombre}</span>
+                                ${badgeHTML}
+                            </div>
+                        `;
+                        item.appendChild(infoDiv);
+
+                        // Action button (Delete)
+                        if (!sc.es_principal) {
+                            const deleteBtn = document.createElement('button');
+                            deleteBtn.className = 'btn btn-sm btn-outline-danger rounded-pill px-3 py-1.5 fw-bold d-inline-flex align-items-center gap-1.5 shadow-sm transition-all';
+                            deleteBtn.style.borderColor = '#fee2e2';
+                            deleteBtn.style.backgroundColor = '#fef2f2';
+                            deleteBtn.style.color = '#dc2626';
+                            
+                            deleteBtn.onmouseover = function() {
+                                this.style.backgroundColor = '#fee2e2';
+                                this.style.borderColor = '#fca5a5';
+                                this.style.color = '#b91c1c';
+                            };
+                            deleteBtn.onmouseout = function() {
+                                this.style.backgroundColor = '#fef2f2';
+                                this.style.borderColor = '#fee2e2';
+                                this.style.color = '#dc2626';
+                            };
+
+                            deleteBtn.title = `Eliminar escenario ${sc.nombre}`;
+                            deleteBtn.innerHTML = '<i class="fas fa-trash-alt"></i> Eliminar';
+                            
+                            deleteBtn.addEventListener('click', async function() {
+                                await confirmAndDeleteScenario(sc.id, sc.nombre);
+                            });
+                            item.appendChild(deleteBtn);
+                        } else {
+                            // Locked or principal indicator
+                            const lockDiv = document.createElement('div');
+                            lockDiv.className = 'text-muted small px-3 py-1.5';
+                            lockDiv.innerHTML = '<i class="fas fa-lock me-1"></i> No borrable';
+                            item.appendChild(lockDiv);
+                        }
+
+                        container.appendChild(item);
+                    });
+
+                } catch (error) {
+                    console.error(error);
+                    container.innerHTML = `
+                        <div class="text-center py-4 text-danger bg-white">
+                            <i class="fas fa-exclamation-triangle me-1"></i> Error al cargar escenarios.
+                        </div>
+                    `;
+                }
+            }
+
+            async function confirmAndDeleteScenario(id, name) {
+                const result = await Swal.fire({
+                    title: '¿Confirmar eliminación?',
+                    text: `¿Seguro que deseas eliminar por completo el escenario guardado [${name}]?`,
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonText: 'Sí, Eliminar',
+                    cancelButtonText: 'Cancelar',
+                    confirmButtonColor: '#dc2626',
+                    customClass: {
+                        popup: 'premium-swal',
+                        confirmButton: 'premium-confirm-danger',
+                        cancelButton: 'premium-cancel'
+                    }
+                });
+
+                if (result.isConfirmed) {
+                    try {
+                        const response = await fetch(`/api/scenarios/${id}/delete/`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRFToken': '{{ csrf_token }}'
+                            }
+                        });
+
+                        const data = await response.json();
+                        if (response.ok && data.status === 'ok') {
+                            Swal.fire({
+                                title: '¡Eliminado!',
+                                text: `El escenario "${name}" ha sido eliminado exitosamente.`,
+                                icon: 'success',
+                                timer: 1500,
+                                showConfirmButton: false
+                            });
+
+                            // Reload list in modal (which also updates the select dropdown)
+                            await loadScenariosList();
+
+                            // Check if the deleted scenario is currently loaded/active
+                            const activeScenarioIdInput = document.getElementById('active-scenario-id-input');
+                            const activeScenarioId = activeScenarioIdInput ? activeScenarioIdInput.value : '';
+                            if (activeScenarioId && String(activeScenarioId) === String(id)) {
+                                // If the active scenario was deleted, reload the main page without the scenario_id param
+                                const params = new URLSearchParams(window.location.search);
+                                params.delete('scenario_id');
+                                window.location.href = window.location.pathname + '?' + params.toString();
+                            }
+                        } else {
+                            Swal.fire({
+                                title: 'Error',
+                                text: data.error || 'Ocurrió un error al intentar eliminar el escenario.',
+                                icon: 'error',
+                                confirmButtonText: 'Cerrar',
+                                customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                            });
+                        }
+                    } catch (e) {
+                        console.error(e);
+                        Swal.fire({
+                            title: 'Error de Conexión',
+                            text: 'No se pudo comunicar con el servidor para eliminar el escenario.',
+                            icon: 'error',
+                            confirmButtonText: 'Cerrar',
+                            customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                        });
+                    }
+                }
+            }
+
+            function updateLoadScenarioSelect(scenarios) {
+                const selectEl = document.getElementById('loadScenarioSelect');
+                if (!selectEl) return;
+                
+                const currentVal = selectEl.value;
+                
+                selectEl.innerHTML = '<option value="">-- Seleccionar un Plan --</option>';
+                
+                scenarios.forEach(sc => {
+                    const opt = document.createElement('option');
+                    opt.value = sc.id;
+                    opt.dataset.proyectos = sc.proyectos || '';
+                    opt.textContent = sc.nombre;
+                    selectEl.appendChild(opt);
+                });
+                
+                if (currentVal && [...selectEl.options].some(o => o.value === currentVal)) {
+                    selectEl.value = currentVal;
+                }
+            }
+
+            function clearUIPlanning() {
+                // 1. Clear projects input
+                const proyectosInput = document.getElementById('proyectos');
+                if (proyectosInput) {
+                    proyectosInput.value = '';
+                }
+
+                // 2. Reset machine tabs badges and remove .con-carga class
+                const tabButtons = document.querySelectorAll('#myTab button.nav-link');
+                tabButtons.forEach(btn => {
+                    btn.classList.remove('con-carga');
+                    const badge = btn.querySelector('.badge');
+                    if (badge) {
+                        badge.textContent = '0';
+                    }
+                });
+
+                // 3. Clear table bodies and put them in empty state
+                const tableBodies = document.querySelectorAll('#myTabContent table tbody');
+                tableBodies.forEach(tbody => {
+                    tbody.innerHTML = '<tr><td colspan="16" class="text-center">No hay datos para esta máquina.</td></tr>';
+                });
+
+                // 4. Update browser URL to remove proyectos parameter cleanly
+                const params = new URLSearchParams(window.location.search);
+                params.delete('proyectos');
+                const newUrl = window.location.pathname + '?' + params.toString();
+                window.history.pushState({ path: newUrl }, '', newUrl);
+            }
+
+            // --- Audit Mode Toggle Logic ---
+            const btnToggleAudit = document.getElementById('btnToggleAudit');
+            if (btnToggleAudit) {
+                btnToggleAudit.addEventListener('click', function() {
+                    const params = new URLSearchParams(window.location.search);
+                    const currentAudit = params.get('audit_mode') === '1';
+                    if (currentAudit) {
+                        params.delete('audit_mode');
+                    } else {
+                        params.set('audit_mode', '1');
+                    }
+                    window.location.href = window.location.pathname + '?' + params.toString();
+                });
+            }
+
+            // --- Reactivate (Unhide) Task Logic ---
+            document.querySelectorAll('.btn-reactivate').forEach(btn => {
+                btn.addEventListener('click', async function() {
+                    const row = this.closest('tr');
+                    const idOrden = row.dataset.id;
+                    const scenarioId = new URLSearchParams(window.location.search).get('scenario_id');
+
+                    console.log("Attempting reactivation for ID:", idOrden, "Scenario:", scenarioId);
+
+                    // Instant Visual Feedback
+                    row.style.opacity = '0.3';
+                    this.disabled = true;
+
+                    try {
+                        const response = await fetch("{% url 'reactivar_op' %}", {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRFToken': '{{ csrf_token }}'
+                            },
+                            body: JSON.stringify({
+                                id_orden: idOrden,
+                                scenario_id: scenarioId
+                            })
+                        });
+
+                        const responseData = await response.json();
+                        console.log("Server Response:", responseData);
+
+                        if (response.ok) {
+                            // Success: Update UI without Refresh
+                            row.classList.remove('hidden-row');
+                            row.style.opacity = '1';
+                            this.disabled = false;
+                            
+                            Swal.fire({
+                                title: '¡Recuperado!',
+                                text: 'La tarea vuelve a estar activa.',
+                                icon: 'success',
+                                timer: 1000,
+                                showConfirmButton: false,
+                                customClass: { popup: 'premium-swal' }
+                            });
+                        } else {
+                            console.error("Reactivation Error Status:", response.status, responseData);
+                            Swal.fire({
+                                title: 'Error',
+                                text: `No se pudo recuperar: ${responseData.error || "Error desconocido"} (Status: ${response.status})`,
+                                icon: 'error',
+                                customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                            });
+                            row.style.opacity = '0.5';
+                            this.disabled = false;
+                        }
+                    } catch (e) {
+                        console.error("Fetch Exception:", e);
+                        Swal.fire({
+                            title: 'Error de Red',
+                            text: "No se pudo comunicar con el servidor. Revise la consola (F12) para más detalles.",
+                            icon: 'error',
+                            customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                        });
+                        row.style.opacity = '0.5';
+                        this.disabled = false;
+                    }
+                });
+            });
+        });
+        // Theme Persistence
+        function initTheme() {
+            const savedTheme = localStorage.getItem('theme') || 'light';
+            document.documentElement.setAttribute('data-theme', savedTheme);
+            updateThemeIcon(savedTheme);
+            
+            const btn = document.getElementById('btn-theme-toggle');
+            if (btn) {
+                btn.addEventListener('click', function() {
+                    const currentTheme = document.documentElement.getAttribute('data-theme');
+                    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+                    document.documentElement.setAttribute('data-theme', newTheme);
+                    localStorage.setItem('theme', newTheme);
+                    updateThemeIcon(newTheme);
+                });
+            }
+        }
+        
+        function updateThemeIcon(theme) {
+            const btn = document.getElementById('btn-theme-toggle');
+            if (!btn) return;
+            const icon = btn.querySelector('i');
+            if (theme === 'dark') {
+                icon.className = 'fas fa-sun text-warning';
+                btn.classList.add('btn-dark');
+                btn.classList.remove('btn-outline-secondary');
+            } else {
+                icon.className = 'fas fa-moon';
+                btn.classList.remove('btn-dark');
+                btn.classList.add('btn-outline-secondary');
+            }
+        }
+
+        initTheme();
+
+        // Hard Reset for Projects Input (Strict Requirement)
+        document.addEventListener('DOMContentLoaded', function() {
+            const projInput = document.getElementById('proyectos');
+            if (projInput) {
+                projInput.value = '';
+                // Ensure autocomplete doesn't re-fill it
+                projInput.setAttribute('autocomplete', 'off');
+            }
+        });
+    </script>
+
+    <!-- Modal para Selección de Máquina -->
+    <div class="modal fade" id="machineSelectorModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
+                <div class="modal-header bg-primary text-white border-0 py-3">
+                    <h5 class="modal-title fw-bold">
+                        <i class="fas fa-random me-2"></i>REASIGNAR MÁQUINA
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <div class="d-flex align-items-center mb-4 bg-light p-3 rounded-3 border">
+                        <div class="bg-primary bg-opacity-10 p-2 rounded-2 me-3">
+                            <i class="fas fa-file-invoice text-primary"></i>
+                        </div>
+                        <div>
+                            <p class="mb-0 text-muted smaller text-uppercase fw-bold">Orden de Producción</p>
+                            <h5 class="mb-0 fw-bold" id="modal-op-title">OP: -</h5>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3 position-relative">
+                        <i class="fas fa-search position-absolute top-50 start-0 translate-middle-y ms-3 text-muted"></i>
+                        <input type="text" id="machineFilterInput" class="form-control rounded-pill ps-5 py-2 border-light-subtle shadow-sm" placeholder="Escribí el nombre de la máquina para filtrar...">
+                    </div>
+
+                    <div class="row g-2 overflow-auto custom-scrollbar" style="max-height: 400px; padding: 5px;" id="machineGrid">
+                        {% for m_opt in machines %}
+                        <div class="col-6 col-md-4 machine-item">
+                            <button class="btn btn-select-machine-modal w-100 h-100 p-3 rounded-3 shadow-sm"
+                                    data-target-id="{{ m_opt.id }}"
+                                    data-target-name="{{ m_opt.nombre }}">
+                                <div class="fw-bold fs-6 mb-1 text-center">{{ m_opt.nombre }}</div>
+                                <span class="smaller opacity-25 fw-mono text-uppercase">ID: {{ m_opt.id }}</span>
+                            </button>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="modal-footer bg-light border-0">
+                    <button type="button" class="btn btn-secondary px-4 rounded-pill fw-bold" data-bs-dismiss="modal">Cerrar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <style>
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</body>
+</html>

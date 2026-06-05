@@ -577,7 +577,7 @@ def get_gantt_data(request, force_run=False):
 
     def get_nivel(t):
         try:
-            plan_lvl = t.get('Nivel_Planificacion')
+            plan_lvl = t.get('nivel_planificacion')
             if plan_lvl is not None and float(plan_lvl) != 0:
                 return float(plan_lvl)
             erp_lvl = t.get('Nivel')
@@ -787,7 +787,7 @@ def get_gantt_data(request, force_run=False):
             x.get('ProyectoCode') or '',                                                           # Proyecto Code
             int(x.get('prioridad_pieza')    if x.get('prioridad_pieza')    is not None else 9999), # Pieza Prioridad
             x.get('Articulo') or x.get('Mstnmbr') or '',                                           # Pieza Code/ID
-            -int(x.get('Nivel_Planificacion') or 0),                                               # Nivel DESC
+            -get_nivel(x),                                                                         # Nivel DESC
             x.get('secuencia_proceso', 999),                                                       # Secuencia ASC
             x.get('OrdenSecuencia', 999999),
             x.get('OrdenVisual', 999999)
