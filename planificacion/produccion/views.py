@@ -103,6 +103,20 @@ def get_active_scenario(request, scenario_id=None):
         # Fallback to Principal (Official)
         active_scenario = Scenario.objects.using('default').filter(es_principal=True).first()
         
+    if not active_scenario:
+        active_scenario = Scenario.objects.using('default').first()
+        
+    if not active_scenario:
+        try:
+            active_scenario = Scenario.objects.using('default').create(
+                nombre="Plan Principal (Oficial)",
+                es_principal=True,
+                proyectos=""
+            )
+            print("[Scenario] Escenario por defecto creado.")
+        except Exception as e:
+            print(f"[Scenario ERROR] {e}")
+        
     if active_scenario:
         request.session['last_scenario_id'] = str(active_scenario.id)
     else:
@@ -592,7 +606,13 @@ def planificacion_list(request):
         proj_prio_map = {}  # { proyecto_code: prioridad_proyecto (int) }
         if active_scenario:
             pp_qs = ProyectoPrioridad.objects.using('default').filter(scenario=active_scenario).values('proyecto', 'prioridad')
-            proj_prio_map = {pp['proyecto']: pp['prioridad'] for pp in pp_qs}
+            proj_prio_map = {str(pp['proyecto']).strip(): pp['prioridad'] for pp in pp_qs}
+            
+        # Fallback incremental prioridades para proyectos no configurados en BD
+        for idx, p in enumerate(combined_projs or []):
+            p_clean = str(p).strip()
+            if p_clean not in proj_prio_map:
+                proj_prio_map[p_clean] = idx + 1
 
         
 
@@ -735,9 +755,28 @@ def planificacion_list(request):
             # Si no existía el nodo de override, garantizamos los valores por defecto del item
             if not override_node:
                 item['prioridad_pieza'] = item.get('prioridad_pieza', 999)
-                item['nivel_planificacion'] = item.get('nivel_planificacion', 0)
+                item['nivel_planificacion'] = item.get('Nivel_Planificacion') if item.get('Nivel_Planificacion') is not None else item.get('nivel_planificacion', 0)
 
-            item['prioridad_proyecto'] = proj_prio_map.get(item.get('ProyectoCode'), 999)
+            # --- DETERMINAR PRIORIDAD DEL PROYECTO ---
+            cod_proyecto = item.get('ProyectoCode') if isinstance(item, dict) else getattr(item, 'ProyectoCode', None)
+            val_prio = None
+            if cod_proyecto:
+                prio_reg = ProyectoPrioridad.objects.filter(proyecto=str(cod_proyecto).strip(), scenario=active_scenario).first()
+                if prio_reg:
+                    val_prio = prio_reg.prioridad
+
+            # Inyección en item
+            if isinstance(item, dict):
+                item['prioridad_del_proyecto'] = val_prio
+                item['proyecto_prioridad'] = val_prio
+                item['prioridad_proyecto'] = val_prio
+                item['prioridad_articulo'] = item.get('prioridad_pieza')
+            else:
+                setattr(item, 'prioridad_del_proyecto', val_prio)
+                setattr(item, 'proyecto_prioridad', val_prio)
+                setattr(item, 'prioridad_proyecto', val_prio)
+                setattr(item, 'prioridad_articulo', getattr(item, 'prioridad_pieza', 999))
+            # -----------------------------------------
 
             # Forzar que 'prioridad' apunte a la prioridad de la pieza (para compatibilidad con el template HTML)
             item['prioridad'] = item['prioridad_pieza']
@@ -785,6 +824,30 @@ def planificacion_list(request):
                 item['KPI_Eficiencia'] = 'red'
 
 
+        # 1.5. Ordenar la lista plana data por Prioridad Proyecto, Pieza, Nivel Planif. (Ascendente en cascada)
+        def obtener_clave_ordenamiento(op):
+            p_proy = op.get('prioridad_del_proyecto') if isinstance(op, dict) else getattr(op, 'prioridad_del_proyecto', 999)
+            try:
+                p_proy_val = int(float(p_proy)) if p_proy is not None and str(p_proy).strip() != "" and str(p_proy).strip() != "—" else 999
+            except (ValueError, TypeError):
+                p_proy_val = 999
+
+            p_art = op.get('prioridad_pieza') if isinstance(op, dict) else getattr(op, 'prioridad_pieza', 9999)
+            try:
+                p_art_val = int(float(p_art)) if p_art is not None else 9999
+            except (ValueError, TypeError):
+                p_art_val = 9999
+
+            n_plan = op.get('nivel_planificacion') if isinstance(op, dict) else getattr(op, 'nivel_planificacion', 999)
+            try:
+                n_plan_val = int(float(n_plan)) if n_plan is not None else 999
+            except (ValueError, TypeError):
+                n_plan_val = 999
+
+            return (p_proy_val, p_art_val, n_plan_val, op.get('secuencia_proceso', 999), op.get('OrdenSecuencia', 999999), op.get('OrdenVisual', 999999.0))
+
+        data.sort(key=obtener_clave_ordenamiento)
+
         # 2. Initialize Grouping using MACHINE NAMES
         grouped_data = {m['nombre']: [] for m in all_machines_list}
         if 'SIN ASIGNAR' not in grouped_data:
@@ -812,25 +875,41 @@ def planificacion_list(request):
                 if m_item['OrdenVisual'] is None:
                     m_item['OrdenVisual'] = (idx + 1) * 5000.0 # Wide spacing for default
 
-            # Helper robusto para ordenar nivel de planificación descendente (de 10 a 7)
-            def get_nivel_sort_key(item):
-                try:
-                    val = item.get('nivel_planificacion')
-                    if val is not None and str(val).strip() != "":
-                        return -int(float(val))
-                except:
-                    pass
-                return 0
+            def obtener_clave_ordenamiento_local(op):
+                # Prioridad Proyecto
+                p_proy = op.get('prioridad_del_proyecto') if isinstance(op, dict) else getattr(op, 'prioridad_del_proyecto', None)
+                if p_proy is None or str(p_proy).strip() in ['—', '', 'None']:
+                    p_proy_val = 999999
+                else:
+                    try:
+                        p_proy_val = int(str(p_proy).strip())
+                    except (ValueError, TypeError):
+                        p_proy_val = 999999
 
-            # 2. Jerarquía estricta: Prioridad Proyecto (ASC) → Prioridad Pieza (ASC) → Nivel Planif. (DESC) → Secuencia Proceso (ASC)
-            machine_items.sort(key=lambda x: (
-                int(x.get('prioridad_proyecto') if x.get('prioridad_proyecto') is not None else 999),
-                int(x.get('prioridad_pieza') if x.get('prioridad_pieza') is not None else 9999),  # Asegura que 1 vaya antes que 2
-                -int(float(x.get('nivel_planificacion'))) if x.get('nivel_planificacion') else 0, # DESCENDENTE: de 10 a 7
-                x.get('secuencia_proceso', 999),
-                x.get('OrdenSecuencia', 999999),
-                x.get('OrdenVisual', 999999.0)
-            ))
+                # Prioridad Artículos (Piezas)
+                p_art = op.get('prioridad_articulo') if isinstance(op, dict) else getattr(op, 'prioridad_articulo', None)
+                if p_art is None or str(p_art).strip() in ['—', '', 'None']:
+                    p_art_val = 999999
+                else:
+                    try:
+                        p_art_val = int(str(p_art).strip())
+                    except (ValueError, TypeError):
+                        p_art_val = 999999
+
+                # Nivel Planificación (Procesos)
+                n_plan = op.get('nivel_planificacion') if isinstance(op, dict) else getattr(op, 'nivel_planificacion', None)
+                if n_plan is None or str(n_plan).strip() in ['—', '', 'None']:
+                    n_plan_val = 999999
+                else:
+                    try:
+                        n_plan_val = int(str(n_plan).strip())
+                    except (ValueError, TypeError):
+                        n_plan_val = 999999
+
+                return (p_proy_val, p_art_val, n_plan_val)
+
+            # 2. Jerarquía estricta: Prioridad Proyecto (ASC) → Prioridad Pieza (ASC) → Nivel Planif. (ASC)
+            machine_items.sort(key=obtener_clave_ordenamiento_local)
 
             # 3. Asignación de la prioridad visual final correlativa post-ordenamiento
             for idx, m_item in enumerate(machine_items):
@@ -859,9 +938,62 @@ def planificacion_list(request):
         # if search_active:
         #      processed_machines = [m for m in processed_machines if grouped_data.get(m)]
 
+
+
         # Determine response format
         if request.GET.get('format') == 'json':
              return JsonResponse({'data': data}, safe=False)
+
+        def obtener_clave_ordenamiento(op):
+            # Prioridad Proyecto
+            p_proy = op.get('prioridad_del_proyecto') if isinstance(op, dict) else getattr(op, 'prioridad_del_proyecto', None)
+            if p_proy is None or str(p_proy).strip() in ['—', '', 'None']:
+                p_proy_val = 999999
+            else:
+                try:
+                    p_proy_val = int(str(p_proy).strip())
+                except (ValueError, TypeError):
+                    p_proy_val = 999999
+
+            # Prioridad Artículos (Piezas)
+            p_art = op.get('prioridad_articulo') if isinstance(op, dict) else getattr(op, 'prioridad_articulo', None)
+            if p_art is None or str(p_art).strip() in ['—', '', 'None']:
+                p_art_val = 999999
+            else:
+                try:
+                    p_art_val = int(str(p_art).strip())
+                except (ValueError, TypeError):
+                    p_art_val = 999999
+
+            # Nivel Planificación (Procesos)
+            n_plan = op.get('nivel_planificacion') if isinstance(op, dict) else getattr(op, 'nivel_planificacion', None)
+            if n_plan is None or str(n_plan).strip() in ['—', '', 'None']:
+                n_plan_val = 999999
+            else:
+                try:
+                    n_plan_val = int(str(n_plan).strip())
+                except (ValueError, TypeError):
+                    n_plan_val = 999999
+
+            return (p_proy_val, p_art_val, n_plan_val)
+
+        # Forzar ordenamiento en cualquier variante estructural de grouped_data
+        if isinstance(grouped_data, dict):
+            for maquina, lista_ops in grouped_data.items():
+                lista_ops.sort(key=obtener_clave_ordenamiento)
+        elif isinstance(grouped_data, list):
+            for item_maquina in grouped_data:
+                if isinstance(item_maquina, dict):
+                    if 'operaciones' in item_maquina and isinstance(item_maquina['operaciones'], list):
+                        item_maquina['operaciones'].sort(key=obtener_clave_ordenamiento)
+                    if 'items' in item_maquina and isinstance(item_maquina['items'], list):
+                        item_maquina['items'].sort(key=obtener_clave_ordenamiento)
+            # Por si es una lista plana de operaciones:
+            try:
+                grouped_data.sort(key=obtener_clave_ordenamiento)
+            except Exception:
+                pass
+        # ---------------------------------------------------------------
 
         return render(request, 'produccion/planificacion.html', {
             'grouped_data': grouped_data, 
@@ -3250,6 +3382,8 @@ def update_proyecto_prioridad(request):
              return JsonResponse({'error': 'No active scenario found'}, status=400)
              
         with transaction.atomic(using='default'):
+             # Limpieza total de prioridades del escenario actual
+             ProyectoPrioridad.objects.using('default').filter(scenario=scenario).delete()
              for update in updates:
                   proyecto = update.get('proyecto')
                   prioridad = update.get('prioridad')

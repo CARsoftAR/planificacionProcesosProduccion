@@ -1,17 +1,26 @@
 import os
 from pathlib import Path
-
 import sys
+import pyodbc
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 if getattr(sys, 'frozen', False):
-    # BASE_DIR: Carpeta del ejecutable (para DB persistente)
-    BASE_DIR = Path(os.path.dirname(sys.executable))
-    # BUNDLE_DIR: Carpeta interna con los recursos (templates/static)
+    exe_dir = Path(sys.executable).resolve().parent
+    if exe_dir.name == '_internal':
+        BASE_DIR = exe_dir.parent
+    else:
+        BASE_DIR = exe_dir
     BUNDLE_DIR = Path(sys._MEIPASS).resolve()
 else:
     BASE_DIR = Path(__file__).resolve().parent.parent
     BUNDLE_DIR = BASE_DIR
+
+# Soporte dinámico para rutas de PyInstaller de escritorio
+if hasattr(sys, '_MEIPASS'):
+    os.environ['DJANGO_SETTINGS_MODULE'] = 'planificacion.settings'
+    TEMPLATE_DIR = os.path.join(sys._MEIPASS, 'produccion', 'templates')
+else:
+    TEMPLATE_DIR = os.path.join(BASE_DIR, 'produccion', 'templates')
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = 'django-insecure-523g52y7&sa8p7rjdfgc)ms400)zsqckhb%pv-=yi5d9@2^th='
@@ -47,7 +56,7 @@ ROOT_URLCONF = 'planificacion.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [BUNDLE_DIR / 'produccion' / 'templates'],
+        'DIRS': [TEMPLATE_DIR],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -64,6 +73,26 @@ WSGI_APPLICATION = 'planificacion.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
+drivers_en_sistema = pyodbc.drivers()
+
+# Lista de prioridad de drivers de SQL Server (del más nuevo al más viejo)
+drivers_compatibles = [
+    'ODBC Driver 18 for SQL Server',
+    'ODBC Driver 17 for SQL Server',
+    'SQL Server Native Client 11.0',
+    'SQL Server'
+]
+
+driver_final = 'SQL Server Native Client 11.0' # Por defecto por si falla la detección
+for d in drivers_compatibles:
+    if d in drivers_en_sistema:
+        driver_final = d
+        break
+
+params_extra = 'ReadOnly=True'
+if 'Driver 18' in driver_final:
+    params_extra += ';TrustServerCertificate=yes'
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
@@ -77,8 +106,8 @@ DATABASES = {
         'HOST': '192.168.88.12',
         'PORT': '',
         'OPTIONS': {
-            'driver': 'SQL Server Native Client 11.0',
-            'extra_params': 'ReadOnly=True',
+            'driver': driver_final,
+            'extra_params': params_extra,
         },
     }
 }

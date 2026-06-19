@@ -408,6 +408,14 @@ def get_gantt_data(request, force_run=False):
     if id_orden:
          deps_filter['id_orden'] = id_orden
 
+    # Filtro Estricto: Solo incluir OPs que estén en PlannedTask para el escenario activo
+    if plan_mode != 'original' and active_scenario:
+         from .models import PlannedTask
+         planned_ids = list(PlannedTask.objects.using('default').filter(
+             scenario=active_scenario
+         ).values_list('id_orden', flat=True))
+         deps_filter['id_orden_in'] = planned_ids
+
     # Match spreadsheet logic: in manual/scenario mode, we often want to see 
     # what we planned even if the ERP thinks it is completed (e.g. for audits or manual overrides)
     show_completed = (plan_mode != 'original')

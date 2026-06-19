@@ -562,7 +562,8 @@
                                 <th style="white-space: normal;">Denominación</th>
                                 <th style="white-space: normal;">N° de OP</th>
                                 <th style="white-space: normal;">Descripción</th>
-                                <th style="white-space: normal;">Prioridad</th>
+                                <th style="white-space: normal;">Prioridad Proyecto</th>
+                                <th style="white-space: normal;">Prioridad Artículos</th>
                                 <th style="white-space: normal;">Nivel Planificación</th>
                                 <th style="white-space: normal;">Máquina</th>
                                 <th class="bg-warning-subtle" style="white-space: normal;">Tiempo</th>
@@ -613,6 +614,7 @@
                                  <td style="min-width: 150px; white-space: normal;" title="{{ item.Denominacion }}">{{ item.Denominacion }}</td>
                                 <td>{{ item.Idorden }}</td>
                                  <td style="min-width: 250px; white-space: normal;" title="{{ item.Descri }}">{{ item.Descri }}</td>
+                                <td class="text-center">{{ item.prioridad_del_proyecto|default:"—" }}</td>
                                 <td class="text-center row-priority-cell">{{ item.prioridad_pieza }}</td>
                                 <td class="text-end fw-bold editable-nivel" 
                                     contenteditable="true"

@@ -1,7 +1,8 @@
 import os
 from pathlib import Path
-
 import sys
+import pyodbc
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 if getattr(sys, 'frozen', False):
     # En PyInstaller onedir, sys.executable está en la carpeta _internal/ o en la raíz.
@@ -66,6 +67,26 @@ WSGI_APPLICATION = 'planificacion.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
+drivers_en_sistema = pyodbc.drivers()
+
+# Lista de prioridad de drivers de SQL Server (del más nuevo al más viejo)
+drivers_compatibles = [
+    'ODBC Driver 18 for SQL Server',
+    'ODBC Driver 17 for SQL Server',
+    'SQL Server Native Client 11.0',
+    'SQL Server'
+]
+
+driver_final = 'SQL Server Native Client 11.0' # Por defecto por si falla la detección
+for d in drivers_compatibles:
+    if d in drivers_en_sistema:
+        driver_final = d
+        break
+
+params_extra = 'ReadOnly=True'
+if 'Driver 18' in driver_final:
+    params_extra += ';TrustServerCertificate=yes'
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
@@ -79,8 +100,8 @@ DATABASES = {
         'HOST': '192.168.88.12',
         'PORT': '',
         'OPTIONS': {
-            'driver': 'SQL Server Native Client 11.0',
-            'extra_params': 'ReadOnly=True', # Extra safety, though mssql-django might not use it directly, pyodbc does.
+            'driver': driver_final,
+            'extra_params': params_extra,
         },
     }
 }

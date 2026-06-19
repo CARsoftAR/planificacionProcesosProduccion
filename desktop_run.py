@@ -100,15 +100,17 @@ SPLASH_HTML = """
             padding: 0;
             width: 100vw;
             height: 100vh;
-            background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+            background-color: rgb(11, 15, 25);
+            background-image: 
+                radial-gradient(circle at 10% 20%, rgba(99, 102, 241, 0.15) 0%, transparent 40%),
+                radial-gradient(circle at 90% 80%, rgba(168, 85, 247, 0.12) 0%, transparent 40%);
             display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
-            font-family: 'Segoe UI', system-ui, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             overflow: hidden;
             box-sizing: border-box;
-            border: 1px solid rgba(255, 255, 255, 0.7);
         }
         .container {
             text-align: center;
@@ -116,107 +118,139 @@ SPLASH_HTML = """
             flex-direction: column;
             align-items: center;
             justify-content: center;
+            padding: 2rem;
         }
-        .logo-container {
+        .logo-wrapper {
             position: relative;
-            width: 80px;
-            height: 80px;
-            margin-bottom: 24px;
+            margin-bottom: 2.5rem;
         }
-        .logo-glow {
-            position: absolute;
-            top: -10px;
-            left: -10px;
-            width: 100px;
-            height: 100px;
-            background: radial-gradient(circle, rgba(99, 102, 241, 0.35) 0%, rgba(168, 85, 247, 0.05) 75%);
+        .loader-ring {
+            width: 130px;
+            height: 130px;
             border-radius: 50%;
-            filter: blur(12px);
-            animation: pulse-glow 3s infinite ease-in-out;
+            border: 3px solid transparent;
+            border-top-color: rgb(99, 102, 241);
+            border-bottom-color: rgb(168, 85, 247);
+            animation: spin 3s linear infinite;
         }
-        .logo {
+        .loader-ring-inner {
             position: absolute;
-            top: 0;
-            left: 0;
+            top: 10px;
+            left: 10px;
+            width: 110px;
+            height: 110px;
+            border-radius: 50%;
+            border: 3px solid transparent;
+            border-left-color: rgb(236, 72, 153);
+            border-right-color: rgb(59, 130, 246);
+            animation: spin-reverse 2s linear infinite;
+        }
+        .logo-center {
+            position: absolute;
+            top: 25px;
+            left: 25px;
             width: 80px;
             height: 80px;
-            background: linear-gradient(135deg, #818cf8 0%, #c084fc 100%);
-            border-radius: 24px;
+            background: linear-gradient(135deg, rgb(30, 27, 75) 0%, rgb(15, 23, 42) 100%);
+            border: 1px solid rgba(99, 102, 241, 0.3);
+            border-radius: 50%;
             display: flex;
             justify-content: center;
             align-items: center;
-            box-shadow: 0 10px 25px rgba(129, 140, 248, 0.2);
-            animation: float 4s infinite ease-in-out;
+            box-shadow: 0 0 30px rgba(99, 102, 241, 0.25);
         }
         .logo-icon {
-            color: white;
-            font-size: 36px;
+            color: rgb(255, 255, 255);
+            font-size: 38px;
             font-weight: 800;
+            text-shadow: 0 0 10px rgba(99, 102, 241, 0.5);
+            letter-spacing: -1px;
         }
         h1 {
-            margin: 0 0 8px 0;
-            font-size: 26px;
+            margin: 0 0 12px 0;
+            font-size: 32px;
             font-weight: 800;
             letter-spacing: -0.5px;
-            color: #1f2937;
+            color: rgb(255, 255, 255);
+            text-shadow: 0 2px 10px rgba(0,0,0,0.5);
         }
         h1 span {
-            color: #6366f1;
+            background: linear-gradient(90deg, rgb(99, 102, 241), rgb(168, 85, 247), rgb(236, 72, 153));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
         }
         p {
-            margin: 0;
+            margin: 0 0 8px 0;
             font-size: 14px;
-            color: #6b7280;
+            color: rgb(148, 163, 184);
             font-weight: 500;
+            letter-spacing: 0.5px;
         }
-        .loader-track {
-            width: 200px;
-            height: 4px;
+        .status-pill {
             background: rgba(99, 102, 241, 0.1);
-            border-radius: 10px;
-            margin-top: 32px;
-            overflow: hidden;
-            position: relative;
+            border: 1px solid rgba(99, 102, 241, 0.2);
+            padding: 6px 18px;
+            border-radius: 50px;
+            font-size: 11px;
+            color: rgb(199, 210, 254);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            animation: pulse 2s infinite ease-in-out;
         }
-        .loader-bar {
-            width: 80px;
-            height: 100%;
-            background: linear-gradient(90deg, #818cf8, #c084fc);
-            border-radius: 10px;
+        .status-dot {
+            width: 6px;
+            height: 6px;
+            background-color: rgb(52, 211, 153);
+            border-radius: 50%;
+            box-shadow: 0 0 8px rgb(52, 211, 153);
+        }
+        .footer-brand {
             position: absolute;
-            animation: loading 1.8s infinite ease-in-out;
+            bottom: 30px;
+            font-size: 12px;
+            color: rgba(148, 163, 184, 0.4);
+            letter-spacing: 2px;
+            font-weight: 600;
+            text-transform: uppercase;
         }
-        @keyframes float {
-            0% { transform: translateY(0px) rotate(0deg); }
-            50% { transform: translateY(-8px) rotate(2deg); }
-            100% { transform: translateY(0px) rotate(0deg); }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
-        @keyframes pulse-glow {
-            0% { transform: scale(0.9); opacity: 0.5; }
-            50% { transform: scale(1.2); opacity: 0.9; }
-            100% { transform: scale(0.9); opacity: 0.5; }
+        @keyframes spin-reverse {
+            0% { transform: rotate(360deg); }
+            100% { transform: rotate(0deg); }
         }
-        @keyframes loading {
-            0% { left: -80px; }
-            50% { left: 100px; width: 100px; }
-            100% { left: 200px; }
+        @keyframes pulse {
+            0% { opacity: 0.7; transform: scale(0.98); }
+            50% { opacity: 1; transform: scale(1); }
+            100% { opacity: 0.7; transform: scale(0.98); }
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="logo-container">
-            <div class="logo-glow"></div>
-            <div class="logo">
-                <div class="logo-icon">A</div>
+        <div class="logo-wrapper">
+            <div class="loader-ring"></div>
+            <div class="loader-ring-inner"></div>
+            <div class="logo-center">
+                <div class="logo-icon" style="font-size: 24px; font-weight: 900; letter-spacing: 0.5px;">PLIF</div>
             </div>
         </div>
-        <h1>ABBAMAT <span>PROD</span></h1>
-        <p>Iniciando sistema de planificación...</p>
-        <div class="loader-track">
-            <div class="loader-bar"></div>
+        <h1>ABBAMAT <span>PLIF</span></h1>
+        <p>Optimizando secuencias de fabricación</p>
+        <div style="height: 20px;"></div>
+        <div class="status-pill">
+            <div class="status-dot"></div>
+            <span>Inicializando Sistema</span>
         </div>
     </div>
+    <div class="footer-brand">Tecnología de Procesos</div>
 </body>
 </html>
 """
@@ -229,36 +263,73 @@ def main():
     django_thread = threading.Thread(target=start_django, args=(port,), daemon=True)
     django_thread.start()
     
-    # Crear ventana de splash (cargando)
+    # Intentar obtener las dimensiones de la pantalla para el splash frameless
+    try:
+        screens = webview.screens
+        if screens:
+            screen_width = screens[0].width
+            screen_height = screens[0].height
+        else:
+            screen_width = 1920
+            screen_height = 1080
+    except Exception:
+        screen_width = 1920
+        screen_height = 1080
+
+    # Crear ventana de splash (cargando) con tamaño inicial estándar, oculta por defecto
     splash = webview.create_window(
-        'ABBAMAT PROD - Cargando...',
+        'ABBAMAT PLIF - Cargando...',
         html=SPLASH_HTML,
-        width=500,
-        height=320,
+        width=800,
+        height=600,
         frameless=True,
         easy_drag=True,
-        on_top=True
+        on_top=True,
+        hidden=True,
+        background_color='#0b0f19'
     )
     
     def check_and_launch():
-        # Esperamos 3 segundos a que Django levante
-        time.sleep(3)
+        # Forzar redimensionamiento y maximización del splash programáticamente
+        try:
+            screens = webview.screens
+            if screens:
+                splash.resize(screens[0].width, screens[0].height)
+            splash.maximize()
+        except Exception:
+            pass
         
-        # Crear ventana principal
+        # Mostrar el splash ya maximizado y listo
+        splash.show()
+
+        # Esperamos 6 segundos a que Django levante
+        time.sleep(6)
+        
+        # Crear ventana principal oculta
         url = f"http://127.0.0.1:{port}"
         print(f"[WebView] Abriendo {url}...")
         
-        webview.create_window(
-            'ABBAMAT PROD - Desktop',
+        main_win = webview.create_window(
+            'ABBAMAT PLIF - Desktop',
             url,
             width=1280,
             height=800,
             min_size=(800, 600),
-            frameless=False
+            frameless=False,
+            maximized=True,
+            hidden=True,
+            background_color='#0b0f19'
         )
         
-        # Cerrar el splash
-        splash.destroy()
+        def show_main():
+            main_win.show()
+            try:
+                splash.destroy()
+            except Exception:
+                pass
+        
+        # Conectar al evento loaded de pywebview
+        main_win.events.loaded += show_main
         
     webview.start(check_and_launch)
 

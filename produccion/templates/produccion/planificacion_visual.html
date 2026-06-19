@@ -951,16 +951,19 @@
 
         /* Scrollbar styling */
         ::-webkit-scrollbar {
-            width: 10px;
-            height: 10px;
+            width: 16px !important;
+            height: 25px !important;
         }
         ::-webkit-scrollbar-track {
             background: var(--bg-deep);
         }
         ::-webkit-scrollbar-thumb {
-            background: var(--bg-header);
-            border-radius: 5px;
-            border: 2px solid var(--bg-deep);
+            background: #cbd5e1;
+            border-radius: 8px;
+            border: 3px solid var(--bg-deep);
+        }
+        [data-theme="dark"] ::-webkit-scrollbar-thumb {
+            background: #475569;
         }
         ::-webkit-scrollbar-thumb:hover {
             background: var(--accent);
@@ -2078,6 +2081,11 @@
                     <script id="dependencies-data-json" type="application/json">
                         {{ dependencies_json|safe }}
                     </script>
+
+                    <!-- Safe Data Injection for LINKS (id/source/target/type) -->
+                    <script id="links-data-json" type="application/json">
+                        {{ links_json|safe }}
+                    </script>
                     
                     <!-- Diagnostic for Dependencies (Hidden by default, used for verification) -->
                     <div id="diag-deps" data-count="{{ dependencies_json|length }}" style="display:none;"></div>
@@ -2379,6 +2387,34 @@
     } catch(e) {
         console.error("GanttEngine: Error parsing dependency JSON", e);
         window.dependenciesData = [];
+    }
+
+    // LINKS data (id/source/target/type) — se fusiona con dependenciesData (pred/succ)
+    const linksDataEl = document.getElementById('links-data-json');
+    let linksData = [];
+    try {
+        linksData = linksDataEl ? JSON.parse(linksDataEl.textContent) : [];
+    } catch(e) {
+        console.error("GanttEngine: Error parsing links JSON", e);
+        linksData = [];
+    }
+    if (Array.isArray(linksData) && linksData.length > 0) {
+        // Normalizar al formato {pred, succ} que usa el motor de dibujo
+        const normalized = linksData
+            .filter(l => l && l.source != null && l.target != null)
+            .map(l => ({ pred: String(l.source), succ: String(l.target) }));
+        // Evitar duplicados con los pares ya presentes
+        const existing = new Set(
+            (window.dependenciesData || []).map(d => `${d.pred}->${d.succ}`)
+        );
+        normalized.forEach(n => {
+            const key = `${n.pred}->${n.succ}`;
+            if (!existing.has(key)) {
+                window.dependenciesData.push(n);
+                existing.add(key);
+            }
+        });
+        console.log(`GanttEngine: ${normalized.length} links fusionados desde links_json.`);
     }
     
     window.tooltipsVisible = true;
@@ -3254,8 +3290,13 @@
             // Filtrado 1-a-1: Agrupamos para asegurar que cada sucesor tenga solo su predecesor directo más cercano
             const succToPreds = {};
             (window.dependenciesData || []).forEach(dep => {
+                // RESGUARDO ESTRICTO: validar estructura del par de dependencia
+                if (!dep || typeof dep !== 'object') return;
+                if (dep.pred == null || dep.succ == null) return;
                 const s_pred = String(dep.pred).split('.')[0];
                 const s_succ = String(dep.succ).split('.')[0];
+                if (!s_pred || s_pred === 'null' || s_pred === 'undefined') return;
+                if (!s_succ || s_succ === 'null' || s_succ === 'undefined') return;
                 if (!succToPreds[s_succ]) succToPreds[s_succ] = [];
                 if (!succToPreds[s_succ].includes(s_pred)) {
                     succToPreds[s_succ].push(s_pred);
@@ -3277,6 +3318,7 @@
                     const left1 = parseFloat(box1.style.left);
                     const left2 = parseFloat(box2.style.left);
                     
+                    if (isNaN(left1) || isNaN(left2)) return;
                     if (left1 <= left2 + 10) { // Permite un leve solape de 10px
                         const dist = Math.abs(left2 - left1);
                         if (dist < minDistance) {
@@ -3294,6 +3336,7 @@
             const conexionesDibujadas = new Set();
 
             filteredDeps.forEach(dep => {
+                try {
                 const s_pred = dep.pred;
                 const s_succ = dep.succ;
                 
@@ -3306,7 +3349,6 @@
                 
                 // Si alguna de las tarjetas está oculta por filtro, no dibujamos la flecha
                 if (box1.style.display === 'none' || box2.style.display === 'none') return;
-
                 // Lógica de Consolidación (Group Dependencies)
                 // Usamos el ID del proyecto destino si está disponible, o el ID de la tarea
                 const source_id = dep.source_id || s_pred;
@@ -3380,6 +3422,9 @@
                 
                 svgLayer.appendChild(path);
                 count++;
+                } catch (err) {
+                    console.warn(`[Gantt] Dep ignorada (${dep && dep.pred}->${dep && dep.succ}):`, err && err.message);
+                }
             });
 
             console.log(`GanttEngine: ${count} flechas dinámicas renderizadas.`);

@@ -2,16 +2,25 @@
 
 block_cipher = None
 
+import os
+
+spec_dir = os.path.abspath(os.getcwd())
+
+datas_list = [
+    (os.path.join(spec_dir, 'planificacion'), 'planificacion'),
+    (os.path.join(spec_dir, 'db.sqlite3'), '.'),
+]
+
+for src_rel, dst in [('produccion/templates', 'produccion/templates'), ('produccion/static', 'produccion/static')]:
+    src_abs = os.path.join(spec_dir, src_rel)
+    os.makedirs(src_abs, exist_ok=True)
+    datas_list.append((src_abs, dst))
+
 a = Analysis(
     ['desktop_run.py'],
     pathex=[],
     binaries=[],
-    datas=[
-        ('planificacion', 'planificacion'),
-        ('planificacion/produccion/templates', 'produccion/templates'),
-        ('produccion/static', 'produccion/static'),
-        ('db.sqlite3', '.'),
-    ],
+    datas=datas_list,
     hiddenimports=[
         'clr',
         'pythonnet',

@@ -103,6 +103,20 @@ def get_active_scenario(request, scenario_id=None):
         # Fallback to Principal (Official)
         active_scenario = Scenario.objects.using('default').filter(es_principal=True).first()
         
+    if not active_scenario:
+        active_scenario = Scenario.objects.using('default').first()
+        
+    if not active_scenario:
+        try:
+            active_scenario = Scenario.objects.using('default').create(
+                nombre="Plan Principal (Oficial)",
+                es_principal=True,
+                proyectos=""
+            )
+            print("[Scenario] Escenario por defecto creado.")
+        except Exception as e:
+            print(f"[Scenario ERROR] {e}")
+        
     if active_scenario:
         request.session['last_scenario_id'] = str(active_scenario.id)
     else:
@@ -592,7 +606,7 @@ def planificacion_list(request):
         proj_prio_map = {}  # { proyecto_code: prioridad_proyecto (int) }
         if active_scenario:
             pp_qs = ProyectoPrioridad.objects.using('default').filter(scenario=active_scenario).values('proyecto', 'prioridad')
-            proj_prio_map = {pp['proyecto']: pp['prioridad'] for pp in pp_qs}
+            proj_prio_map = {str(pp['proyecto']).strip(): pp['prioridad'] for pp in pp_qs}
 
         
 
@@ -735,9 +749,22 @@ def planificacion_list(request):
             # Si no existía el nodo de override, garantizamos los valores por defecto del item
             if not override_node:
                 item['prioridad_pieza'] = item.get('prioridad_pieza', 999)
-                item['nivel_planificacion'] = item.get('nivel_planificacion', 0)
+                item['nivel_planificacion'] = item.get('Nivel_Planificacion') if item.get('Nivel_Planificacion') is not None else item.get('nivel_planificacion', 0)
 
-            item['prioridad_proyecto'] = proj_prio_map.get(item.get('ProyectoCode'), 999)
+            p_code_clean = str(item.get('ProyectoCode') or '').strip()
+            # BUG FIX: Distinguimos "registro explícito en ProyectoPrioridad" de "proyecto
+            # sin prioridad asignada". Si NO existe registro, dejamos None en vez de
+            # inyectar 999 (default del modelo), para que la celda no muestre el resguardo.
+            # Inyectamos el valor bajo la clave EXACTA 'prioridad_del_proyecto' que el
+            # template espera en la celda (alineado con el patrón annotate/F del ORM).
+            if p_code_clean and p_code_clean in proj_prio_map:
+                p_prio = proj_prio_map[p_code_clean]
+            else:
+                p_prio = None
+            item['prioridad_del_proyecto'] = p_prio
+            item['prioridad_proyecto'] = p_prio
+            item['proyecto_prioridad'] = p_prio
+            item['prioridad_articulo'] = item.get('prioridad_pieza')
 
             # Forzar que 'prioridad' apunte a la prioridad de la pieza (para compatibilidad con el template HTML)
             item['prioridad'] = item['prioridad_pieza']
@@ -812,25 +839,41 @@ def planificacion_list(request):
                 if m_item['OrdenVisual'] is None:
                     m_item['OrdenVisual'] = (idx + 1) * 5000.0 # Wide spacing for default
 
-            # Helper robusto para ordenar nivel de planificación descendente (de 10 a 7)
-            def get_nivel_sort_key(item):
-                try:
-                    val = item.get('nivel_planificacion')
-                    if val is not None and str(val).strip() != "":
-                        return -int(float(val))
-                except:
-                    pass
-                return 0
+            def obtener_clave_ordenamiento_local(op):
+                # Prioridad Proyecto
+                p_proy = op.get('prioridad_del_proyecto') if isinstance(op, dict) else getattr(op, 'prioridad_del_proyecto', None)
+                if p_proy is None or str(p_proy).strip() in ['—', '', 'None']:
+                    p_proy_val = 999999
+                else:
+                    try:
+                        p_proy_val = int(str(p_proy).strip())
+                    except (ValueError, TypeError):
+                        p_proy_val = 999999
 
-            # 2. Jerarquía estricta: Prioridad Proyecto (ASC) → Prioridad Pieza (ASC) → Nivel Planif. (DESC) → Secuencia Proceso (ASC)
-            machine_items.sort(key=lambda x: (
-                int(x.get('prioridad_proyecto') if x.get('prioridad_proyecto') is not None else 999),
-                int(x.get('prioridad_pieza') if x.get('prioridad_pieza') is not None else 9999),  # Asegura que 1 vaya antes que 2
-                -int(float(x.get('nivel_planificacion'))) if x.get('nivel_planificacion') else 0, # DESCENDENTE: de 10 a 7
-                x.get('secuencia_proceso', 999),
-                x.get('OrdenSecuencia', 999999),
-                x.get('OrdenVisual', 999999.0)
-            ))
+                # Prioridad Artículos (Piezas)
+                p_art = op.get('prioridad_articulo') if isinstance(op, dict) else getattr(op, 'prioridad_articulo', None)
+                if p_art is None or str(p_art).strip() in ['—', '', 'None']:
+                    p_art_val = 999999
+                else:
+                    try:
+                        p_art_val = int(str(p_art).strip())
+                    except (ValueError, TypeError):
+                        p_art_val = 999999
+
+                # Nivel Planificación (Procesos)
+                n_plan = op.get('nivel_planificacion') if isinstance(op, dict) else getattr(op, 'nivel_planificacion', None)
+                if n_plan is None or str(n_plan).strip() in ['—', '', 'None']:
+                    n_plan_val = 999999
+                else:
+                    try:
+                        n_plan_val = int(str(n_plan).strip())
+                    except (ValueError, TypeError):
+                        n_plan_val = 999999
+
+                return (p_proy_val, p_art_val, n_plan_val)
+
+            # 2. Jerarquía estricta: Prioridad Proyecto (ASC) → Prioridad Pieza (ASC) → Nivel Planif. (ASC)
+            machine_items.sort(key=obtener_clave_ordenamiento_local)
 
             # 3. Asignación de la prioridad visual final correlativa post-ordenamiento
             for idx, m_item in enumerate(machine_items):
@@ -858,6 +901,111 @@ def planificacion_list(request):
         # We keep all machines visible to allow moving tasks to them.
         # if search_active:
         #      processed_machines = [m for m in processed_machines if grouped_data.get(m)]
+
+        # =========================================================
+        # INYECCIÓN AGRESIVA: cruce EXPLICITO entre la grilla y la tabla
+        # de prioridades. La grilla expone el código como 'item.ProyectoCode'
+        # (mismo string que muestra la columna "Proyecto" del HTML). La tabla
+        # 'ProyectoPrioridad' guarda el código en el campo CharField 'proyecto'.
+        # Equivalencia: item.ProyectoCode == ProyectoPrioridad.proyecto
+        # No confiar en inyecciones tempranas (se pierden en agrupación).
+        # Usa el modelo importado al inicio del módulo (línea 10) — NUNCA inline
+        # para no generar UnboundLocalError.
+        # =========================================================
+        pp_qs_last = ProyectoPrioridad.objects.using('default').filter(
+            scenario=active_scenario
+        ).values('proyecto', 'prioridad')
+        full_prio_map = {str(p['proyecto']).strip(): p['prioridad'] for p in pp_qs_last}
+
+        for m_name, machine_items in grouped_data.items():
+            for item in machine_items:
+                try:
+                    # 1) Resolver el código del proyecto del item (dict u objeto)
+                    if isinstance(item, dict):
+                        cod_proyecto = item.get('ProyectoCode')
+                    else:
+                        cod_proyecto = getattr(item, 'ProyectoCode', None)
+
+                    # 2) Cruzar contra la tabla de prioridades
+                    val_prio = "—"
+                    if cod_proyecto:
+                        key = str(cod_proyecto).strip()
+                        # Primero: mapa pre-construido (evita N+1)
+                        if key in full_prio_map:
+                            val_prio = str(full_prio_map[key])
+                        else:
+                            # Fallback: query fresca por si el mapa se construyó
+                            # con otro escenario o el campo no se cacheó bien.
+                            # El campo del FK es 'scenario', NO 'active_scenario'.
+                            prio_registro = ProyectoPrioridad.objects.filter(
+                                proyecto=key,
+                                scenario=active_scenario
+                            ).first()
+                            if prio_registro:
+                                val_prio = str(prio_registro.prioridad)
+                except Exception:
+                    val_prio = "—"
+
+                # 3) Setear la variable EXACTA que el template lee
+                # Redundante en dict y objeto para anular fallos de tipado
+                if isinstance(item, dict):
+                    item['prioridad_del_proyecto'] = val_prio
+                    item['prioridad_proyecto'] = val_prio
+                    item['proyecto_prioridad'] = val_prio
+                else:
+                    setattr(item, 'prioridad_del_proyecto', val_prio)
+                    setattr(item, 'prioridad_proyecto', val_prio)
+                    setattr(item, 'proyecto_prioridad', val_prio)
+
+        def obtener_clave_ordenamiento(op):
+            # Prioridad Proyecto
+            p_proy = op.get('prioridad_del_proyecto') if isinstance(op, dict) else getattr(op, 'prioridad_del_proyecto', None)
+            if p_proy is None or str(p_proy).strip() in ['—', '', 'None']:
+                p_proy_val = 999999
+            else:
+                try:
+                    p_proy_val = int(str(p_proy).strip())
+                except (ValueError, TypeError):
+                    p_proy_val = 999999
+
+            # Prioridad Artículos (Piezas)
+            p_art = op.get('prioridad_articulo') if isinstance(op, dict) else getattr(op, 'prioridad_articulo', None)
+            if p_art is None or str(p_art).strip() in ['—', '', 'None']:
+                p_art_val = 999999
+            else:
+                try:
+                    p_art_val = int(str(p_art).strip())
+                except (ValueError, TypeError):
+                    p_art_val = 999999
+
+            # Nivel Planificación (Procesos)
+            n_plan = op.get('nivel_planificacion') if isinstance(op, dict) else getattr(op, 'nivel_planificacion', None)
+            if n_plan is None or str(n_plan).strip() in ['—', '', 'None']:
+                n_plan_val = 999999
+            else:
+                try:
+                    n_plan_val = int(str(n_plan).strip())
+                except (ValueError, TypeError):
+                    n_plan_val = 999999
+
+            return (p_proy_val, p_art_val, n_plan_val)
+
+        # Forzar ordenamiento en cualquier variante estructural de grouped_data
+        if isinstance(grouped_data, dict):
+            for maquina, lista_ops in grouped_data.items():
+                lista_ops.sort(key=obtener_clave_ordenamiento)
+        elif isinstance(grouped_data, list):
+            for item_maquina in grouped_data:
+                if isinstance(item_maquina, dict):
+                    if 'operaciones' in item_maquina and isinstance(item_maquina['operaciones'], list):
+                        item_maquina['operaciones'].sort(key=obtener_clave_ordenamiento)
+                    if 'items' in item_maquina and isinstance(item_maquina['items'], list):
+                        item_maquina['items'].sort(key=obtener_clave_ordenamiento)
+            # Por si es una lista plana de operaciones:
+            try:
+                grouped_data.sort(key=obtener_clave_ordenamiento)
+            except Exception:
+                pass
 
         # Determine response format
         if request.GET.get('format') == 'json':
@@ -2494,6 +2642,58 @@ def planificacion_visual(request):
     
     print(f"DEBUG: [Dependencies] Grafo generado: {len(dependencies_list)} vínculos encontrados.")
 
+    # =========================================================
+    # BUG FIX: Generar LINKS por PIEZA recorriendo las tareas directamente.
+    # El dependency_map puede estar incompleto para proyectos recién cargados
+    # (los niveles del ERP no se reconocieron), por lo que generamos un grafo
+    # alternativo agrupando por (ProyectoCode, Mstnmbr) y uniendo operaciones
+    # consecutivas en orden DESCENDENTE de nivel_planificacion.
+    # Formato: [{id, source, target, type}, ...] — type "0" = Finish-to-Start
+    # =========================================================
+    links_list = []
+    piece_groups = {}
+    for row in timeline_data:
+        for t in row.get('tasks', []):
+            proj = t.get('ProyectoCode') or ''
+            mst = t.get('Mstnmbr') or t.get('Articulo') or 0
+            try:
+                oid = str(int(float(t.get('Idorden') or 0)))
+            except (ValueError, TypeError):
+                continue
+            if not oid or oid == '0':
+                continue
+            nivel = t.get('nivel_planificacion')
+            if nivel is None:
+                nivel = t.get('Nivel_Planificacion') or t.get('Nivel') or 0
+            try:
+                nivel = float(nivel)
+            except (ValueError, TypeError):
+                nivel = 0.0
+            piece_groups.setdefault((proj, mst), []).append({
+                'oid': oid,
+                'nivel': nivel,
+            })
+
+    link_id = 0
+    for (proj, mst), ops in piece_groups.items():
+        ops_sorted = sorted(ops, key=lambda x: x['nivel'], reverse=True)
+        for i in range(len(ops_sorted) - 1):
+            upper = ops_sorted[i]
+            lower = ops_sorted[i + 1]
+            if upper['nivel'] <= 0 or lower['nivel'] <= 0:
+                continue
+            if upper['nivel'] < lower['nivel']:
+                continue
+            links_list.append({
+                'id': f"L{link_id}",
+                'source': upper['oid'],
+                'target': lower['oid'],
+                'type': '0',  # Finish-to-Start
+            })
+            link_id += 1
+
+    print(f"DEBUG: [Links] {len(links_list)} uniones generadas desde nivel_planificacion de las piezas.")
+
     # Fetch all scenarios for selector (used in template)
     from .models import Scenario
     all_scenarios = Scenario.objects.using('default').all().order_by('-es_principal', 'nombre')
@@ -2506,6 +2706,7 @@ def planificacion_visual(request):
         'time_columns': time_columns_data, # Use the new data structure
         'start_date': start_simulation,
         'dependencies_json': json.dumps(dependencies_list),
+        'links_json': json.dumps(links_list),
         'today': start_simulation,
         'total_width': calculated_total_width,
         'system_alerts': data.get('system_alerts', []),
@@ -4034,7 +4235,19 @@ def api_confirm_selected_tasks(request):
                         placeholders = ', '.join(['%s'] * len(all_target_ops))
                         sql_m = f"SELECT Idorden, Idmaquina FROM Tman050 WHERE Idorden IN ({placeholders})"
                         cursor.execute(sql_m, all_target_ops)
-                        op_machines = {str(row[0]): str(row[1]).strip() for row in cursor.fetchall()}
+                        erp_machines = {str(row[0]): str(row[1]).strip() for row in cursor.fetchall()}
+
+                    # BUG FIX: Si el usuario movió manualmente la OP a otra máquina (p. ej. de
+                    # "SIN ASIGNAR" a "TM1"), existing_pms_data tiene la máquina destino real.
+                    # Sin esta prioridad, op_machines devolvería la máquina ORIGINAL del ERP y
+                    # update_or_create crearía un duplicado en vez de actualizar el registro
+                    # restaurado con la nueva prioridad.
+                    for oid_str in all_target_ops:
+                        manual_maquina = existing_pms_data.get(oid_str, {}).get('maquina')
+                        if manual_maquina:
+                            op_machines[oid_str] = manual_maquina.strip()
+                        else:
+                            op_machines[oid_str] = erp_machines.get(oid_str, 'SIN ASIGNAR')
 
                 for macro_pk, prio_val in piece_priorities.items():
                     if prio_val is not None:
@@ -4052,11 +4265,22 @@ def api_confirm_selected_tasks(request):
                             maquina = op_machines.get(oid_str, 'SIN ASIGNAR')
                             next_seq = get_next_seq(maquina)
                             print(f"DEBUG BACKEND POST - Articulo: {macro_pk}, OP: {oid_str}, Prioridad Recibida: {prio_val}, Seq: {next_seq}")
+                            # BUG FIX CRÍTICO: services.py:280 lee la prioridad de pieza desde
+                            # el campo 'nivel_manual' (IntegerField). El Selector debe persistir
+                            # el valor en ESE campo, no en 'prioridad' (FloatField, default 0.0).
+                            # Si solo escribimos en 'prioridad', el display muestra None para
+                            # proyectos nuevos (cuyo nivel_manual nunca fue tocado). Se
+                            # escriben ambos campos para mantener compatibilidad con el level
+                            # editor de la lista de planificación.
                             PrioridadManual.objects.using('default').update_or_create(
                                 id_orden=oid_str,
                                 scenario=active_scenario,
                                 maquina=maquina,
-                                defaults={'prioridad': int(prio_val), 'orden_secuencia': next_seq}
+                                defaults={
+                                    'nivel_manual': int(prio_val),
+                                    'prioridad': float(prio_val),
+                                    'orden_secuencia': next_seq,
+                                }
                             )
 
             # --- SYNC: Actualizamos el campo 'proyectos' del escenario para persistencia ---

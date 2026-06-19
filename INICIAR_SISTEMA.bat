@@ -20,21 +20,14 @@ if not exist "db.sqlite3" (
 echo [2/3] Preparando interfaz de escritorio...
 echo [3/3] Abriendo ABBAMAT PROD... (por favor espera)
 
-REM Iniciar la app usando Python (o el ejecutable empacado)
-set "EXE_PATH=dist\ABBAMAT_PROD_Desktop\ABBAMAT_PROD_Desktop.exe"
-
-if exist "%EXE_PATH%" (
-    start "" "%EXE_PATH%"
+REM Iniciar la app usando Python en tiempo real para desarrollo (lee archivos directamente)
+if exist "venv\Scripts\python.exe" (
+    start "" "venv\Scripts\python.exe" desktop_run.py
 ) else (
     if exist "ABBAMAT_PROD_Desktop.exe" (
         start "" ABBAMAT_PROD_Desktop.exe
     ) else (
-        REM Usa el python del entorno virtual si existe, sino el global
-        if exist "venv\Scripts\python.exe" (
-            start "" "venv\Scripts\python.exe" desktop_run.py
-        ) else (
-            start "" python desktop_run.py
-        )
+        start "" python desktop_run.py
     )
 )
 

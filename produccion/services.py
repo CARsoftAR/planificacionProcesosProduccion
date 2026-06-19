@@ -72,6 +72,7 @@ def get_planificacion_data(filtros=None, exclude_completed=True):
         T3.IDConcepto AS [SECTOR PERSONA],
         Isnull(T3.QConcepto, 1) AS [NIVEL PERSONA],
         Isnull(T.Idmaquina, '') AS Idmaquina,
+        T3.IdMaquina AS IdmaquinaCompatible,
         0 AS NumeroOperacion,
         MAC.MAQUINAD,
         SEC.SECTORD,
@@ -278,6 +279,65 @@ def get_planificacion_data(filtros=None, exclude_completed=True):
             id_orden__in=query_ids
         ).values('id_orden', 'nivel_manual')
         op_to_nivel = {p['id_orden']: p['nivel_manual'] for p in p_manual_db if p['nivel_manual'] is not None}
+
+    # DEDUPLICAR / FILTRAR RESULTADOS (Asignación Única por Idorden)
+    if results:
+        from collections import defaultdict
+        by_id = defaultdict(list)
+        for r in results:
+            by_id[r['Idorden']].append(r)
+            
+        pm_machines = {}
+        if active_scenario:
+            pm_list = PrioridadManual.objects.using('default').filter(
+                scenario=active_scenario
+            ).values('id_orden', 'maquina')
+            for p in pm_list:
+                if p['maquina']:
+                    try:
+                        oid_clean = int(float(p['id_orden']))
+                    except:
+                        oid_clean = p['id_orden']
+                    pm_machines[oid_clean] = p['maquina'].strip().upper()
+
+        deduped_results = []
+        for oid, rows in by_id.items():
+            try:
+                oid_clean = int(float(oid))
+            except:
+                oid_clean = oid
+                
+            override_m = pm_machines.get(oid_clean)
+            selected_row = None
+            
+            if override_m:
+                # Buscar fila que coincida con la máquina del override manual
+                for r in rows:
+                    comp_m = str(r.get('IdmaquinaCompatible') or '').strip().upper()
+                    if comp_m == override_m:
+                        selected_row = r
+                        break
+                if not selected_row:
+                    selected_row = rows[0].copy()
+                    selected_row['IdmaquinaCompatible'] = override_m
+            else:
+                # Sin override: buscar la fila que coincida con la máquina asignada en el ERP
+                erp_m = str(rows[0].get('Idmaquina') or '').strip().upper()
+                if erp_m and erp_m not in ['', 'SIN ASIGNAR']:
+                    for r in rows:
+                        comp_m = str(r.get('IdmaquinaCompatible') or '').strip().upper()
+                        if comp_m == erp_m:
+                            selected_row = r
+                            break
+                
+                if not selected_row:
+                    selected_row = rows[0]
+                    if not erp_m:
+                        selected_row['Idmaquina'] = ''
+                        selected_row['MAQUINAD'] = 'SIN ASIGNAR'
+                        
+            deduped_results.append(selected_row)
+        results = deduped_results
         
     if results:
         # Agrupamos por código de proyecto y MSTNMBR (artículo/pieza madre) para secuenciar
