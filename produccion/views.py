@@ -3588,15 +3588,12 @@ def planillas_diarias(request):
     from collections import defaultdict
     from datetime import datetime, timedelta
     
-    # 1. OBTENCIÓN DE DATOS LIMPIA (Sin forzar el Lunes)
+    # 1. OBTENCIÓN DE DATOS LIMPIA
     gantt_res = get_gantt_data(request, force_run=True)
     timeline_data = gantt_res.get('timeline_data', [])
-    all_valid_dates = gantt_res.get('valid_dates', [])
-    
-    # --- FILTER: Keep all working days returned by the Gantt ---
-    valid_dates = [d for d in all_valid_dates if d.weekday() < 5]
     
     daily_plan = {}
+    active_dates = set()
     
     for machine_row in timeline_data:
         machine = machine_row['machine']
@@ -3608,13 +3605,9 @@ def planillas_diarias(request):
         daily_plan[m_id] = {
             'machine_id': m_id,
             'machine_name': machine.nombre,
-            'dates': {}
+            'dates': defaultdict(list)
         }
         
-        # Initialize dates dictionary
-        for v_date in valid_dates:
-             daily_plan[m_id]['dates'][v_date.isoformat()] = []
-             
         task_segments = []
         for segment in machine_row['tasks']:
             start = segment.get('start_date')
@@ -3631,11 +3624,10 @@ def planillas_diarias(request):
         
         for segment in task_segments:
             start = segment.get('start_date')
-            d_str = start.date().isoformat()
-            
-            if d_str not in daily_plan[m_id]['dates']:
+            if start.weekday() >= 5: 
                 continue
-            
+                
+            d_str = start.date().isoformat()
             t_id = str(segment.get('Idorden'))
             
             cant_total = float(segment.get('cantidad_final') or segment.get('Cantidad_Final') or 0.0)
@@ -3692,31 +3684,29 @@ def planillas_diarias(request):
                     'start_time': start.strftime('%H:%M'),
                     'end_time': segment.get('end_date').strftime('%H:%M') if segment.get('end_date') else ''
                 })
+                active_dates.add(d_str)
                 
     for m_id, m_data in daily_plan.items():
+        m_data['dates'] = dict(m_data['dates'])
         for d in m_data['dates']:
             m_data['dates'][d].sort(key=lambda x: x['start_time'])
-        m_data['has_active_dates'] = any(len(tasks) > 0 for tasks in m_data['dates'].values())
+        m_data['has_active_dates'] = len(m_data['dates']) > 0
         
-    # 2. LIMPIEZA VISUAL: Ocultar máquinas vacías
     daily_plan_list = [v for k, v in daily_plan.items() if v.get('has_active_dates')]
-    
-    active_dates = set()
-    for m_data in daily_plan.values():
-        for d_str, tasks in m_data['dates'].items():
-            if tasks:
-                active_dates.add(d_str)
 
-    # 3. ENCABEZADOS DINÁMICOS: Empieza el día exacto de la primera tarea
+    # 2. ENCABEZADOS DINÁMICOS CON CORTE DE SEMANA ESTRICTO
     DAYS_ES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
     nice_target_dates = []
     
     if active_dates:
         sorted_dates = sorted([datetime.fromisoformat(d) for d in active_dates])
-        curr = sorted_dates[0].date()
-        end = sorted_dates[-1].date()
+        earliest_date = sorted_dates[0].date()
         
-        while curr <= end:
+        # El rango arranca en el primer día con tareas y frena obligatoriamente el viernes de esa semana
+        curr = earliest_date
+        end_of_week = earliest_date + timedelta(days=(4 - earliest_date.weekday()))
+        
+        while curr <= end_of_week:
             if curr.weekday() < 5: 
                 if curr.isoformat() in active_dates:
                     nice_target_dates.append((curr.isoformat(), f"{DAYS_ES[curr.weekday()]} {curr.strftime('%d/%m')}"))
