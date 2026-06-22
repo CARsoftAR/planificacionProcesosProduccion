@@ -2836,15 +2836,18 @@ def export_planificacion_excel(request):
         # El header premium ocupa filas 1-2 y NO colisiona con el timeline
         # porque el timeline empieza en columna 2+
         current_day, start_m = None, -1
-        # Slate Gray / Dark Charcoal background fill
-        header_fill = PatternFill("solid", fgColor="27323E")
+        # Fondo Azul Oscuro (#2C3E50) y texto blanco con bordes refinados
+        header_fill = PatternFill("solid", fgColor="2C3E50")
         header_border = Border(
             left=Side(style='thin', color="475569"), right=Side(style='thin', color="475569"),
-            top=Side(style='thin', color="475569"), bottom=Side(style='thin', color="475569")
+            top=Side(style='medium', color="2C3E50"), bottom=Side(style='thin', color="475569")
         )
         ROW_DAY = 3   # Fila de encabezados de día
         ROW_HOUR = 4  # Fila de encabezados de hora
         DATA_START = 5  # Primera fila de datos
+
+        ws.row_dimensions[ROW_DAY].height = 30 # Altura de cabecera de día de 30px
+        ws.row_dimensions[ROW_HOUR].height = 20
 
         # Encabezado MÁQUINA en A3:A4
         c_maq = ws.cell(row=ROW_DAY, column=1)
@@ -2858,6 +2861,7 @@ def export_planificacion_excel(request):
         c_maq.font = Font(name='Calibri', bold=True, size=10, color="FFFFFF")
         c_maq.alignment = Alignment(horizontal='center', vertical='center')
 
+        day_start_columns = []
         for h_idx, hour in enumerate(time_columns):
             h_col = 2 + (h_idx * COLS_PER_HOUR)
 
@@ -2876,6 +2880,7 @@ def export_planificacion_excel(request):
             # DÍAS — REGLA DE ORO: valor -> merge -> estilo
             d_str = hour.strftime("%d %b - %a").upper()
             if d_str != current_day:
+                day_start_columns.append(h_col)
                 if current_day:
                     c_d = ws.cell(row=ROW_DAY, column=start_m)
                     if not isinstance(c_d, MergedCell):
@@ -2934,14 +2939,14 @@ def export_planificacion_excel(request):
             c_n.fill = PatternFill("solid", fgColor="F8F9FA")
             c_n.border = Border(bottom=Side(style='thin', color="E2E8F0"), right=Side(style='thin', color="E2E8F0"))
             
-            # Zebra stripe background for empty cells
+            # Zebra stripe background for empty cells with more visible grid borders (#D2D2D2)
             is_odd_row = (idx % 2 == 1)
             zebra_fill = PatternFill("solid", fgColor="F8FAFC") if is_odd_row else PatternFill("solid", fgColor="FFFFFF")
             grid_border = Border(
-                left=Side(style='thin', color="F1F5F9"),
-                right=Side(style='thin', color="F1F5F9"),
-                top=Side(style='thin', color="F1F5F9"),
-                bottom=Side(style='thin', color="F1F5F9")
+                left=Side(style='thin', color="D2D2D2"),
+                right=Side(style='thin', color="D2D2D2"),
+                top=Side(style='thin', color="D2D2D2"),
+                bottom=Side(style='thin', color="D2D2D2")
             )
             
             # Fill empty grid cells first with thin borders & zebra
@@ -2978,6 +2983,19 @@ def export_planificacion_excel(request):
                                        delay_days=t.get('delay_days', 0),
                                        is_continuation=t.get('segment_index', 0) > 0)
             current_row += 2
+
+        # Apply vertical separator between days down the columns
+        thick_left = Side(style='medium', color="2C3E50")
+        for r in range(ROW_DAY, current_row):
+            for c_start in day_start_columns:
+                if c_start > 2:
+                    cell = ws.cell(row=r, column=c_start)
+                    cell.border = Border(
+                        left=thick_left,
+                        right=cell.border.right,
+                        top=cell.border.top,
+                        bottom=cell.border.bottom
+                    )
 
         ws.freeze_panes = f'B{DATA_START}'
         response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
