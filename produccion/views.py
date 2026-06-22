@@ -2809,10 +2809,9 @@ def export_planificacion_excel(request):
         from openpyxl.cell.cell import MergedCell
 
         # =========================================================
-        # ESTÁNDAR CÁPSULA ENVOLVENTE (REGLA DE ORO: VALOR -> MERGE -> ESTILO)
+        # ESTÁNDAR CÁPSULA ENVOLVENTE (TARJETA CON BORDES REDONDEADOS SIMULADOS)
         # =========================================================
         def draw_floating_card(ws, label_row, task_row, start_col, end_col, color_hex, proj, op, is_critical=False, is_delayed=False, delay_days=0, is_continuation=False):
-            # 1. DETERMINAR VALORES Y COLORES
             task_text = f"PROJECT {proj}\nOP {op}" if proj != "---" else "..."
             if is_delayed and delay_days > 0:
                 label_text = f"[ {delay_days}D ATRASO ]"
@@ -2824,25 +2823,22 @@ def export_planificacion_excel(request):
                 label_text = f"PROJECT {proj}"
                 label_color = "1E3A8A"
 
-            # Colores del proyecto
             proj_rgb = color_hex.upper()
-            bg_tint = tint_color(proj_rgb) # Fondo suave del color del proyecto
+            bg_tint = tint_color(proj_rgb)
 
-            # 2. DEFINICIÓN DE BORDES (Perímetro Envolvente)
-            side_identity = Side(style='thick', color=proj_rgb)
-            side_outline  = Side(style='thin', color=proj_rgb)
+            # Borde grueso oscuro para simular el contorno independiente de la tarjeta
+            side_thick = Side(style='medium', color="1E293B")
             
-            # 3. RENDERIZADO CELDA POR CELDA (Seguro para border/fill, NO para value)
             for c in range(start_col, end_col + 1):
                 # Cuerpo de Tarea
                 cell_t = ws.cell(row=task_row, column=c)
                 cell_t.fill = PatternFill("solid", fgColor=bg_tint)
-                
-                # Construir borde dinámico según posición
-                l = side_identity if c == start_col else None
-                r = side_outline if c == end_col else None
-                cell_t.border = Border(left=l, right=r, top=side_outline, bottom=side_outline)
-                
+                cell_t.border = Border(
+                    left=side_thick if c == start_col else None,
+                    right=side_thick if c == end_col else None,
+                    top=None,
+                    bottom=side_thick
+                )
                 if c == start_col:
                     if not isinstance(cell_t, MergedCell):
                         cell_t.value = task_text
@@ -2852,17 +2848,18 @@ def export_planificacion_excel(request):
                 # Sticker Superior
                 cell_l = ws.cell(row=label_row, column=c)
                 cell_l.fill = PatternFill("solid", fgColor=label_color)
-                cell_l.border = Border(left=side_outline if c == start_col else None, 
-                                       right=side_outline if c == end_col else None, 
-                                       top=side_outline, bottom=side_outline)
-                
+                cell_l.border = Border(
+                    left=side_thick if c == start_col else None,
+                    right=side_thick if c == end_col else None,
+                    top=side_thick,
+                    bottom=None
+                )
                 if c == start_col:
                     if not isinstance(cell_l, MergedCell):
                         cell_l.value = label_text
                     cell_l.font = Font(name='Calibri', bold=True, size=7, color="FFFFFF")
                     cell_l.alignment = Alignment(horizontal='center', vertical='center')
 
-            # 4. MERGE FINAL (Para asegurar coherencia en Excel)
             if end_col > start_col:
                 try: ws.merge_cells(start_row=task_row, start_column=start_col, end_row=task_row, end_column=end_col)
                 except: pass
@@ -2871,7 +2868,28 @@ def export_planificacion_excel(request):
 
         # --- CONFIGURACIÓN DE PÁGINA Y ENCABEZADOS (Fidelity Style) ---
         ws.sheet_view.showGridLines = False
-        grid_width = (len(time_columns) * COLS_PER_HOUR)
+        
+        # Mapeo dinámico inyectando columnas divisorias reales entre días
+        col_map = {}
+        divider_cols = []
+        
+        current_col = 2
+        last_date = None
+        for h_idx, hour in enumerate(time_columns):
+            curr_date = hour.date()
+            if last_date is not None and curr_date != last_date:
+                # Insertar columna divisoria real para transición entre días
+                date_str = f"--- {hour.strftime('%d %b').upper()} ---"
+                divider_cols.append({
+                    'col': current_col,
+                    'date_str': date_str
+                })
+                current_col += 1
+            col_map[hour] = current_col
+            current_col += COLS_PER_HOUR
+            last_date = curr_date
+            
+        grid_width = current_col - 2
         
         from openpyxl.cell.rich_text import CellRichText, TextBlock
         from openpyxl.cell.text import InlineFont
@@ -2886,7 +2904,6 @@ def export_planificacion_excel(request):
         ws.row_dimensions[1].height = 30
         ws.row_dimensions[2].height = 20
         
-        # TÍTULO: VALOR -> MERGE
         c_title = ws.cell(row=1, column=1)
         font_black = InlineFont(); font_black.rFont = 'Calibri'; font_black.b = True; font_black.sz = 16.0; font_black.color = Color(rgb="0F172A")
         font_blue = InlineFont(); font_blue.rFont = 'Calibri'; font_blue.b = True; font_blue.sz = 16.0; font_blue.color = Color(rgb="2563EB")
@@ -2894,28 +2911,23 @@ def export_planificacion_excel(request):
         ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=15)
         c_title.alignment = Alignment(horizontal='left', vertical='center', indent=1)
 
-        # SUBTÍTULO: VALOR -> MERGE
         c_sub = ws.cell(row=2, column=1)
         c_sub.value = "Control de línea ABBAMAT"
         ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=15)
         c_sub.font = Font(name='Calibri', size=9, color="64748B")
         c_sub.alignment = Alignment(horizontal='left', vertical='top', indent=1)
 
-        # Render Timeline (Días en fila 3, Horas en fila 4)
-        # El header premium ocupa filas 1-2 y NO colisiona con el timeline
-        # porque el timeline empieza en columna 2+
-        current_day, start_m = None, -1
-        # Fondo Azul Oscuro (#2C3E50) y texto blanco con bordes refinados
+        # Configuración de cabeceras de día y hora
         header_fill = PatternFill("solid", fgColor="2C3E50")
         header_border = Border(
             left=Side(style='thin', color="475569"), right=Side(style='thin', color="475569"),
             top=Side(style='medium', color="2C3E50"), bottom=Side(style='thin', color="475569")
         )
-        ROW_DAY = 3   # Fila de encabezados de día
-        ROW_HOUR = 4  # Fila de encabezados de hora
-        DATA_START = 5  # Primera fila de datos
+        ROW_DAY = 3
+        ROW_HOUR = 4
+        DATA_START = 5
 
-        ws.row_dimensions[ROW_DAY].height = 30 # Altura de cabecera de día de 30px
+        ws.row_dimensions[ROW_DAY].height = 30
         ws.row_dimensions[ROW_HOUR].height = 20
 
         # Encabezado MÁQUINA en A3:A4
@@ -2930,11 +2942,17 @@ def export_planificacion_excel(request):
         c_maq.font = Font(name='Calibri', bold=True, size=10, color="FFFFFF")
         c_maq.alignment = Alignment(horizontal='center', vertical='center')
 
-        day_start_columns = []
-        for h_idx, hour in enumerate(time_columns):
-            h_col = 2 + (h_idx * COLS_PER_HOUR)
+        # Calcular rangos de columnas por día
+        day_ranges = {}
+        for hour, col in col_map.items():
+            dt = hour.date()
+            if dt not in day_ranges:
+                day_ranges[dt] = {'start': col, 'end': col + COLS_PER_HOUR - 1}
+            else:
+                day_ranges[dt]['end'] = col + COLS_PER_HOUR - 1
 
-            # HORAS — REGLA DE ORO: valor -> merge -> estilo
+        # Dibujar horas
+        for hour, h_col in col_map.items():
             c_h = ws.cell(row=ROW_HOUR, column=h_col)
             if not isinstance(c_h, MergedCell):
                 c_h.value = hour.strftime("%H")
@@ -2946,36 +2964,39 @@ def export_planificacion_excel(request):
             c_h.alignment = Alignment(horizontal='center', vertical='center')
             c_h.font = Font(name='Calibri', bold=True, size=9, color="FFFFFF")
 
-            # DÍAS — REGLA DE ORO: valor -> merge -> estilo
-            d_str = hour.strftime("%d %b - %a").upper()
-            if d_str != current_day:
-                day_start_columns.append(h_col)
-                if current_day:
-                    c_d = ws.cell(row=ROW_DAY, column=start_m)
-                    if not isinstance(c_d, MergedCell):
-                        c_d.value = current_day
-                    ws.merge_cells(start_row=ROW_DAY, start_column=start_m, end_row=ROW_DAY, end_column=h_col - 1)
-                    for col_idx in range(start_m, h_col):
-                        cell = ws.cell(row=ROW_DAY, column=col_idx)
-                        cell.fill = header_fill
-                        cell.border = header_border
-                    c_d.font = Font(name='Calibri', bold=True, size=9, color="FFFFFF")
-                    c_d.alignment = Alignment(horizontal='center', vertical='center')
-                current_day, start_m = d_str, h_col
-
-        if current_day:
+        # Dibujar días
+        for dt, rng in day_ranges.items():
+            start_m = rng['start']
+            end_m = rng['end']
+            d_str = dt.strftime("%d %b - %a").upper()
             c_d = ws.cell(row=ROW_DAY, column=start_m)
-            if not isinstance(c_d, MergedCell):
-                c_d.value = current_day
-            ws.merge_cells(start_row=ROW_DAY, start_column=start_m, end_row=ROW_DAY, end_column=1 + grid_width)
-            for col_idx in range(start_m, 2 + grid_width):
+            c_d.value = d_str
+            ws.merge_cells(start_row=ROW_DAY, start_column=start_m, end_row=ROW_DAY, end_column=end_m)
+            for col_idx in range(start_m, end_m + 1):
                 cell = ws.cell(row=ROW_DAY, column=col_idx)
                 cell.fill = header_fill
                 cell.border = header_border
-            c_d.font = Font(name='Calibri', bold=True, size=9, color="FFFFFF")
+            c_d.font = Font(name='Calibri', bold=True, size=10, color="FFFFFF")
             c_d.alignment = Alignment(horizontal='center', vertical='center')
 
-        # Auto-adjust column width for Column A based on longest machine name
+        # Dibujar y dar estilo a las cabeceras de columnas divisorias
+        for div in divider_cols:
+            col_idx = div['col']
+            ws.merge_cells(start_row=ROW_DAY, start_column=col_idx, end_row=ROW_HOUR, end_column=col_idx)
+            c_div_hdr = ws.cell(row=ROW_DAY, column=col_idx)
+            c_div_hdr.value = div['date_str']
+            c_div_hdr.fill = PatternFill("solid", fgColor="1E293B")
+            c_div_hdr.font = Font(name='Calibri', bold=True, italic=True, size=9, color="FFFFFF")
+            c_div_hdr.alignment = Alignment(horizontal='center', vertical='center', text_rotation=90)
+            for r in [ROW_DAY, ROW_HOUR]:
+                ws.cell(row=r, column=col_idx).border = Border(
+                    left=Side(style='medium', color="1E293B"),
+                    right=Side(style='medium', color="1E293B"),
+                    top=Side(style='medium', color="1E293B") if r == ROW_DAY else None,
+                    bottom=Side(style='medium', color="1E293B") if r == ROW_HOUR else None
+                )
+
+        # Auto-ajustar ancho de columna A
         max_len = 15
         for row_data in timeline_data:
             m_name = row_data['machine'].nombre or ''
@@ -2983,12 +3004,27 @@ def export_planificacion_excel(request):
                 max_len = len(m_name)
         ws.column_dimensions['A'].width = max_len + 5
 
+        # Establecer anchos de columna de línea de tiempo
         from openpyxl.utils import get_column_letter
         for c in range(2, 2 + grid_width):
-            ws.column_dimensions[get_column_letter(c)].width = 2.5
+            is_div = any(d['col'] == c for d in divider_cols)
+            if is_div:
+                ws.column_dimensions[get_column_letter(c)].width = 5
+            else:
+                ws.column_dimensions[get_column_letter(c)].width = 2.5
         
         # --- RENDER DE DATOS (desde DATA_START) ---
         current_row = DATA_START
+        divider_fill = PatternFill("solid", fgColor="334155")
+        divider_font = Font(name='Calibri', bold=True, italic=True, size=9, color="FFFFFF")
+        divider_align = Alignment(horizontal='center', vertical='center', text_rotation=90)
+        grid_border = Border(
+            left=Side(style='thin', color="D2D2D2"),
+            right=Side(style='thin', color="D2D2D2"),
+            top=Side(style='thin', color="D2D2D2"),
+            bottom=Side(style='thin', color="D2D2D2")
+        )
+
         for idx, row_data in enumerate(timeline_data):
             maquina = row_data['machine']
             tasks = row_data['tasks']
@@ -2998,7 +3034,6 @@ def export_planificacion_excel(request):
             ws.row_dimensions[l_row].height = 14
             ws.row_dimensions[t_row].height = 42
             
-            # Sidebar Maquina — REGLA DE ORO: valor -> merge -> estilo
             c_n = ws.cell(row=l_row, column=1)
             if not isinstance(c_n, MergedCell):
                 c_n.value = maquina.nombre.upper()
@@ -3008,37 +3043,50 @@ def export_planificacion_excel(request):
             c_n.fill = PatternFill("solid", fgColor="F8F9FA")
             c_n.border = Border(bottom=Side(style='thin', color="E2E8F0"), right=Side(style='thin', color="E2E8F0"))
             
-            # Zebra stripe background for empty cells with more visible grid borders (#D2D2D2)
             is_odd_row = (idx % 2 == 1)
             zebra_fill = PatternFill("solid", fgColor="F8FAFC") if is_odd_row else PatternFill("solid", fgColor="FFFFFF")
-            grid_border = Border(
-                left=Side(style='thin', color="D2D2D2"),
-                right=Side(style='thin', color="D2D2D2"),
-                top=Side(style='thin', color="D2D2D2"),
-                bottom=Side(style='thin', color="D2D2D2")
-            )
             
-            # Fill empty grid cells first with thin borders & zebra
+            # Llenar la grilla vacía e inyectar divisiones físicas de días
             for c in range(2, 2 + grid_width):
-                cell_l = ws.cell(row=l_row, column=c)
-                cell_l.fill = zebra_fill
-                cell_l.border = grid_border
-                cell_t = ws.cell(row=t_row, column=c)
-                cell_t.fill = zebra_fill
-                cell_t.border = grid_border
+                is_div = any(d['col'] == c for d in divider_cols)
+                if is_div:
+                    div_data = next(d for d in divider_cols if d['col'] == c)
+                    try:
+                        ws.merge_cells(start_row=l_row, start_column=c, end_row=t_row, end_column=c)
+                    except:
+                        pass
+                    cell = ws.cell(row=l_row, column=c)
+                    cell.value = div_data['date_str']
+                    cell.fill = divider_fill
+                    cell.font = divider_font
+                    cell.alignment = divider_align
+                    for r in [l_row, t_row]:
+                        ws.cell(row=r, column=c).border = Border(
+                            left=Side(style='medium', color="1E293B"),
+                            right=Side(style='medium', color="1E293B"),
+                            top=Side(style='thin', color="334155") if r == l_row else None,
+                            bottom=Side(style='thin', color="334155") if r == t_row else None
+                        )
+                else:
+                    cell_l = ws.cell(row=l_row, column=c)
+                    cell_l.fill = zebra_fill
+                    cell_l.border = grid_border
+                    cell_t = ws.cell(row=t_row, column=c)
+                    cell_t.fill = zebra_fill
+                    cell_t.border = grid_border
             
             for t in tasks:
                 if not isinstance(t, dict):
                     continue
                 start_date = t.get('start_date')
                 if not start_date: continue
-                day_idx = date_to_index.get(start_date.date())
-                if day_idx is None: continue
+                slot_hour = next((h for h in time_columns if h.date() == start_date.date() and h.hour == start_date.hour), None)
+                if not slot_hour: continue
                 
-                h_off = start_date.hour - global_min_h
-                m_off = start_date.minute / 10.0
-                s_col = int(2 + (day_idx * hours_per_day * COLS_PER_HOUR) + (h_off * COLS_PER_HOUR) + m_off)
-                e_col = int(s_col + (t.get('duration_real', 0) * COLS_PER_HOUR))
+                h_col = col_map[slot_hour]
+                m_off = int(start_date.minute / 10.0)
+                s_col = h_col + m_off
+                e_col = s_col + int(t.get('duration_real', 0) * COLS_PER_HOUR)
                 
                 if s_col < 2: s_col = 2
                 if e_col > 2 + grid_width: e_col = 2 + grid_width
@@ -3052,19 +3100,6 @@ def export_planificacion_excel(request):
                                        delay_days=t.get('delay_days', 0),
                                        is_continuation=t.get('segment_index', 0) > 0)
             current_row += 2
-
-        # Apply vertical separator between days down the columns
-        thick_left = Side(style='medium', color="2C3E50")
-        for r in range(ROW_DAY, current_row):
-            for c_start in day_start_columns:
-                if c_start > 2:
-                    cell = ws.cell(row=r, column=c_start)
-                    cell.border = Border(
-                        left=thick_left,
-                        right=cell.border.right,
-                        top=cell.border.top,
-                        bottom=cell.border.bottom
-                    )
 
         ws.freeze_panes = f'B{DATA_START}'
         response = HttpResponse(content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
