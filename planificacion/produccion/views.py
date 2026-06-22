@@ -2778,7 +2778,7 @@ def export_planificacion_excel(request):
                     if not isinstance(cell_t, MergedCell):
                         cell_t.value = task_text
                     cell_t.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
-                    cell_t.font = Font(name='Segoe UI', bold=True, size=8, color="1E293B")
+                    cell_t.font = Font(name='Calibri', bold=True, size=8, color="1E293B")
 
                 # Sticker Superior
                 cell_l = ws.cell(row=label_row, column=c)
@@ -2790,7 +2790,7 @@ def export_planificacion_excel(request):
                 if c == start_col:
                     if not isinstance(cell_l, MergedCell):
                         cell_l.value = label_text
-                    cell_l.font = Font(name='Segoe UI', bold=True, size=7, color="FFFFFF")
+                    cell_l.font = Font(name='Calibri', bold=True, size=7, color="FFFFFF")
                     cell_l.alignment = Alignment(horizontal='center', vertical='center')
 
             # 4. MERGE FINAL (Para asegurar coherencia en Excel)
@@ -2819,8 +2819,8 @@ def export_planificacion_excel(request):
         
         # TÍTULO: VALOR -> MERGE
         c_title = ws.cell(row=1, column=1)
-        font_black = InlineFont(); font_black.rFont = 'Segoe UI'; font_black.b = True; font_black.sz = 16.0; font_black.color = Color(rgb="0F172A")
-        font_blue = InlineFont(); font_blue.rFont = 'Segoe UI'; font_blue.b = True; font_blue.sz = 16.0; font_blue.color = Color(rgb="2563EB")
+        font_black = InlineFont(); font_black.rFont = 'Calibri'; font_black.b = True; font_black.sz = 16.0; font_black.color = Color(rgb="0F172A")
+        font_blue = InlineFont(); font_blue.rFont = 'Calibri'; font_blue.b = True; font_blue.sz = 16.0; font_blue.color = Color(rgb="2563EB")
         c_title.value = CellRichText([TextBlock(font_black, "Planificación "), TextBlock(font_blue, "Visual")])
         ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=15)
         c_title.alignment = Alignment(horizontal='left', vertical='center', indent=1)
@@ -2829,19 +2829,18 @@ def export_planificacion_excel(request):
         c_sub = ws.cell(row=2, column=1)
         c_sub.value = "Control de línea ABBAMAT"
         ws.merge_cells(start_row=2, start_column=1, end_row=2, end_column=15)
-        c_sub.font = Font(name='Segoe UI', size=9, color="64748B")
+        c_sub.font = Font(name='Calibri', size=9, color="64748B")
         c_sub.alignment = Alignment(horizontal='left', vertical='top', indent=1)
-
-        ws.column_dimensions['A'].width = 25
 
         # Render Timeline (Días en fila 3, Horas en fila 4)
         # El header premium ocupa filas 1-2 y NO colisiona con el timeline
         # porque el timeline empieza en columna 2+
         current_day, start_m = None, -1
-        header_fill = PatternFill("solid", fgColor="F1F5F9")
+        # Slate Gray / Dark Charcoal background fill
+        header_fill = PatternFill("solid", fgColor="27323E")
         header_border = Border(
-            left=Side(style='thin', color="E2E8F0"), right=Side(style='thin', color="E2E8F0"),
-            top=Side(style='thin', color="E2E8F0"), bottom=Side(style='thin', color="E2E8F0")
+            left=Side(style='thin', color="475569"), right=Side(style='thin', color="475569"),
+            top=Side(style='thin', color="475569"), bottom=Side(style='thin', color="475569")
         )
         ROW_DAY = 3   # Fila de encabezados de día
         ROW_HOUR = 4  # Fila de encabezados de hora
@@ -2852,10 +2851,12 @@ def export_planificacion_excel(request):
         if not isinstance(c_maq, MergedCell):
             c_maq.value = "MÁQUINA"
         ws.merge_cells(start_row=ROW_DAY, start_column=1, end_row=ROW_HOUR, end_column=1)
-        c_maq.fill = PatternFill("solid", fgColor="F8F9FA")
-        c_maq.font = Font(name='Segoe UI', bold=True, size=10, color="64748B")
+        for r_idx in [ROW_DAY, ROW_HOUR]:
+            cell = ws.cell(row=r_idx, column=1)
+            cell.fill = header_fill
+            cell.border = header_border
+        c_maq.font = Font(name='Calibri', bold=True, size=10, color="FFFFFF")
         c_maq.alignment = Alignment(horizontal='center', vertical='center')
-        c_maq.border = Border(bottom=Side(style='thin', color="E2E8F0"), right=Side(style='thin', color="E2E8F0"), top=Side(style='thin', color="E2E8F0"))
 
         for h_idx, hour in enumerate(time_columns):
             h_col = 2 + (h_idx * COLS_PER_HOUR)
@@ -2865,10 +2866,12 @@ def export_planificacion_excel(request):
             if not isinstance(c_h, MergedCell):
                 c_h.value = hour.strftime("%H")
             ws.merge_cells(start_row=ROW_HOUR, start_column=h_col, end_row=ROW_HOUR, end_column=h_col + COLS_PER_HOUR - 1)
+            for offset in range(COLS_PER_HOUR):
+                cell = ws.cell(row=ROW_HOUR, column=h_col + offset)
+                cell.fill = header_fill
+                cell.border = header_border
             c_h.alignment = Alignment(horizontal='center', vertical='center')
-            c_h.fill = header_fill
-            c_h.border = header_border
-            c_h.font = Font(name='Segoe UI', size=8, color="64748B")
+            c_h.font = Font(name='Calibri', bold=True, size=9, color="FFFFFF")
 
             # DÍAS — REGLA DE ORO: valor -> merge -> estilo
             d_str = hour.strftime("%d %b - %a").upper()
@@ -2878,10 +2881,12 @@ def export_planificacion_excel(request):
                     if not isinstance(c_d, MergedCell):
                         c_d.value = current_day
                     ws.merge_cells(start_row=ROW_DAY, start_column=start_m, end_row=ROW_DAY, end_column=h_col - 1)
-                    c_d.fill = header_fill
-                    c_d.font = Font(name='Segoe UI', bold=True, size=8, color="2563EB")
-                    c_d.alignment = Alignment(horizontal='left', vertical='center', indent=1)
-                    c_d.border = header_border
+                    for col_idx in range(start_m, h_col):
+                        cell = ws.cell(row=ROW_DAY, column=col_idx)
+                        cell.fill = header_fill
+                        cell.border = header_border
+                    c_d.font = Font(name='Calibri', bold=True, size=9, color="FFFFFF")
+                    c_d.alignment = Alignment(horizontal='center', vertical='center')
                 current_day, start_m = d_str, h_col
 
         if current_day:
@@ -2889,36 +2894,64 @@ def export_planificacion_excel(request):
             if not isinstance(c_d, MergedCell):
                 c_d.value = current_day
             ws.merge_cells(start_row=ROW_DAY, start_column=start_m, end_row=ROW_DAY, end_column=1 + grid_width)
-            c_d.fill = header_fill
-            c_d.font = Font(name='Segoe UI', bold=True, size=8, color="2563EB")
-            c_d.alignment = Alignment(horizontal='left', vertical='center', indent=1)
-            c_d.border = header_border
+            for col_idx in range(start_m, 2 + grid_width):
+                cell = ws.cell(row=ROW_DAY, column=col_idx)
+                cell.fill = header_fill
+                cell.border = header_border
+            c_d.font = Font(name='Calibri', bold=True, size=9, color="FFFFFF")
+            c_d.alignment = Alignment(horizontal='center', vertical='center')
 
-        ws.column_dimensions['A'].width = 30
+        # Auto-adjust column width for Column A based on longest machine name
+        max_len = 15
+        for row_data in timeline_data:
+            m_name = row_data['machine'].nombre or ''
+            if len(m_name) > max_len:
+                max_len = len(m_name)
+        ws.column_dimensions['A'].width = max_len + 5
+
         from openpyxl.utils import get_column_letter
         for c in range(2, 2 + grid_width):
             ws.column_dimensions[get_column_letter(c)].width = 2.5
         
         # --- RENDER DE DATOS (desde DATA_START) ---
         current_row = DATA_START
-        for row_data in timeline_data:
+        for idx, row_data in enumerate(timeline_data):
             maquina = row_data['machine']
             tasks = row_data['tasks']
             if maquina.nombre.upper() == 'SIN ASIGNAR' and not tasks: continue
             
             l_row, t_row = current_row, current_row + 1
-            ws.row_dimensions[l_row].height = 11 # 50% altura para etiquetas
-            ws.row_dimensions[t_row].height = 38 # Altura para cards
+            ws.row_dimensions[l_row].height = 14
+            ws.row_dimensions[t_row].height = 42
             
             # Sidebar Maquina — REGLA DE ORO: valor -> merge -> estilo
             c_n = ws.cell(row=l_row, column=1)
             if not isinstance(c_n, MergedCell):
                 c_n.value = maquina.nombre.upper()
             ws.merge_cells(start_row=l_row, start_column=1, end_row=t_row, end_column=1)
-            c_n.alignment = Alignment(horizontal='center', vertical='center')
-            c_n.font = Font(name='Segoe UI', bold=True, size=9, color="1E293B")
+            c_n.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+            c_n.font = Font(name='Calibri', bold=True, size=9, color="1E293B")
             c_n.fill = PatternFill("solid", fgColor="F8F9FA")
             c_n.border = Border(bottom=Side(style='thin', color="E2E8F0"), right=Side(style='thin', color="E2E8F0"))
+            
+            # Zebra stripe background for empty cells
+            is_odd_row = (idx % 2 == 1)
+            zebra_fill = PatternFill("solid", fgColor="F8FAFC") if is_odd_row else PatternFill("solid", fgColor="FFFFFF")
+            grid_border = Border(
+                left=Side(style='thin', color="F1F5F9"),
+                right=Side(style='thin', color="F1F5F9"),
+                top=Side(style='thin', color="F1F5F9"),
+                bottom=Side(style='thin', color="F1F5F9")
+            )
+            
+            # Fill empty grid cells first with thin borders & zebra
+            for c in range(2, 2 + grid_width):
+                cell_l = ws.cell(row=l_row, column=c)
+                cell_l.fill = zebra_fill
+                cell_l.border = grid_border
+                cell_t = ws.cell(row=t_row, column=c)
+                cell_t.fill = zebra_fill
+                cell_t.border = grid_border
             
             for t in tasks:
                 if not isinstance(t, dict):
