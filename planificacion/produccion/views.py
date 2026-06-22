@@ -2696,8 +2696,12 @@ def export_planificacion_excel(request):
         # --- IDENTIFICACION DE PROYECTOS ---
         all_projs = set()
         for r in timeline_data:
-            for t in r['tasks']:
-                if t.get('ProyectoCode'): all_projs.add(t['ProyectoCode'])
+            if not isinstance(r, dict) or 'tasks' not in r:
+                continue
+            tasks_list = r.get('tasks') or []
+            for t in tasks_list:
+                if isinstance(t, dict) and t.get('ProyectoCode'):
+                    all_projs.add(t['ProyectoCode'])
         
         # Paleta Curada y Utilidades de Color
         PALETTE = ["0078D4", "107C10", "D83B01", "5C2D91", "008272", "A4262C", "004E8C", "498205"]
@@ -2917,6 +2921,8 @@ def export_planificacion_excel(request):
             c_n.border = Border(bottom=Side(style='thin', color="E2E8F0"), right=Side(style='thin', color="E2E8F0"))
             
             for t in tasks:
+                if not isinstance(t, dict):
+                    continue
                 start_date = t.get('start_date')
                 if not start_date: continue
                 day_idx = date_to_index.get(start_date.date())

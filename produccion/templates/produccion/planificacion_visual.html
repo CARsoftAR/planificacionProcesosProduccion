@@ -1732,10 +1732,8 @@
 
     <script>
         document.getElementById('btnExport').addEventListener('click', function(e) {
-            e.preventDefault();
             const urlParams = new URLSearchParams(window.location.search);
-            const exportUrl = "/api/export_excel/?" + urlParams.toString();
-            window.location.href = exportUrl;
+            this.href = "/api/export_excel/?" + urlParams.toString();
         });
     </script>
 
