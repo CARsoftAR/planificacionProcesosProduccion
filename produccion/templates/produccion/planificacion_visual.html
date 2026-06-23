@@ -1252,23 +1252,7 @@
                           <i class="fas fa-trash-alt me-1"></i> Borrar Plan
                       </button>
 
-                      <div class="dropdown me-1">
-                          <button class="btn-modern glass rounded-pill no-caret px-3" style="height: 34px; border-color: #e2e8f0; color: #475569;" type="button" data-bs-toggle="dropdown">
-                              <i class="fas fa-tools text-primary"></i> Reportes
-                          </button>
-                          <ul class="dropdown-menu dropdown-menu-end dropdown-menu-premium mt-2">
-                              <li>
-                                  <a class="dropdown-item dropdown-item-premium" href="#" id="btnPlanillasDiarias" onclick="openPlanillasDiarias()">
-                                       <i class="fas fa-file-alt me-2 text-warning"></i> Planillas Diarias
-                                  </a>
-                              </li>
-                              <li>
-                                  <a class="dropdown-item dropdown-item-premium" href="#" id="btnExport">
-                                      <i class="fas fa-file-excel me-2 text-success"></i> Exportar Excel
-                                  </a>
-                              </li>
-                          </ul>
-                      </div>
+
                   </div>
 
                   <!-- 4. Alerts -->
@@ -1612,7 +1596,7 @@
             };
 
             // Scroll to project function
-            window.scrollToProject = function(projectCode) {
+            window.scrollToProject = function(projectCode, targetDate) {
                 const blocks = document.querySelectorAll('.task-block');
                 let found = false;
                 for (let block of blocks) {
@@ -1638,6 +1622,42 @@
                     }
                 }
                 if (!found) {
+                    if (targetDate) {
+                        // Calculate a new date range containing the target date
+                        const d = new Date(targetDate);
+                        if (!isNaN(d.getTime())) {
+                            // Let's set start of week (Monday) for the target date
+                            const day = d.getDay();
+                            const diff = d.getDate() - day + (day === 0 ? -6 : 1); // adjust when day is sunday
+                            const monday = new Date(d.setDate(diff));
+                            const friday = new Date(monday);
+                            friday.setDate(monday.getDate() + 4);
+                            
+                            const formatD = (date) => date.toISOString().split('T')[0];
+                            
+                            const params = new URLSearchParams(window.location.search);
+                            params.set('fecha_desde', formatD(monday));
+                            params.set('fecha_hasta', formatD(friday));
+                            params.set('run', '1');
+                            
+                            Swal.fire({
+                                title: 'Cambiando Rango de Fechas',
+                                text: `El proyecto ${projectCode} está fuera del rango visible. Redireccionando a la semana del ${formatD(monday)}...`,
+                                icon: 'info',
+                                showConfirmButton: false,
+                                timer: 2000,
+                                didOpen: () => {
+                                    Swal.showLoading();
+                                }
+                            });
+                            
+                            setTimeout(() => {
+                                window.location.href = window.location.pathname + '?' + params.toString();
+                            }, 2000);
+                            return;
+                        }
+                    }
+                    
                     Swal.fire({
                         title: 'Aviso de Planificación',
                         text: `El proyecto ${projectCode} no tiene tareas programadas o visibles en el rango de fechas actual del Gantt.`,
@@ -1810,16 +1830,16 @@
     </div>
 
     <!-- Notification Center Offcanvas -->
-    <div class="offcanvas offcanvas-end glass" data-bs-backdrop="false" tabindex="-1" id="notificationCenter" aria-labelledby="notificationCenterLabel" style="width: 400px; border-left: 1px solid rgba(255,255,255,0.2);">
-        <div class="offcanvas-header bg-primary text-white">
+    <div class="offcanvas offcanvas-end glass" data-bs-backdrop="false" tabindex="-1" id="notificationCenter" aria-labelledby="notificationCenterLabel" style="width: 400px; border-left: 1px solid rgba(255,255,255,0.2); top: 65px; height: calc(100vh - 65px); display: flex; flex-direction: column; overflow: hidden;">
+        <div class="offcanvas-header py-3" style="background: #f8fafc; border-bottom: 1px solid var(--border); color: var(--text-main); flex-shrink: 0;">
             <h5 class="offcanvas-title fw-bold" id="notificationCenterLabel">
-                <i class="fas fa-bell me-2"></i>Centro de Notificaciones
+                <i class="fas fa-bell me-2 text-primary"></i>Centro de Notificaciones
             </h5>
-            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+            <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
         </div>
-        <div class="offcanvas-body p-0">
-            <!-- Summary Stats -->
-            <div class="p-3 bg-light border-bottom d-flex justify-content-around text-center">
+        <div class="offcanvas-body p-0" style="display: flex; flex-direction: column; overflow: hidden; height: 100%;">
+            <!-- Summary Stats (Fixed) -->
+            <div class="p-3 bg-light border-bottom d-flex justify-content-around text-center" style="flex-shrink: 0;">
                 <div>
                     <div class="small text-muted">Avisos</div>
                     <div class="fw-bold fs-5 text-warning">{{ system_alerts|length }}</div>
@@ -1836,8 +1856,8 @@
                 </div>
             </div>
 
-            <!-- Tabbed Content inside Offcanvas -->
-            <ul class="nav nav-tabs nav-fill bg-white" id="notif-tabs" role="tablist">
+            <!-- Tabbed Content inside Offcanvas (Fixed Tabs Header) -->
+            <ul class="nav nav-tabs nav-fill bg-white" id="notif-tabs" role="tablist" style="flex-shrink: 0;">
                 <li class="nav-item">
                     <button class="nav-link active smaller fw-bold py-3" id="notif-system-tab" data-bs-toggle="tab" data-bs-target="#notif-system" type="button" role="tab">
                         SISTEMA
@@ -1853,15 +1873,10 @@
                         CARGAS
                     </button>
                 </li>
-                <li class="nav-item">
-                    <button class="nav-link smaller fw-bold py-3" id="notif-adaptive-tab" data-bs-toggle="tab" data-bs-target="#notif-adaptive" type="button" role="tab">
-                        REDISTRIBUIR
-                    </button>
-                </li>
 
             </ul>
 
-            <div class="tab-content" id="notif-tabs-content">
+            <div class="tab-content" id="notif-tabs-content" style="flex: 1; overflow-y: auto;">
                 <!-- System Avisos -->
                 <div class="tab-pane fade show active p-3" id="notif-system" role="tabpanel">
                     {% for alert in system_alerts %}
@@ -1896,15 +1911,15 @@
                             <div class="bg-light p-2 rounded-3">
                                 <div class="smaller fw-bold text-muted mb-1 ps-1"><i class="fas fa-bolt me-1 text-danger"></i>Cuellos de botella:</div>
                                 {% for c in alert.culprits %}
-                                <div class="px-2 py-1 smaller d-flex justify-content-between border-bottom border-white">
-                                    <span class="text-truncate" style="max-width: 150px;">{{ c.desc }}</span>
-                                    <span class="text-danger fw-bold">{{ c.end }}</span>
+                                <div class="px-2 py-1 smaller d-flex justify-content-between align-items-center border-bottom border-white gap-2">
+                                    <span style="white-space: normal !important; word-break: break-word !important; overflow: visible !important; text-overflow: clip !important;">{{ c.desc }}</span>
+                                    <span class="text-danger fw-bold flex-shrink-0">{{ c.end }}</span>
                                 </div>
                                 {% endfor %}
                             </div>
                             
                             <div class="mt-3 text-end">
-                                <button class="btn btn-sm btn-outline-primary rounded-pill px-3" onclick="scrollToProject('{{ alert.proyecto }}')" data-bs-dismiss="offcanvas">
+                                <button class="btn btn-sm btn-outline-primary rounded-pill px-3" onclick="scrollToProject('{{ alert.proyecto }}', '{{ alert.max_end|date:'Y-m-d' }}')" data-bs-dismiss="offcanvas">
                                     <i class="fas fa-search me-1"></i>Ir al Plan
                                 </button>
                             </div>
@@ -1947,7 +1962,7 @@
                                 <div class="smaller fw-bold text-muted mb-1 ps-1 border-bottom border-secondary border-opacity-10 pb-1">Lista de Órdenes:</div>
                                 {% for t in m.tasks %}
                                 <div class="smaller d-flex justify-content-between text-muted border-bottom border-white py-1 hover-bg-light transition-all">
-                                    <span>#{{ t.orden }}</span>
+                                    <span>{{ t.id_orden }}</span>
                                     <span>{{ t.end }}</span>
                                 </div>
                                 {% endfor %}
@@ -1958,62 +1973,8 @@
                     </div>
                 </div>
 
-                <!-- Adaptive Capacity / Redistribution -->
-                <div class="tab-pane fade p-3" id="notif-adaptive" role="tabpanel">
 
-                    {% for alert in analysis.adaptive_alerts %}
-                    <div class="p-3 mb-3 rounded-4 shadow-sm border-start border-4 border-danger bg-white">
-                        <div class="d-flex justify-content-between align-items-start mb-2">
-                            <div>
-                                <h6 class="m-0 fw-bold text-danger">
-                                    <i class="fas fa-exclamation-circle me-2"></i>{{ alert.machine }}
-                                </h6>
-                                <small class="text-muted">{{ alert.failure_reason }}</small>
-                            </div>
-                            <span class="badge bg-danger rounded-pill">
-                                <i class="fas fa-cogs me-1"></i>REDISTRIBUIR
-                            </span>
-                        </div>
-                        <div class="smaller text-muted mb-3">
-                            <i class="fas fa-calendar-alt me-1"></i>
-                            Falla: {{ alert.failure_start|date:"d/m H:i" }} - {{ alert.failure_end|date:"d/m H:i" }}
-                        </div>
-                        <div class="alert alert-warning py-2 px-3 smaller mb-3">
-                            <i class="fas fa-tasks me-1"></i>
-                            <strong>{{ alert.affected_tasks_count }} tareas</strong> necesitan redistribución
-                        </div>
-                        <div class="bg-light p-2 rounded-3">
-                            <div class="smaller fw-bold text-muted mb-2 ps-1">
-                                <i class="fas fa-exchange-alt me-1 text-success"></i>Máquinas compatibles:
-                            </div>
-                            {% for m in alert.compatible_machines %}
-                            <div class="d-flex justify-content-between align-items-center px-2 py-1 border-bottom border-white">
-                                <span class="small">{{ m.name }}</span>
-                                <div class="d-flex align-items-center gap-2">
-                                    <span class="badge bg-success smaller">{{ m.score }}%</span>
-                                    <button class="btn btn-sm btn-outline-success py-0 px-2"
-                                            onclick="redistributeTask('{{ alert.machine_id }}', '{{ m.id }}', {{ alert.affected_tasks_count }})">
-                                        <i class="fas fa-arrow-right small"></i>
-                                    </button>
-                                </div>
-                            </div>
-                            {% endfor %}
-                        </div>
-                    </div>
-                    {% empty %}
-                    <div class="text-center py-5 text-muted">
-                        <i class="fas fa-search-plus fa-2x mb-3 text-primary opacity-25"></i>
-                        <p>No se detectaron fallas en el plan actual.</p>
-                        <div class="mt-4 p-3 bg-white border border-dashed rounded-3 shadow-sm mx-2">
-                            <small class="d-block mb-2 text-dark opacity-75 fw-bold">Modo de Debug:</small>
-                            <p class="smaller mb-3">Si registraste una falla y no aparece, asegúrate que las fechas se solapen con las tareas planificadas.</p>
-                            <button class="btn btn-sm btn-primary-modern rounded-pill px-4 shadow-sm" onclick="this.innerHTML='<i class=\'fas fa-spinner fa-spin me-1\'></i> Buscando...'; const url=new URL(window.location.href); url.searchParams.set('run','1'); url.searchParams.set('plan_mode','manual'); setTimeout(()=> window.location.href=url.toString(), 100);">
-                                <i class="fas fa-sync-alt me-1"></i> Forzar Detección
-                            </button>
-                        </div>
-                    </div>
-                    {% endfor %}
-                </div>
+
             </div>
         </div>
     </div>
