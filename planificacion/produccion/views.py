@@ -2671,6 +2671,22 @@ def export_planificacion_excel(request):
         if not time_columns:
              return HttpResponse("No hay datos calculados. Ejecute la planificacion visual primero.")
 
+        # --- DYNAMIC START DATE CROP FOR EXCEL ---
+        # Find the earliest start date of any task in the planning
+        earliest_task_date = None
+        for machine_row in timeline_data:
+            for t in machine_row.get('tasks', []):
+                start = t.get('start_date')
+                if start:
+                    task_date = start.date()
+                    if earliest_task_date is None or task_date < earliest_task_date:
+                        earliest_task_date = task_date
+
+        # If we found an earliest task date, filter the time_columns to be >= earliest_task_date
+        if earliest_task_date:
+            time_columns = [h for h in time_columns if h.date() >= earliest_task_date]
+
+
         # 2. GENERACION EXCEL
         wb = openpyxl.Workbook()
         ws = wb.active
@@ -3677,14 +3693,22 @@ def planillas_diarias(request):
         
     daily_plan_list = [v for k, v in daily_plan.items() if v.get('has_active_dates')]
     
-    # Spanish nicely formatted dates - FORCE FULL WEEK Lunes-Viernes
+    # Determine dates that have at least one task assigned across any machine
+    active_dates = set()
+    for m_data in daily_plan.values():
+        for d_str, tasks in m_data['dates'].items():
+            if tasks:
+                active_dates.add(d_str)
+
+    # Spanish nicely formatted dates - HIDE DAYS WITHOUT TASKS
     DAYS_ES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
     nice_target_dates = []
     
     curr = week_monday
     while curr <= week_friday:
         if curr.weekday() < 5: # Only Mon-Fri
-            nice_target_dates.append((curr.isoformat(), f"{DAYS_ES[curr.weekday()]} {curr.strftime('%d/%m')}"))
+            if curr.isoformat() in active_dates:
+                nice_target_dates.append((curr.isoformat(), f"{DAYS_ES[curr.weekday()]} {curr.strftime('%d/%m')}"))
         curr += timedelta(days=1)
     
     context = {
