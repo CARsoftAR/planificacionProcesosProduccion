@@ -529,7 +529,7 @@
                         id="{{ machine.nombre|slugify }}-tab" 
                         data-bs-toggle="tab" 
                         data-bs-target="#{{ machine.nombre|slugify }}" 
-                        data-machine="{{ machine.id }}"
+                        data-machine="{{ machine.id_maquina }}"
                         type="button" 
                         role="tab" 
                         aria-selected="{% if forloop.first %}true{% else %}false{% endif %}">
@@ -620,7 +620,7 @@
                                     contenteditable="true"
                                     title="Click para editar Nivel Planificación"
                                     style="cursor: text; text-align: center; {% if item.NivelManualFlag %}background-color: #ffeeba;{% endif %}"
-                                >{{ item.Nivel_Planificacion|default:"0" }}</td>
+                                >{{ item.nivel_planificacion|default:item.Nivel_Planificacion|default:"0" }}</td>
                                 <td class="machine-cell-interactive p-0 align-middle" style="min-width: 160px;">
                                     <button type="button" class="open-machine-modal w-100" 
                                             data-op="{{ item.Idorden }}" 
@@ -1960,6 +1960,7 @@
                                 id_orden: currentEditingOp,
                                 target_machine_id: targetMachineId,
                                 new_priority: 99999, 
+                                modo_solapamiento: 'manual',
                                 scenario_id: scenarioId
                             })
                         });
@@ -2049,10 +2050,22 @@
                                     newPriority = lastPrio + 1000;
                                 }
                             }
-                            
-                            console.log(`Moving Task ${idOrden} to ${targetMachine} (Prio: ${newPriority})`);
+                                          // Visual toggle update (Manual) and enable input
+                             const rowToggleBtn = itemEl.querySelector('.solapamiento-modo-toggle');
+                             if (rowToggleBtn) {
+                                 rowToggleBtn.classList.remove('btn-success');
+                                 rowToggleBtn.classList.add('btn-warning');
+                                 rowToggleBtn.textContent = 'Manual';
+                                 const rowPctInput = itemEl.querySelector('.solapamiento-porcentaje-input');
+                                 if (rowPctInput) {
+                                     rowPctInput.disabled = false;
+                                     rowPctInput.style.backgroundColor = '#ffeeba';
+                                     rowPctInput.style.color = '';
+                                 }
+                             }
 
                              try {
+                                console.log('--- DRAG MOVE_TASK ---', {id_orden: idOrden, target_machine_id: targetMachine, new_priority: newPriority});
                                 const response = await fetch('/api/move_task/', {
                                     method: 'POST',
                                     headers: {
@@ -2063,6 +2076,7 @@
                                         id_orden: idOrden,
                                         target_machine_id: targetMachine,
                                         new_priority: newPriority,
+                                        modo_solapamiento: 'manual',
                                         scenario_id: new URLSearchParams(window.location.search).get('scenario_id')
                                     })
                                 });
@@ -2357,20 +2371,37 @@
 
                         let secuencias = [];
                         document.querySelectorAll('.tab-content table tbody').forEach(tbody => {
+                            // Identificar a qué máquina pertenece esta tabla
+                            let defaultRowForMachine = tbody.querySelector('tr[data-maquina]');
+                            let currentTabMachineId = defaultRowForMachine ? defaultRowForMachine.getAttribute('data-maquina') : null;
+
                             let rows = tbody.querySelectorAll('tr:not(.hidden-row)');
                             rows.forEach((row, index) => {
                                 let idOrden = row.getAttribute('data-id');
-                                let maquina = row.getAttribute('data-maquina');
+                                // Si la fila se movió a otra tab, toma la ID de la máquina de esa tab
+                                let maquina = currentTabMachineId || row.getAttribute('data-maquina');
+                                
                                 let nivelCell = row.querySelector('.editable-nivel');
-                                let prioridadManual = nivelCell ? parseInt(nivelCell.innerText) || 0 : 0;
+                                // Leer el texto real editado por el usuario de forma limpia
+                                // .textContent en contenteditable puede traer \n, \r y espacios — los eliminamos todos
+                                let rawTexto = nivelCell ? nivelCell.textContent : '0';
+                                let textoNivel = rawTexto.replace(/\s+/g, '').replace(/[^\d-]/g, '');
+                                let prioridadManual = textoNivel !== '' ? parseInt(textoNivel, 10) : null;
+                                
+                                console.log(`[GUARDAR] OP ${idOrden} | rawTexto='${rawTexto}' | textoNivel='${textoNivel}' | prioridadManual=${prioridadManual}`);
                                 
                                 if (idOrden) {
-                                    secuencias.push({
+                                    let seq = {
                                         id_orden: idOrden,
                                         maquina: maquina,
-                                        orden_secuencia: index,
-                                        prioridad_manual: prioridadManual
-                                    });
+                                        orden_secuencia: index
+                                    };
+                                    // Solo incluir nivel si es un número válido (incluso 0 es válido si el usuario lo puso)
+                                    if (prioridadManual !== null && !isNaN(prioridadManual)) {
+                                        seq.nivel_planificacion = prioridadManual;
+                                        seq.prioridad_manual = prioridadManual;
+                                    }
+                                    secuencias.push(seq);
                                 }
                             });
                         });
@@ -2416,7 +2447,7 @@
                                     timer: 1500,
                                     showConfirmButton: false
                                 }).then(() => {
-                                    window.location.href = `?scenario_id=${data.scenario.id}&proyectos=${encodeURIComponent(proyectosList)}`;
+                                    window.location.href = `?scenario_id=${data.scenario.id}&proyectos=${encodeURIComponent(proyectosList)}&plan_mode=manual`;
                                 });
                             } else {
                                 btn.disabled = false;

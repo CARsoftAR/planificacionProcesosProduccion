@@ -158,8 +158,9 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
 
     sorted_tasks = sorted(tasks, key=get_sort_key_internal)
 
-    for idx, task in enumerate(sorted_tasks):
-        # task is a dict from get_planificacion_data
+    tasks_to_schedule = list(sorted_tasks)
+    while tasks_to_schedule:
+        task = tasks_to_schedule.pop(0)
         
         # 'Tiempo' is Unit Time (Time per piece)
         unit_time = float(task.get('Tiempo', 0) or 0)
@@ -180,7 +181,7 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
         # If duration is 0 or negative (task completed/overproduced), skip.
         if duration_hours <= 0.001:
              continue
-             
+              
         # Detection of 'SIN ASIGNAR' row (MAC00)
         if isinstance(maquina, dict):
             m_id = str(maquina.get('id_maquina', '')).strip()
@@ -210,7 +211,7 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
                  forced_time = timezone.localtime(forced_time)
              else:
                  forced_time = timezone.make_aware(forced_time)
-                 
+                  
              if current_time and timezone.is_aware(current_time):
                  current_time = timezone.localtime(current_time)
              elif current_time:
@@ -253,23 +254,58 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
                          found_min_start = start_candidate
             
             if found_min_start:
-                 # NORMALIZACIÓN TIMEZONE: Aseguramos que ambos datetime están en la misma
-                 # zona horaria local antes de comparar. Sin esto, un found_min_start en UTC
-                 # puede parecer "menor" que current_time en local (ej: 08:40 UTC = 05:40 local)
-                 # haciendo que la condición sea False y la tarea empiece al día siguiente.
-                 from django.utils import timezone as dj_tz
-                 if found_min_start is not None:
-                     if dj_tz.is_naive(found_min_start):
-                         found_min_start = dj_tz.make_aware(found_min_start)
-                     found_min_start = dj_tz.localtime(found_min_start)
-                 
-                 if dj_tz.is_naive(current_time):
-                     current_time = dj_tz.make_aware(current_time)
-                 current_time = dj_tz.localtime(current_time)
-                 
-                 # Ensure we don't start before the dependency ends
-                 if found_min_start > current_time:
-                     current_time = found_min_start
+                  # NORMALIZACIÓN TIMEZONE: Aseguramos que ambos datetime están en la misma
+                  # zona horaria local antes de comparar. Sin esto, un found_min_start en UTC
+                  # puede parecer "menor" que current_time en local (ej: 08:40 UTC = 05:40 local)
+                  # haciendo que la condición sea False y la tarea empiece al día siguiente.
+                  from django.utils import timezone as dj_tz
+                  if found_min_start is not None:
+                      if dj_tz.is_naive(found_min_start):
+                          found_min_start = dj_tz.make_aware(found_min_start)
+                      found_min_start = dj_tz.localtime(found_min_start)
+                  
+                  if dj_tz.is_naive(current_time):
+                      current_time = dj_tz.make_aware(current_time)
+                  current_time = dj_tz.localtime(current_time)
+                  
+                  # BACKFILLING: Escanear hueco
+                  if found_min_start > current_time:
+                      gap_start = current_time
+                      gap_end = found_min_start
+                      
+                      i = 0
+                      while i < len(tasks_to_schedule):
+                          cand = tasks_to_schedule[i]
+                          cand_id = cand.get('Idorden')
+                          cand_min_start = None
+                          if task_min_start_times:
+                              t_ids_to_try_cand = [cand_id, int(cand_id) if str(cand_id).isdigit() else None, str(cand_id)]
+                              for tid in t_ids_to_try_cand:
+                                  if tid in task_min_start_times:
+                                      cand_min_start = task_min_start_times[tid]
+                                      break
+                          
+                          if cand_min_start:
+                              if dj_tz.is_naive(cand_min_start):
+                                  cand_min_start = dj_tz.make_aware(cand_min_start)
+                              cand_min_start = dj_tz.localtime(cand_min_start)
+                              
+                          if not cand_min_start or cand_min_start <= current_time:
+                              cand_duration = float(cand.get('Tiempo_Proceso', 0) or 0)
+                              if cand_duration > 0.001:
+                                  fit_success, cand_segments, next_t = simulate_task_scheduling(
+                                      cand, current_time, cand_duration, gap_end, 
+                                      schedules, non_working_days, half_day_holidays, active_maints, maquina
+                                  )
+                                  if fit_success:
+                                      tasks_to_schedule.pop(i)
+                                      calculated_tasks.extend(cand_segments)
+                                      current_time = next_t
+                                      continue
+                          i += 1
+                          
+                      if found_min_start > current_time:
+                          current_time = found_min_start
 
         # Enforce rigid project sequencing fence: task of project priority P
         # cannot start before the latest calculated end date of all projects with priority < P.

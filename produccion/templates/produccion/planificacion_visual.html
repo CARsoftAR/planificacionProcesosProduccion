@@ -1787,6 +1787,16 @@
                     </div>
                     
                     <div class="mb-4">
+                        <label for="overlap-modo" class="form-label text-muted small text-uppercase fw-bold mb-3">
+                            Modo de Solapamiento
+                        </label>
+                        <select class="form-select bg-light text-dark border-secondary" id="overlap-modo" style="border-radius: 8px;">
+                            <option value="automatico">Automático</option>
+                            <option value="manual">Manual</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-4">
                         <label for="overlap-percentage" class="form-label text-muted small text-uppercase fw-bold mb-3">
                             Porcentaje de Solapamiento
                             <i class="fas fa-info-circle text-info ms-1" 
@@ -2083,11 +2093,13 @@
                                 <div id="op-{{ task.Idorden }}-{{ task.segment_index }}" 
                                      class="task-block {% if task.segment_index > 0 %}task-continuation{% endif %}{% if task.is_critical %} critical-task{% endif %}"
                                      data-task-id="{{ task.Idorden }}"
-                                 data-project-name="{{ task.ProyectoCode|default:'S/P' }}"
-                                 data-color="{% if task.ProyectoCode %}{{ proj_color }}{% else %}#3b82f6{% endif %}"
-                                 data-priority="{{ task.OrdenVisual|default:0 }}"
-                                 data-critical="{{ task.is_critical|yesno:'true,false' }}"
-                                 style="left: {{ task.visual_left|unlocalize }}px; 
+                                     data-project-name="{{ task.ProyectoCode|default:'S/P' }}"
+                                     data-color="{% if task.ProyectoCode %}{{ proj_color }}{% else %}#3b82f6{% endif %}"
+                                     data-priority="{{ task.OrdenVisual|default:0 }}"
+                                     data-critical="{{ task.is_critical|yesno:'true,false' }}"
+                                     data-modo-solapamiento="{{ task.modo_solapamiento|default:'automatico' }}"
+                                     data-porcentaje-solapamiento="{{ task.porcentaje_solapamiento|default:0 }}"
+                                     style="left: {{ task.visual_left|unlocalize }}px; 
                                         width: {{ task.visual_width|unlocalize }}px;
                                         border-left: 6px solid {% if task.ProyectoCode %}{{ proj_color }}{% else %}#3b82f6{% endif %};
                                         border-top: 1.5px solid {% if task.ProyectoCode %}{{ proj_color }}{% else %}#3b82f6{% endif %};
@@ -2931,6 +2943,19 @@
             else displayBadge.className += 'bg-danger';
         }
         
+        const selectModo = document.getElementById('overlap-modo');
+        if (selectModo) {
+            selectModo.addEventListener('change', function() {
+                if (this.value === 'automatico') {
+                    rangeInput.disabled = true;
+                    numberInput.disabled = true;
+                } else {
+                    rangeInput.disabled = false;
+                    numberInput.disabled = false;
+                }
+            });
+        }
+
         rangeInput.addEventListener('input', (e) => updatePercentageDisplay(e.target.value));
         numberInput.addEventListener('input', (e) => updatePercentageDisplay(e.target.value));
         
@@ -2949,6 +2974,7 @@
             if (this.disabled) return;
             
             const percentage = parseFloat(numberInput.value);
+            const modo = selectModo ? selectModo.value : 'automatico';
             
             if (isNaN(percentage) || percentage < 0 || percentage > 100) {
                 alert('Por favor ingrese un porcentaje válido entre 0 y 100');
@@ -2964,7 +2990,7 @@
                 return;
             }
             
-            console.log('Saving overlap:', {taskId, maquina, percentage});
+            console.log('Saving overlap:', {taskId, maquina, percentage, modo});
             
             // Disable button while processing
             this.disabled = true;
@@ -2977,6 +3003,7 @@
                 body: JSON.stringify({
                     id_orden: taskId,
                     porcentaje_solapamiento: percentage,
+                    modo_solapamiento: modo,
                     maquina: maquina
                 })
             })
@@ -3074,17 +3101,37 @@
             return;
         }
         
-        // Load current overlap percentage (default to 0)
+        // Load current overlap percentage and mode
         const rangeInput = document.getElementById('overlap-percentage-range');
         const numberInput = document.getElementById('overlap-percentage');
         const displayBadge = document.querySelector('#overlap-percentage-display .badge');
+        const selectModo = document.getElementById('overlap-modo');
+        
+        const currentModo = taskEl.dataset.modoSolapamiento || 'automatico';
+        const currentPct = parseFloat(taskEl.dataset.porcentajeSolapamiento || '0');
+        
+        if (selectModo) {
+            selectModo.value = currentModo;
+            if (currentModo === 'automatico') {
+                if (rangeInput) rangeInput.disabled = true;
+                if (numberInput) numberInput.disabled = true;
+            } else {
+                if (rangeInput) rangeInput.disabled = false;
+                if (numberInput) numberInput.disabled = false;
+            }
+        }
         
         if (rangeInput && numberInput && displayBadge) {
-            const value = 0; // Default value
-            rangeInput.value = value;
-            numberInput.value = value;
-            displayBadge.textContent = value + '%';
-            displayBadge.className = 'badge fs-6 bg-secondary';
+            rangeInput.value = currentPct;
+            numberInput.value = currentPct;
+            displayBadge.textContent = currentPct + '%';
+            
+            displayBadge.className = 'badge fs-6 ';
+            if (currentPct == 0) displayBadge.className += 'bg-secondary';
+            else if (currentPct <= 25) displayBadge.className += 'bg-info';
+            else if (currentPct <= 50) displayBadge.className += 'bg-primary';
+            else if (currentPct <= 75) displayBadge.className += 'bg-warning';
+            else displayBadge.className += 'bg-danger';
         }
         
         // Show modal
@@ -3767,21 +3814,24 @@
                         const proyectosList = proyectosInput ? proyectosInput.value.trim() : '';
 
                         let payload = {
-                            proyectos: proyectosList,
-                            is_new: isNew,
-                            base_scenario_id: activeScenarioId
+                            proyectos: proyectosList
                         };
 
                         if (isNew) {
-                            payload.nombre = document.getElementById('newScenarioName').value.trim();
-                            if (!payload.nombre) return alert("Ingrese un nombre para el escenario");
+                            const nombre = document.getElementById('newScenarioName').value.trim();
+                            if (!nombre) return alert("Ingrese un nombre para el escenario");
+                            payload.nombre = nombre;
+                            if (activeScenarioId) {
+                                payload.copy_from_id = activeScenarioId;
+                            }
                         } else {
-                            payload.existing_id = document.getElementById('existingScenarioSelect').value;
-                            if (!payload.existing_id) return alert("Seleccione el escenario a sobrescribir");
+                            const existingId = document.getElementById('existingScenarioSelect').value;
+                            if (!existingId) return alert("Seleccione el escenario a sobrescribir");
+                            payload.id = existingId;
                         }
 
                         try {
-                            const resp = await fetch('/api/save_scenario/', {
+                            const resp = await fetch('/api/scenarios/create/', {
                                 method: 'POST',
                                 headers: {
                                     'Content-Type': 'application/json',

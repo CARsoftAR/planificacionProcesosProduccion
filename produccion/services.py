@@ -68,7 +68,7 @@ def get_planificacion_data(filtros=None, exclude_completed=True):
         T.Idprioridad,
         Oe.Descripcion AS Estadod,
         T.Lote,
-        ISNULL((SELECT MAX(SUB.Nivel_Planificacion) FROM TMAN002 SUB WHERE LTRIM(RTRIM(SUB.ArticuloH)) = LTRIM(RTRIM(T.Articulo)) AND LTRIM(RTRIM(SUB.Formula)) = LTRIM(RTRIM(T.Formula))), 0) AS Nivel_Planificacion,
+        ISNULL(T3.Nivel, 0) AS Nivel_Planificacion,
         T3.IDConcepto AS [SECTOR PERSONA],
         Isnull(T3.QConcepto, 1) AS [NIVEL PERSONA],
         Isnull(T.Idmaquina, '') AS Idmaquina,

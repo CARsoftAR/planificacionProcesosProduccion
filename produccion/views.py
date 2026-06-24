@@ -437,28 +437,37 @@ def update_overlap_percentage(request):
         body = json.loads(request.body)
         id_orden = body.get('id_orden')
         porcentaje_solapamiento = body.get('porcentaje_solapamiento')
+        modo_solapamiento = body.get('modo_solapamiento')
         maquina = body.get('maquina') or 'SIN ASIGNAR'
         active_scenario = get_active_scenario(request)
         
-        if not id_orden or porcentaje_solapamiento is None:
+        if not id_orden:
             return JsonResponse({'error': 'Missing parameters'}, status=400)
             
-        porcentaje_val = float(porcentaje_solapamiento)
-        if porcentaje_val < 0 or porcentaje_val > 100:
-            return JsonResponse({'error': 'Percentage must be between 0 and 100'}, status=400)
-        
         obj, created = PrioridadManual.objects.using('default').get_or_create(
             id_orden=id_orden,
             scenario=active_scenario,
             maquina=maquina
         )
-        obj.porcentaje_solapamiento = porcentaje_val
+        
+        if porcentaje_solapamiento is not None:
+            porcentaje_val = float(porcentaje_solapamiento)
+            if porcentaje_val < 0 or porcentaje_val > 100:
+                return JsonResponse({'error': 'Percentage must be between 0 and 100'}, status=400)
+            obj.porcentaje_solapamiento = porcentaje_val
+            
+        if modo_solapamiento is not None:
+            if modo_solapamiento not in ['manual', 'automatico']:
+                return JsonResponse({'error': 'Invalid modo_solapamiento'}, status=400)
+            obj.modo_solapamiento = modo_solapamiento
+            
         obj.save(using='default')
         
         return JsonResponse({
             'status': 'ok',
             'id_orden': id_orden,
-            'porcentaje_solapamiento': porcentaje_val
+            'porcentaje_solapamiento': obj.porcentaje_solapamiento,
+            'modo_solapamiento': obj.modo_solapamiento
         })
     except Exception as e:
         print(f"❌ ERROR update_overlap_percentage: {e}")
@@ -617,36 +626,34 @@ def planificacion_list(request):
         # Fetch Local Priorities filtered by Scenario
         virtual_overrides = {}
         id_to_any_override = {}
-        if plan_mode == 'manual':
-            if active_scenario:
-                prioridades_db = PrioridadManual.objects.using('default').filter(scenario=active_scenario).order_by('orden_secuencia')
-                print(f"DEBUG: planificacion_list - Loading {prioridades_db.count()} overrides for Scenario {active_scenario.nombre}")
-                               # Map for OVERRIDES: (id_orden, maquina_id) -> data
-                # We harvest ALL manual attributes to ensure consistency
-                virtual_overrides = {}
-                id_to_any_override = {}
-                
-                for p in prioridades_db:
-                    oid = int(p.id_orden)
-                    mid = str(p.maquina).strip()
-                    node = {
-                        'maquina': mid, 
-                        'prioridad': p.prioridad,
-                        'tiempo_manual': p.tiempo_manual,
-                        'nivel_manual': p.nivel_manual,
-                        'porcentaje_solapamiento': p.porcentaje_solapamiento,
-                        'cantidad_producida_manual': p.cantidad_producida_manual,
-                        'fecha_inicio_manual': p.fecha_inicio_manual,
-                        'orden_secuencia': p.orden_secuencia
-                    }
-                    virtual_overrides[(oid, mid)] = node
-                    id_to_any_override[oid] = mid
-                
-                id_to_override = id_to_any_override
-            else:
-                print("[WARN] No Active Scenario found in manual mode.")
+        if active_scenario:
+            prioridades_db = PrioridadManual.objects.using('default').filter(scenario=active_scenario).order_by('orden_secuencia')
+            print(f"DEBUG: planificacion_list - Loading {prioridades_db.count()} overrides for Scenario {active_scenario.nombre}")
+                           # Map for OVERRIDES: (id_orden, maquina_id) -> data
+            # We harvest ALL manual attributes to ensure consistency
+            virtual_overrides = {}
+            id_to_any_override = {}
+            
+            for p in prioridades_db:
+                oid = int(p.id_orden)
+                mid = str(p.maquina).strip()
+                node = {
+                    'maquina': mid, 
+                    'prioridad': p.prioridad,
+                    'tiempo_manual': p.tiempo_manual,
+                    'nivel_manual': p.nivel_manual,
+                    'porcentaje_solapamiento': p.porcentaje_solapamiento,
+                    'modo_solapamiento': p.modo_solapamiento or 'automatico',
+                    'cantidad_producida_manual': p.cantidad_producida_manual,
+                    'fecha_inicio_manual': p.fecha_inicio_manual,
+                    'orden_secuencia': p.orden_secuencia
+                }
+                virtual_overrides[(oid, mid)] = node
+                id_to_any_override[oid] = mid
+            
+            id_to_override = id_to_any_override
         else:
-            print("[INFO] AUTOMATIC MODE: Ignoring manual overrides in machine table.")
+            print("[WARN] No Active Scenario found.")
 
         # 1. Calculate extra fields, assign Priority, and Normalize Machine Name
         # We start with a BASELINE PROIRITY based on the initial SQL sort order (Index).
@@ -715,12 +722,9 @@ def planificacion_list(request):
                 item['OrdenSecuencia'] = float(override_node.get('orden_secuencia', 999999))
                 item['ManualPriorityFlag'] = True
 
-                # Separación estricta de datos
-                if override_node.get('nivel_manual') is not None:
-                    item['nivel_planificacion'] = int(override_node['nivel_manual'])
-                    item['NivelManualFlag'] = True
-                else:
-                    item['NivelManualFlag'] = False
+                # nivel_planificacion: SIEMPRE el valor nativo del ERP (columna NIVEL de TMAN002).
+                # NUNCA sobrescribir con nivel_manual. Eso es prioridad_articulo.
+                item['NivelManualFlag'] = bool(override_node.get('nivel_manual') is not None)
 
                 # Asignación de la Prioridad de la pieza (1, 2, 3...) — desde nivel_manual, NO desde prioridad
                 if pieza_priority_val is not None:
@@ -736,11 +740,16 @@ def planificacion_list(request):
 
                 if override_node.get('porcentaje_solapamiento') is not None:
                     item['porcentaje_solapamiento'] = override_node['porcentaje_solapamiento']
+                if override_node.get('modo_solapamiento') is not None:
+                    item['modo_solapamiento'] = override_node['modo_solapamiento']
+                else:
+                    item['modo_solapamiento'] = 'automatico'
             else:
                 item['OrdenVisual'] = None
                 item['ManualPriorityFlag'] = False
                 item['CalculadoManual'] = False
                 item['NivelManualFlag'] = False
+                item['modo_solapamiento'] = 'automatico'
 
             # Final Assignment to Item
             item['MAQUINAD'] = current_machine_name
@@ -749,7 +758,11 @@ def planificacion_list(request):
             # Si no existía el nodo de override, garantizamos los valores por defecto del item
             if not override_node:
                 item['prioridad_pieza'] = item.get('prioridad_pieza', 999)
-                item['nivel_planificacion'] = item.get('Nivel_Planificacion') if item.get('Nivel_Planificacion') is not None else item.get('nivel_planificacion', 0)
+                item['modo_solapamiento'] = 'automatico'
+
+            # nivel_planificacion: SIEMPRE el nativo del ERP (TMAN002), nunca el override manual.
+            erp_nivel = item.get('Nivel_Planificacion')
+            item['nivel_planificacion'] = int(erp_nivel) if erp_nivel is not None else 0
 
             p_code_clean = str(item.get('ProyectoCode') or '').strip()
             # BUG FIX: Distinguimos "registro explícito en ProyectoPrioridad" de "proyecto
@@ -870,9 +883,9 @@ def planificacion_list(request):
                     except (ValueError, TypeError):
                         n_plan_val = 999999
 
-                return (p_proy_val, p_art_val, n_plan_val)
+                return (p_proy_val, p_art_val, -n_plan_val, op.get('Idorden', 9999999))
 
-            # 2. Jerarquía estricta: Prioridad Proyecto (ASC) → Prioridad Pieza (ASC) → Nivel Planif. (ASC)
+            # 2. Jerarquía estricta: Prioridad Proyecto (ASC) → Prioridad Pieza (ASC) → Nivel Planif. (DESC) → IdOrden (ASC)
             machine_items.sort(key=obtener_clave_ordenamiento_local)
 
             # 3. Asignación de la prioridad visual final correlativa post-ordenamiento
@@ -988,7 +1001,7 @@ def planificacion_list(request):
                 except (ValueError, TypeError):
                     n_plan_val = 999999
 
-            return (p_proy_val, p_art_val, n_plan_val)
+            return (p_proy_val, p_art_val, -n_plan_val, op.get('Idorden', 9999999))
 
         # Forzar ordenamiento en cualquier variante estructural de grouped_data
         if isinstance(grouped_data, dict):
@@ -1087,15 +1100,21 @@ def move_task(request):
         new_priority = body.get("new_priority")
         active_scenario = get_active_scenario(request)
         
-        if not id_orden or not target_machine_raw or new_priority is None:
-             return JsonResponse({"error": "Missing parameters"}, status=400)
+        print(f"--- DETECCIÓN: Intentando mover OP {id_orden} (type={type(id_orden)}) a la Máquina {target_machine_raw} (type={type(target_machine_raw)}), Prio={new_priority} (type={type(new_priority)}) ---")
+        
+        if id_orden is None or target_machine_raw is None or str(target_machine_raw).strip() == '' or new_priority is None:
+             print(f"--- MOVE_TASK RECHAZADO: id_orden={id_orden}, target_machine_raw={target_machine_raw}, new_priority={new_priority} ---")
+             return JsonResponse({"error": f"Missing parameters: id_orden={id_orden}, target_machine_id={target_machine_raw}, new_priority={new_priority}"}, status=400)
              
         new_priority = float(new_priority)
         
-        # Harmonize machine
+        # Harmonize machine: look up by id_maquina first (what the tab sends now),
+        # then by nombre, then fall back to raw value as-is.
         from .models import MaquinaConfig
         print(f"DEBUG: move_task - ID: {id_orden}, TargetRaw: {target_machine_raw}, Prio: {new_priority}")
-        m_conf = MaquinaConfig.objects.using("default").filter(nombre=target_machine_raw).first()
+        m_conf = MaquinaConfig.objects.using("default").filter(id_maquina=target_machine_raw).first()
+        if not m_conf:
+            m_conf = MaquinaConfig.objects.using("default").filter(nombre=target_machine_raw).first()
         target_machine_id = m_conf.id_maquina if m_conf else target_machine_raw
         print(f"DEBUG: move_task - Resolved Machine ID: {target_machine_id}")
 
@@ -1115,19 +1134,21 @@ def move_task(request):
                 "tiempo_manual": old_entry.tiempo_manual if old_entry else None,
                 "fecha_inicio_manual": old_entry.fecha_inicio_manual if old_entry else None,
                 "nivel_manual": old_entry.nivel_manual if old_entry else None,
-                "porcentaje_solapamiento": old_entry.porcentaje_solapamiento if old_entry else 0.0
+                "porcentaje_solapamiento": old_entry.porcentaje_solapamiento if old_entry else 0.0,
+                "modo_solapamiento": "manual"  # Force to manual upon drag/drop re-assignment
             }
             
             # Clean up all assignments for this OP in this scenario
             PrioridadManual.objects.using("default").filter(id_orden=id_orden_clean, scenario=active_scenario).delete()
             
-            PrioridadManual.objects.using("default").create(
+            op = PrioridadManual.objects.using("default").create(
                 id_orden=id_orden_clean,
                 maquina=target_machine_id,
                 prioridad=new_priority,
                 scenario=active_scenario,
                 **existing_data
             )
+            print(f"--- BASE DE DATOS: OP {id_orden_clean} guardada exitosamente en máquina {op.maquina} ---")
             
             # CRITICAL UX: Force manual mode in session so the user SEES the change
             request.session['last_plan_mode'] = 'manual'
@@ -1203,7 +1224,8 @@ def set_priority(request, id_orden):
                 'nivel_manual': old_entry.nivel_manual if old_entry else None,
                 'porcentaje_solapamiento': old_entry.porcentaje_solapamiento if old_entry else 0.0,
                 'fecha_inicio_manual': old_entry.fecha_inicio_manual if old_entry else None,
-                'prioridad': old_entry.prioridad if old_entry else (new_priority if new_priority is not None else 0.0)
+                'prioridad': old_entry.prioridad if old_entry else (new_priority if new_priority is not None else 0.0),
+                'modo_solapamiento': 'manual'  # Force to manual on Gantt drag/drop/reorder
             }
             
             # Clean up before re-creating
@@ -1220,7 +1242,8 @@ def set_priority(request, id_orden):
                 scenario=active_scenario,
                 tiempo_manual=existing_data['tiempo_manual'],
                 nivel_manual=existing_data['nivel_manual'],
-                porcentaje_solapamiento=existing_data['porcentaje_solapamiento']
+                porcentaje_solapamiento=existing_data['porcentaje_solapamiento'],
+                modo_solapamiento=existing_data['modo_solapamiento']
             )
 
             # CRITICAL UX: Force manual mode in session so the user SEES the change
@@ -1720,17 +1743,24 @@ def planificacion_visual_OLD(request):
                      item['Tiempo_Proceso'] = float(ov_data['tiempo_manual'])
                      item['CalculadoManual'] = True
 
-                 # Apply Nivel Override (assign to priority, preserve Nivel_Planificacion)
                  if ov_data.get('nivel_manual') is not None:
-                      item['prioridad_pieza'] = ov_data['nivel_manual']
+                      pass
              else:
                  item['OrdenVisual'] = default_prio
                  
-        # Group by Project, then sort by Nivel DESC, then by Visual Priority
-        # This ensures the manufacturing sequence is respected as requested.
+        # Jerarquía estricta en cascada:
+        #   1. Prioridad Proyecto  ASC  → menor número = mayor prioridad.
+        #   2. Prioridad Artículo  ASC  → menor número = mayor prioridad.
+        #   3. Nivel Planificación  DESC → mayor nivel va antes (negativo).
+        #   4. Idorden (OP)         ASC  → desempate cuando los niveles son idénticos.
+        #   5. secuencia_proceso / OrdenSecuencia / OrdenVisual  → desempates de seguridad.
         tasks.sort(key=lambda x: (
-            x.get('ProyectoCode') or '', 
-            -int(x.get('Nivel_Planificacion', 0) or 0), 
+            int(x.get('prioridad_proyecto', 999)),
+            int(x.get('prioridad_pieza', 9999)),
+            -int(x.get('Nivel_Planificacion', 0) or 0),
+            int(x.get('Idorden', 9999999)),
+            x.get('secuencia_proceso', 999),
+            x.get('OrdenSecuencia', 999999),
             x.get('OrdenVisual', 999999)
         ))
         
@@ -3233,16 +3263,31 @@ def create_scenario(request):
                     for seq in secuencias:
                         id_orden = seq.get('id_orden')
                         maquina = seq.get('maquina')
+                        # Extracción segura de nivel de planificación
                         orden_secuencia = seq.get('orden_secuencia', 0)
-                        prioridad_pieza = seq.get('prioridad_pieza', 0)
-                        nivel_planificacion = seq.get('nivel_planificacion', 0)
+                        raw_nivel = seq.get('nivel_planificacion')
+                        if raw_nivel is None:
+                            raw_nivel = seq.get('prioridad_manual')
+                            
+                        # Si encontramos un valor para el nivel en el POST, lo parseamos
+                        nivel_final = None
+                        if raw_nivel is not None and str(raw_nivel).strip() != '':
+                            try:
+                                nivel_final = int(raw_nivel)
+                            except ValueError:
+                                pass
+                        
+                        print(f"[GUARDANDO] OP: {id_orden} | Maquina: {maquina} | raw_nivel: {repr(raw_nivel)} | nivel_final: {nivel_final} | seq_keys: {list(seq.keys())}")
                         
                         if id_orden and maquina:
                             defaults_dict = {
-                                'orden_secuencia': orden_secuencia,
-                                'prioridad': prioridad_pieza,
-                                'nivel_manual': nivel_planificacion
+                                'orden_secuencia': orden_secuencia
                             }
+                            # Solo pisamos el nivel_manual en la BD si vino un valor válido en el POST
+                            if nivel_final is not None:
+                                defaults_dict['nivel_manual'] = nivel_final
+                            
+                            print(f"  -> defaults_dict a guardar: {defaults_dict}")
                                 
                             PrioridadManual.objects.using('default').update_or_create(
                                 scenario=scenario,
@@ -3325,16 +3370,27 @@ def create_scenario(request):
                     for seq in secuencias:
                         id_orden = seq.get('id_orden')
                         maquina = seq.get('maquina')
+                        # Extracción segura de nivel de planificación
                         orden_secuencia = seq.get('orden_secuencia', 0)
-                        prioridad_pieza = seq.get('prioridad_pieza', 0)
-                        nivel_planificacion = seq.get('nivel_planificacion', 0)
+                        raw_nivel = seq.get('nivel_planificacion')
+                        if raw_nivel is None:
+                            raw_nivel = seq.get('prioridad_manual')
+                            
+                        # Si encontramos un valor para el nivel en el POST, lo parseamos
+                        nivel_final = None
+                        if raw_nivel is not None and str(raw_nivel).strip() != '':
+                            try:
+                                nivel_final = int(raw_nivel)
+                            except ValueError:
+                                pass
                         
                         if id_orden and maquina:
                             defaults_dict = {
-                                'orden_secuencia': orden_secuencia,
-                                'prioridad': prioridad_pieza,
-                                'nivel_manual': nivel_planificacion
+                                'orden_secuencia': orden_secuencia
                             }
+                            # Solo pisamos el nivel_manual en la BD si vino un valor válido en el POST
+                            if nivel_final is not None:
+                                defaults_dict['nivel_manual'] = nivel_final
                                 
                             PrioridadManual.objects.using('default').update_or_create(
                                 scenario=new_scenario,
@@ -3999,7 +4055,7 @@ def api_get_article_processes(request):
         (T.Cantidad - T.Cantidadpp) as Pendiente,
         T.Cantidad as Cantidad,
         T.Cantidadpp as Finalizado,
-        ISNULL((SELECT MAX(T3.Nivel_Planificacion) FROM TMAN002 T3 WHERE LTRIM(RTRIM(T3.ArticuloH)) = LTRIM(RTRIM(T.Articulo)) AND LTRIM(RTRIM(T3.Formula)) = LTRIM(RTRIM(T.Formula))), 0) as Nivel_Planificacion,
+        ISNULL((SELECT MAX(T3.Nivel) FROM TMAN002 T3 WHERE LTRIM(RTRIM(T3.ArticuloH)) = LTRIM(RTRIM(T.Articulo)) AND LTRIM(RTRIM(T3.Formula)) = LTRIM(RTRIM(T.Formula))), 0) as Nivel_Planificacion,
         ISNULL(M.MAQUINAD, T.Idmaquina) as MaquinaNombre,
         T.MSTNMBR as MSTNMBR
     FROM Tman050 T
@@ -4017,7 +4073,7 @@ def api_get_article_processes(request):
         (T.Cantidad - T.Cantidadpp) as Pendiente,
         T.Cantidad as Cantidad,
         T.Cantidadpp as Finalizado,
-        ISNULL((SELECT MAX(T3.Nivel_Planificacion) FROM TMAN002 T3 WHERE LTRIM(RTRIM(T3.ArticuloH)) = LTRIM(RTRIM(T.Articulo)) AND LTRIM(RTRIM(T3.Formula)) = LTRIM(RTRIM(T.Formula))), 0) as Nivel_Planificacion,
+        ISNULL((SELECT MAX(T3.Nivel) FROM TMAN002 T3 WHERE LTRIM(RTRIM(T3.ArticuloH)) = LTRIM(RTRIM(T.Articulo)) AND LTRIM(RTRIM(T3.Formula)) = LTRIM(RTRIM(T.Formula))), 0) as Nivel_Planificacion,
         ISNULL(M.MAQUINAD, T.Idmaquina) as MaquinaNombre,
         T.MSTNMBR as MSTNMBR
     FROM Tman050 T
@@ -4060,16 +4116,16 @@ def api_get_article_processes(request):
                 group.sort(key=lambda x: int(x.get('IdOrden') or 0))
                 for i, r in enumerate(group):
                     oid = r['IdOrden']
+
+                    # Nivel_Planificacion: SIEMPRE el valor nativo del ERP (TMAN002).
+                    erp_val = r.get('Nivel_Planificacion')
+                    r['Nivel_Planificacion'] = int(float(erp_val)) if erp_val is not None and str(erp_val).strip() not in ('', '0') else 0
+
+                    # prioridad_articulo: independiente, desde override manual si existe
                     if oid in op_to_nivel:
-                        r['Nivel_Planificacion'] = int(op_to_nivel[oid])
-                        print(f"DEBUG OVERRIDE: Op {r.get('Proceso')} - Nivel Manual: {op_to_nivel[oid]}")
+                        r['prioridad_articulo'] = int(op_to_nivel[oid])
                     else:
-                        proc_desc = r.get('Proceso', '').upper()
-                        if 'RECEPCION DE ORDEN DE COMPRA' in proc_desc:
-                            r['Nivel_Planificacion'] = 20
-                        else:
-                            r['Nivel_Planificacion'] = int(i + 1)
-                        print(f"DEBUG ERP (Secuencia Calculada): Proceso='{r.get('Proceso')}' | Articulo='{r.get('Articulo')}' | Nivel={r.get('Nivel_Planificacion')}")
+                        r['prioridad_articulo'] = None
 
         return JsonResponse({'processes': results})
     except Exception as e:

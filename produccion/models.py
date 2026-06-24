@@ -105,6 +105,12 @@ class PrioridadManual(models.Model):
         help_text='Fecha forzada manualmente por el usuario (Drag & Drop)'
     )
     orden_secuencia = models.IntegerField(default=0, verbose_name='Orden Secuencia')
+    modo_solapamiento = models.CharField(
+        max_length=20,
+        choices=[('manual', 'Manual'), ('automatico', 'Automático')],
+        default='automatico',
+        verbose_name='Modo Solapamiento'
+    )
     scenario = models.ForeignKey(
         Scenario,
         on_delete=models.CASCADE,

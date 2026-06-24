@@ -357,6 +357,7 @@ def get_gantt_data(request, force_run=False):
                     'tiempo_manual': entry.tiempo_manual,
                     'nivel_manual': entry.nivel_manual,
                     'porcentaje_solapamiento': entry.porcentaje_solapamiento if entry.porcentaje_solapamiento is not None else 0.0,
+                    'modo_solapamiento': entry.modo_solapamiento or 'automatico',
                     'cantidad_producida_manual': entry.cantidad_producida_manual,
                     'manual_start': entry.fecha_inicio_manual,
                     'orden_secuencia': entry.orden_secuencia
@@ -531,7 +532,13 @@ def get_gantt_data(request, force_run=False):
         except:
              pass
 
-        mid_code = str(t.get('Idmaquina', '')).strip()
+        t_id_str = str(t.get('Idorden'))
+        mid_code = None
+        if t_id_str in virtual_overrides and virtual_overrides[t_id_str].get('maquina'):
+            mid_code = str(virtual_overrides[t_id_str]['maquina']).strip()
+        else:
+            mid_code = str(t.get('Idmaquina', '')).strip()
+
         if mid_code in name_to_id:
             mid_code = name_to_id[mid_code]
         all_tasks_by_machine[mid_code].append(t)
@@ -586,6 +593,12 @@ def get_gantt_data(request, force_run=False):
             return 0.0
         except (ValueError, TypeError):
             return 0.0
+
+    def get_op_num(t):
+        try:
+            return int(float(t.get('Idorden') or 9999999))
+        except (ValueError, TypeError):
+            return 9999999
 
     # --- DEPENDENCIES ---
     dependency_map = {}
@@ -756,14 +769,21 @@ def get_gantt_data(request, force_run=False):
         force_start_times_pass1 = {}
         for idx, item in enumerate(tasks):
              p_id = str(item['Idorden'])
+             
+             # control print
+             assigned_machine = item.get('MAQUINAD')
+             if p_id in virtual_overrides:
+                 assigned_machine = virtual_overrides[p_id].get('maquina')
+             print(f"--- MOTOR GANTT: Procesando OP {p_id}. Máquina asignada en modelo: {assigned_machine} ---")
+             
              if p_id in virtual_overrides:
                  ov = virtual_overrides[p_id]
                  item['OrdenVisual'] = float(ov['prioridad'])
                  item['OrdenSecuencia'] = float(ov.get('orden_secuencia', 999999))
                  if ov.get('tiempo_manual') is not None: item['Tiempo_Proceso'] = float(ov['tiempo_manual'])
-                 # NOTA: NO sobreescribir Nivel_Planificacion con nivel_manual.
-                 # nivel_manual = prioridad de pieza (dato manual del planificador).
-                 # Nivel_Planificacion = nivel de estructura del ERP — siempre se preserva intacto.
+                 # Ahora SÍ respetamos el nivel_manual si el usuario lo forzó en pantalla
+                 if ov.get('nivel_manual') is not None and float(ov['nivel_manual']) != 0:
+                     item['nivel_planificacion'] = float(ov['nivel_manual'])
                  if ov.get('manual_start'):
                      force_start_times_pass1[p_id] = ov['manual_start']
                      item['is_pinned'] = True
@@ -781,16 +801,20 @@ def get_gantt_data(request, force_run=False):
              else:
                  item['Cantidadpp'] = item.get('cantidad_producida', 0)
                   
-        # Jerarquía estricta en Gantt: Proyecto (Prioridad/Código) → Pieza (Prioridad/Código) → Nivel ERP DESC → Secuencia ASC
+        # Jerarquía estricta en Gantt:
+        #   1. Prioridad Proyecto   ASC   (número menor = mayor prioridad)
+        #   2. Prioridad Artículo   ASC   (número menor = mayor prioridad)
+        #   3. Nivel Planificación  DESC  (número mayor = va antes, se usa negativo)
+        #   4. Idorden (OP)         ASC   (desempate inteligente cuando el nivel es idéntico)
+        #   + desempates de seguridad: secuencia de proceso y orden visual del usuario
         tasks.sort(key=lambda x: (
-            int(x.get('prioridad_proyecto') if x.get('prioridad_proyecto') is not None else 999),  # Proyecto Prioridad
-            x.get('ProyectoCode') or '',                                                           # Proyecto Code
-            int(x.get('prioridad_pieza')    if x.get('prioridad_pieza')    is not None else 9999), # Pieza Prioridad
-            x.get('Articulo') or x.get('Mstnmbr') or '',                                           # Pieza Code/ID
-            -get_nivel(x),                                                                         # Nivel DESC
-            x.get('secuencia_proceso', 999),                                                       # Secuencia ASC
-            x.get('OrdenSecuencia', 999999),
-            x.get('OrdenVisual', 999999)
+            int(x.get('prioridad_proyecto') if x.get('prioridad_proyecto') is not None else 999),  # 1. Proyecto Prioridad ASC
+            int(x.get('prioridad_pieza')    if x.get('prioridad_pieza')    is not None else 9999), # 2. Artículo Prioridad ASC
+            -get_nivel(x),                                                                         # 3. Nivel Planificación DESC
+            get_op_num(x),                                                                         # 4. Tie-breaker ID orden (OP) ASC
+            x.get('secuencia_proceso', 999),                                                       # desempate: secuencia ERP
+            x.get('OrdenSecuencia', 999999),                                                       # desempate: orden manual
+            x.get('OrdenVisual', 999999)                                                           # desempate: arrastre visual
         ))
         machine_tasks_map[machine_id] = {'maquina': maquina, 'tasks': tasks}
         
@@ -829,27 +853,71 @@ def get_gantt_data(request, force_run=False):
 
                 if t_id in dependency_map:
                     preds = dependency_map[t_id]
-                    overlap_pct = virtual_overrides.get(t_id, {}).get('porcentaje_solapamiento', 0.0)
+                    ov = virtual_overrides.get(t_id, {})
+                    modo_solap = ov.get('modo_solapamiento', 'automatico')
+                    overlap_pct = ov.get('porcentaje_solapamiento', 0.0)
                     
-                    if overlap_pct > 0 and pass_idx > 0:
+                    # Check if rigid relation (A -> B -> C where C needs the material ready of B)
+                    is_rigid = any(t_id in succ_preds for succ_preds in dependency_map.values())
+                    
+                    if is_rigid:
+                        # Rule A: rigid relation, no overlap allowed
+                        max_e = None
+                        for pid in preds:
+                            if pid in task_info_map:
+                                pinfo = task_info_map[pid]
+                                if max_e is None or pinfo['end_date'] > max_e:
+                                    max_e = pinfo['end_date']
+                            elif pid in global_task_end_dates:
+                                if max_e is None or global_task_end_dates[pid] > max_e:
+                                    max_e = global_task_end_dates[pid]
+                        if max_e:
+                            min_start_times[t_id] = max_e
+                    elif modo_solap == 'automatico':
+                        # Rule B: balance by speed
                         calculated_start_times = []
                         for pid in preds:
                             if pid in task_info_map:
                                 pinfo = task_info_map[pid]
-                                try:
-                                    opt, _ = calcular_inicio_optimo_sucesor(
-                                        pinfo['start_date'], pinfo['duration'], pinfo['cantidad'],
-                                        t.get('Tiempo_Proceso', 0), t.get('Cantidad', 1), overlap_pct
-                                    )
-                                    calculated_start_times.append(opt if opt > pinfo['start_date'] else pinfo['end_date'])
-                                except: calculated_start_times.append(pinfo['end_date'])
-                        if calculated_start_times: min_start_times[t_id] = max(calculated_start_times)
-                    else:
-                        max_e = None
-                        for pid in preds:
-                            if pid in global_task_end_dates:
-                                if max_e is None or global_task_end_dates[pid] > max_e: max_e = global_task_end_dates[pid]
-                        if max_e: min_start_times[t_id] = max_e
+                                tasa_pred = pinfo['duration'] / pinfo['cantidad'] if pinfo['cantidad'] > 0 else 0
+                                t_duration = float(t.get('Tiempo_Proceso', 0) or 0)
+                                t_qty = float(t.get('Cantidad', 1) or 1)
+                                tasa_succ = t_duration / t_qty if t_qty > 0 else 0
+                                
+                                if tasa_pred > tasa_succ:
+                                    # Proceso A más lento que B
+                                    opt_start = pinfo['end_date'] - timedelta(hours=t_duration)
+                                    if opt_start < pinfo['start_date']:
+                                        opt_start = pinfo['start_date']
+                                    calculated_start_times.append(opt_start)
+                                else:
+                                    # Proceso A más rápido que B
+                                    opt_start = pinfo['start_date'] + timedelta(hours=tasa_pred)
+                                    calculated_start_times.append(opt_start)
+                            elif pid in global_task_end_dates:
+                                calculated_start_times.append(global_task_end_dates[pid])
+                        if calculated_start_times:
+                            min_start_times[t_id] = max(calculated_start_times)
+                    else:  # manual
+                        if overlap_pct > 0 and pass_idx > 0:
+                            calculated_start_times = []
+                            for pid in preds:
+                                if pid in task_info_map:
+                                    pinfo = task_info_map[pid]
+                                    try:
+                                        opt, _ = calcular_inicio_optimo_sucesor(
+                                            pinfo['start_date'], pinfo['duration'], pinfo['cantidad'],
+                                            t.get('Tiempo_Proceso', 0), t.get('Cantidad', 1), overlap_pct
+                                        )
+                                        calculated_start_times.append(opt if opt > pinfo['start_date'] else pinfo['end_date'])
+                                    except: calculated_start_times.append(pinfo['end_date'])
+                            if calculated_start_times: min_start_times[t_id] = max(calculated_start_times)
+                        else:
+                            max_e = None
+                            for pid in preds:
+                                if pid in global_task_end_dates:
+                                    if max_e is None or global_task_end_dates[pid] > max_e: max_e = global_task_end_dates[pid]
+                            if max_e: min_start_times[t_id] = max_e
 
             def get_sort_key(t):
                  tid = str(t.get('Idorden'))
@@ -863,19 +931,16 @@ def get_gantt_data(request, force_run=False):
                      target_start = force_start_times[tid]
                      is_pinned = 1
                  
-                 # PRIORIDAD ABSOLUTA e INVIOLABLE:
-                 #   1. prioridad_proyecto ASC  → bajo ninguna circunstancia un proyecto de
-                 #      prioridad mayor (ej. 5) puede adelantar a uno de prioridad menor (ej. 4).
-                 #   2. prioridad_pieza ASC      → dentro del proyecto, primero las piezas prioritarias.
-                 #   3. get_nivel DESC           → dentro de la pieza, niveles altos del ERP primero.
-                 #   4. OrdenVisual ASC          → respeta el arrastre manual del usuario.
-                 #   5. target_start ASC         → desempate final por disponibilidad (dependencias).
-                 #      SOLO desempata; NUNCA eleva un proyecto sobre otro.
+                 # PRIORIDAD ABSOLUTA e INVIOLABLE — jerarquía en cascada:
+                 #   1. Prioridad Proyecto  ASC  → menor número = mayor prioridad.
+                 #   2. Prioridad Artículo  ASC  → dentro del proyecto, piezas con menor número primero.
+                 #   3. Nivel Planificación DESC  → mayor nivel va antes (se usa negativo).
+                 #   4. OrdenVisual ASC           → desempate: respeta arrastre manual del usuario.
+                 #   5. target_start ASC          → desempate final por disponibilidad (dependencias).
                  proj_code = t.get('ProyectoCode') or ''
                  proj_prio = proj_priorities.get(proj_code, 999)
                  pieza_prio = int(t.get('prioridad_pieza') if t.get('prioridad_pieza') is not None else 9999)
-                 piece_id = t.get('Articulo') or t.get('Mstnmbr') or ''
-                 return (proj_prio, proj_code, pieza_prio, piece_id, -get_nivel(t), t.get('OrdenVisual', 999999), target_start)
+                 return (proj_prio, pieza_prio, -get_nivel(t), get_op_num(t), t.get('OrdenVisual', 999999), target_start)
             
             tasks.sort(key=get_sort_key)
             recalc = calculate_timeline(maquina, tasks, start_date=start_simulation, 
@@ -888,8 +953,41 @@ def get_gantt_data(request, force_run=False):
             final_timeline_map[machine_id] = {'machine': maquina, 'tasks': recalc}
             for ct in recalc:
                  tid = str(ct.get('Idorden'))
+                 
+                 # Inject modo_solapamiento and porcentaje_solapamiento into the calculated tasks for UI
+                 ov = virtual_overrides.get(tid, {})
+                 modo_solap = ov.get('modo_solapamiento', 'automatico')
+                 ct['modo_solapamiento'] = modo_solap
+                 
+                 if modo_solap == 'automatico':
+                     preds = dependency_map.get(tid, [])
+                     is_rigid = any(tid in succ_preds for succ_preds in dependency_map.values())
+                     if is_rigid:
+                         ct['porcentaje_solapamiento'] = 0.0
+                     elif preds:
+                         calculated_p_pcts = []
+                         for pid in preds:
+                             if pid in task_info_map:
+                                 try:
+                                     pinfo = task_info_map[pid]
+                                     p_dur = float(pinfo.get('duration', 0) or 0)
+                                     if p_dur > 0 and pinfo.get('end_date') and ct.get('start_date'):
+                                         overlap_h = (pinfo['end_date'] - ct['start_date']).total_seconds() / 3600.0
+                                         if overlap_h > 0:
+                                             calculated_p_pcts.append(round(min(100.0, (overlap_h / p_dur) * 100.0), 1))
+                                 except Exception as e:
+                                     print(f"Error calculating automatic overlap percent: {e}")
+                         if calculated_p_pcts:
+                             ct['porcentaje_solapamiento'] = max(calculated_p_pcts)
+                         else:
+                             ct['porcentaje_solapamiento'] = 0.0
+                     else:
+                         ct['porcentaje_solapamiento'] = 0.0
+                 else:
+                     ct['porcentaje_solapamiento'] = ov.get('porcentaje_solapamiento', 0.0)
+
                  if tid not in task_info_map:
-                     task_info_map[tid] = {'start_date': ct['start_date'], 'end_date': ct['end_date'], 'duration': ct.get('Tiempo_Proceso', 0), 'cantidad': ct.get('Cantidad', 1)}
+                     task_info_map[tid] = {'start_date': ct.get('start_date'), 'end_date': ct.get('end_date'), 'duration': float(ct.get('Tiempo_Proceso', 0) or 0), 'cantidad': float(ct.get('Cantidad', 1) or 1)}
                  else:
                      task_info_map[tid]['end_date'] = ct['end_date']
                  global_task_end_dates[tid] = ct['end_date']
