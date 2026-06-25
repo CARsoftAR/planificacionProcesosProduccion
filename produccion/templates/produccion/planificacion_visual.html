@@ -2188,21 +2188,31 @@
                                     <!-- Hours -->
                                     <div class="tooltip-section">
                                         <div class="row g-2">
-                                            {% with h_tot=task.Tiempo|multiply:task.cantidad_final h_real=task.Tiempo|multiply:task.cantidad_producida %}
+                                            <div class="col-6">
+                                                <div class="tooltip-label">Tiempo Proceso (Tabla)</div>
+                                                <div class="tooltip-value">{{ task.Tiempo_Proceso_original_horas|default:task.duration_real|floatformat:2 }}h</div>
+                                            </div>
+                                            <div class="col-6 border-start border-white border-opacity-10 ps-2">
+                                                <div class="tooltip-label">Duración Real Segmento</div>
+                                                <div class="tooltip-value text-info">{{ task.duration_real|floatformat:2 }}h</div>
+                                            </div>
+                                        </div>
+                                        {% with h_tot=task.Tiempo|multiply:task.cantidad_final h_real=task.Tiempo|multiply:task.cantidad_producida %}
+                                        <div class="row g-2 mt-2 pt-2 border-top border-white border-opacity-10">
                                             <div class="col-4">
-                                                <div class="tooltip-label">Horas Totales</div>
-                                                <div class="tooltip-value">{{ h_tot|format_hours }}</div>
+                                                <div class="tooltip-label">Horas Totales (OP)</div>
+                                                <div class="tooltip-value">{{ h_tot|floatformat:2 }}h</div>
                                             </div>
                                             <div class="col-4 border-start border-white border-opacity-10 ps-2">
                                                 <div class="tooltip-label">Realizadas</div>
-                                                <div class="tooltip-value text-success">{{ h_real|format_hours }}</div>
+                                                <div class="tooltip-value text-success">{{ h_real|floatformat:2 }}h</div>
                                             </div>
                                             <div class="col-4 border-start border-white border-opacity-10 ps-2">
                                                 <div class="tooltip-label">Por Hacer</div>
-                                                <div class="tooltip-value" style="color: #ffcc00;">{{ h_tot|subtract:h_real|format_hours }}</div>
+                                                <div class="tooltip-value" style="color: #ffcc00;">{{ h_tot|subtract:h_real|floatformat:2 }}h</div>
                                             </div>
-                                            {% endwith %}
                                         </div>
+                                        {% endwith %}
                                     </div>
 
                                     <!-- Quantities and Progress -->
@@ -2222,7 +2232,7 @@
                                         <div class="d-flex justify-content-between align-items-end mb-2">
                                             <div>
                                                 <div class="tooltip-label">Avance Global del Proyecto</div>
-                                                <div class="tooltip-value">{{ task.Horas_Realizadas_Proyecto|format_hours }} / {{ task.Horas_Totales_Proyecto|format_hours }}</div>
+                                                <div class="tooltip-value">{{ task.Horas_Realizadas_Proyecto|floatformat:2 }}h / {{ task.Horas_Totales_Proyecto|floatformat:2 }}h</div>
                                             </div>
                                             <div class="text-end">
                                                 <span class="fs-5 fw-bold text-success">{{ task.Porcentaje_Avance_Proyecto|floatformat:1 }}%</span>

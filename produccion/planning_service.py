@@ -130,9 +130,9 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
         except (ValueError, TypeError):
             p_pieza_val = 9999
             
-        nivel = t.get('Nivel_Planificacion')
+        nivel = t.get('nivel_planificacion') or t.get('Nivel_Planificacion') or t.get('Nivel') or 0
         try:
-            nivel_val = int(nivel) if nivel is not None else 0
+            nivel_val = int(float(nivel)) if nivel is not None else 0
         except (ValueError, TypeError):
             nivel_val = 0
             
@@ -731,7 +731,6 @@ def get_machine_capacity(maquina, start_date, end_date, non_working_days=None, h
                     else: # Wrap midnight
                         total_hours += (24.0 - (s.hour + s.minute/60.0)) + (e.hour + e.minute/60.0)
 
-                    
         current += timedelta(days=1)
     
     return total_hours

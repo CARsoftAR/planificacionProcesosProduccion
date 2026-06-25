@@ -341,15 +341,20 @@ def get_gantt_data(request, force_run=False):
         if db_proyectos:
             raw_proyectos = ','.join(p for p in db_proyectos if p)
             
-    # Plan Mode  
+    # Plan Mode
     virtual_overrides = {}
-    
-    # ONLY load overrides if mode is MANUAL. 
-    # If mode is 'original' (Automatico), we want pure ERP data.
-    if plan_mode == 'manual':
+
+    # Cargar overrides en modo 'auto' Y 'manual'. Solo excluimos 'original' (datos puros ERP).
+    # REGLA CRITICA: si el usuario movio una OP a otra maquina, ese override SIEMPRE debe
+    # respetarse en el motor, sin importar si esta en modo Auto o Manual.
+    if plan_mode != 'original':
         if active_scenario:
-            manual_entries = PrioridadManual.objects.using('default').filter(scenario=active_scenario)
-            
+            # order_by('pk') ASC: si hay 2 registros para el mismo id_orden
+            # (OP recien movida = PK mayor), el mas nuevo sobreescribe al viejo.
+            manual_entries = PrioridadManual.objects.using('default').filter(
+                scenario=active_scenario
+            ).order_by('pk')
+
             for entry in manual_entries:
                 ov_data = {
                     'maquina': entry.maquina,
@@ -362,13 +367,29 @@ def get_gantt_data(request, force_run=False):
                     'manual_start': entry.fecha_inicio_manual,
                     'orden_secuencia': entry.orden_secuencia
                 }
-                # Forzar ID a string de entero para evitar problemas con .0 de SQL
                 try:
                     clean_id = str(int(float(entry.id_orden)))
                 except:
                     clean_id = str(entry.id_orden)
-                virtual_overrides[clean_id] = ov_data
-        
+
+                existing = virtual_overrides.get(clean_id)
+                if existing is None:
+                    # Primera entrada para este ID: aceptar directamente
+                    virtual_overrides[clean_id] = ov_data
+                else:
+                    # Merge inteligente: nuevo registro (PK mayor) gana en maquina y prioridad.
+                    # Preservar tiempo_manual, nivel_manual, etc. del registro que los tenga.
+                    new_maq = str(ov_data.get('maquina') or '').strip()
+                    if new_maq:
+                        existing['maquina'] = new_maq  # Maquina mas reciente gana
+                    for field in ('tiempo_manual', 'nivel_manual', 'porcentaje_solapamiento',
+                                  'modo_solapamiento', 'cantidad_producida_manual',
+                                  'manual_start', 'orden_secuencia'):
+                        if ov_data.get(field) is not None:
+                            existing[field] = ov_data[field]
+                    existing['prioridad'] = ov_data['prioridad']
+
+
     tasks_moved_in_map = {}
     for oid, override_data in virtual_overrides.items():
         mid = str(override_data['maquina']).strip()
@@ -408,6 +429,14 @@ def get_gantt_data(request, force_run=False):
          deps_filter['proyectos'] = lista_proyectos
     if id_orden:
          deps_filter['id_orden'] = id_orden
+
+    # Filtro Estricto: Solo incluir OPs que estén en PlannedTask para el escenario activo
+    if plan_mode != 'original' and active_scenario:
+         from .models import PlannedTask
+         planned_ids = list(PlannedTask.objects.using('default').filter(
+             scenario=active_scenario
+         ).values_list('id_orden', flat=True))
+         deps_filter['id_orden_in'] = planned_ids
 
     # Match spreadsheet logic: in manual/scenario mode, we often want to see 
     # what we planned even if the ERP thinks it is completed (e.g. for audits or manual overrides)
@@ -465,22 +494,104 @@ def get_gantt_data(request, force_run=False):
     if len(all_tasks_raw) < original_count:
         print(f"DEBUG: [Orphans] Filtered {original_count - len(all_tasks_raw)} tasks with invalid project/machine or zero duration.")
 
-    # --- FIX: Asegurar que tareas con override manual (redistribuciones) se carguen aunque no coincidan con el filtro ---
+    # --- Recovery: tareas con override de maquina que no llegaron al motor ---
+    # REGLA CLAVE: si el usuario asigno una maquina manualmente Y definio tiempo_manual,
+    # la OP DEBE aparecer en el Gantt aunque el ERP la marque COMPLETA o Tiempo_Proceso=0.
     if virtual_overrides:
-        existing_ids = {str(int(float(t.get('Idorden')))) for t in all_tasks_raw if t.get('Idorden')}
-        missing_ids = [oid for oid in virtual_overrides.keys() if oid not in existing_ids]
-        
-        if missing_ids:
-            # Buscamos estas tareas opcionales pero RESPETANDO el filtro de proyecto si existe.
-            # Esto evita "eventos fantasma" de otros proyectos cuando el usuario está filtrando uno específico.
-            extra_filtros = {'id_orden_in': missing_ids}
-            if 'proyectos' in deps_filter:
-                extra_filtros['proyectos'] = deps_filter['proyectos']
-                
-            extra_tasks = get_planificacion_data(extra_filtros, exclude_completed=not show_completed)
+        existing_ids = {str(int(float(t.get('Idorden')))) for t in all_tasks_raw if t.get('Idorden')} \
+            if all_tasks_raw else set()
+
+        # Separar IDs faltantes segun si tienen tiempo_manual o no
+        missing_with_tiempo = []
+        missing_without_tiempo = []
+        for oid in virtual_overrides.keys():
+            if oid not in existing_ids:
+                ov = virtual_overrides[oid]
+                if ov.get('maquina') and ov.get('tiempo_manual') is not None:
+                    missing_with_tiempo.append(oid)
+                elif ov.get('maquina'):
+                    missing_without_tiempo.append(oid)
+
+        # OPs con tiempo_manual: recuperar SIEMPRE ignorando estado del ERP
+        if missing_with_tiempo:
+            extra_filtros = {'id_orden_in': missing_with_tiempo}
+            extra_tasks = get_planificacion_data(extra_filtros, exclude_completed=False)
+
+            recovered_ids = set()
             if extra_tasks:
                 all_tasks_raw.extend(extra_tasks)
-    
+                for et in extra_tasks:
+                    try:
+                        recovered_ids.add(str(int(float(et.get('Idorden')))))
+                    except:
+                        pass
+                print(f"DEBUG: [Recovery/tiempo_manual] Loaded {len(extra_tasks)} task(s) from ERP: {missing_with_tiempo}")
+
+            # Phantom IDs (no en ERP) -> crear tarea sintetica desde el override
+            phantom_ids = [oid for oid in missing_with_tiempo if oid not in recovered_ids]
+            if phantom_ids:
+                print(f"DEBUG: [Recovery/phantom] Creating {len(phantom_ids)} synthetic task(s) for phantom IDs: {phantom_ids}")
+
+                # Mapa ID->nombre de maquina (maquinas disponible aqui)
+                _maq_id_map = {m.id_maquina.strip(): m.nombre.strip() for m in maquinas}
+
+                # Prioridad de proyectos para inyectar en el sort
+                from .models import ProyectoPrioridad as _PP
+                _proj_prio_cache = {}
+                if active_scenario:
+                    for pp in _PP.objects.using('default').filter(scenario=active_scenario).values('proyecto', 'prioridad'):
+                        _proj_prio_cache[str(pp['proyecto']).strip()] = pp['prioridad']
+
+                for oid in phantom_ids:
+                    ov = virtual_overrides[oid]
+                    maq_id = str(ov.get('maquina', '')).strip()
+                    maq_name = _maq_id_map.get(maq_id, maq_id)
+                    proj_code = getattr(active_scenario, 'proyectos', '').split(',')[0].strip() if active_scenario else ''
+                    proj_prio_val = _proj_prio_cache.get(proj_code, 1)
+                    nivel_man = ov.get('nivel_manual')
+                    pieza_prio_val = int(float(nivel_man)) if nivel_man is not None else 1
+                    nivel_plan = int(float(nivel_man)) if nivel_man is not None else 0
+                    orden_visual = float(ov.get('prioridad', 1.0))
+                    orden_secuencia = float(ov.get('orden_secuencia') or 999999)
+
+                    synthetic = {
+                        'Idorden': int(oid),
+                        'Idmaquina': maq_id,
+                        'MAQUINAD': maq_name,
+                        'MAQUINA_ID': maq_id,
+                        'ProyectoCode': proj_code,
+                        'Mstnmbr': oid,
+                        'Articulo': f'OP-{oid}',
+                        'Descri': f'OP Manual {oid}',
+                        'Tiempo_Proceso': float(ov['tiempo_manual']),
+                        'Tiempo_Proceso_original': float(ov['tiempo_manual']),
+                        'Tiempo': float(ov['tiempo_manual']),
+                        'cantidad_final': 1,
+                        'cantidad_producida': 0,
+                        'cantidad_pendiente': 1,
+                        'Cantidadpp': 0,
+                        'Cantidad': 1,
+                        'Estadod': 'MANUAL',
+                        'is_synthetic': True,
+                        # Campos criticos para el sort (pre-inyectados)
+                        'prioridad_proyecto': proj_prio_val,
+                        'prioridad_pieza':    pieza_prio_val,
+                        'prioridad':          pieza_prio_val,
+                        'Nivel_Planificacion': nivel_plan,
+                        'nivel_planificacion': nivel_plan,
+                        'OrdenVisual':    orden_visual,
+                        'OrdenSecuencia': orden_secuencia,
+                        'secuencia_proceso': 1,
+                    }
+                    all_tasks_raw.append(synthetic)
+
+        # OPs sin tiempo_manual pero con maquina: modo normal
+        if missing_without_tiempo:
+            extra_filtros2 = {'id_orden_in': missing_without_tiempo}
+            extra_tasks2 = get_planificacion_data(extra_filtros2, exclude_completed=not show_completed)
+            if extra_tasks2:
+                all_tasks_raw.extend(extra_tasks2)
+                print(f"DEBUG: [Recovery/maquina] Loaded {len(extra_tasks2)} task(s) with machine-only override: {missing_without_tiempo}")
 
     # Include all tasks for dependencies and simulation, including unassigned ones (MAC00)
     all_tasks_for_deps = all_tasks_raw
@@ -584,12 +695,18 @@ def get_gantt_data(request, force_run=False):
 
     def get_nivel(t):
         try:
+            # Primero: campo normalizado inyectado por el loop (minúsculas)
             plan_lvl = t.get('nivel_planificacion')
             if plan_lvl is not None and float(plan_lvl) != 0:
                 return float(plan_lvl)
-            erp_lvl = t.get('Nivel')
-            if erp_lvl is not None:
+            # Segundo: campo directo del ERP (mayúsculas, como viene del SQL)
+            erp_lvl = t.get('Nivel_Planificacion')
+            if erp_lvl is not None and float(erp_lvl) != 0:
                 return float(erp_lvl)
+            # Fallback legacy
+            erp_lvl2 = t.get('Nivel')
+            if erp_lvl2 is not None:
+                return float(erp_lvl2)
             return 0.0
         except (ValueError, TypeError):
             return 0.0
@@ -804,13 +921,13 @@ def get_gantt_data(request, force_run=False):
         # Jerarquía estricta en Gantt:
         #   1. Prioridad Proyecto   ASC   (número menor = mayor prioridad)
         #   2. Prioridad Artículo   ASC   (número menor = mayor prioridad)
-        #   3. Nivel Planificación  DESC  (número mayor = va antes, se usa negativo)
+        #   3. Nivel Planificación  ASC   (invertido a pedido para coincidir con la tabla)
         #   4. Idorden (OP)         ASC   (desempate inteligente cuando el nivel es idéntico)
         #   + desempates de seguridad: secuencia de proceso y orden visual del usuario
         tasks.sort(key=lambda x: (
             int(x.get('prioridad_proyecto') if x.get('prioridad_proyecto') is not None else 999),  # 1. Proyecto Prioridad ASC
             int(x.get('prioridad_pieza')    if x.get('prioridad_pieza')    is not None else 9999), # 2. Artículo Prioridad ASC
-            -get_nivel(x),                                                                         # 3. Nivel Planificación DESC
+            get_nivel(x),                                                                          # 3. Nivel Planificación ASC
             get_op_num(x),                                                                         # 4. Tie-breaker ID orden (OP) ASC
             x.get('secuencia_proceso', 999),                                                       # desempate: secuencia ERP
             x.get('OrdenSecuencia', 999999),                                                       # desempate: orden manual
@@ -934,13 +1051,13 @@ def get_gantt_data(request, force_run=False):
                  # PRIORIDAD ABSOLUTA e INVIOLABLE — jerarquía en cascada:
                  #   1. Prioridad Proyecto  ASC  → menor número = mayor prioridad.
                  #   2. Prioridad Artículo  ASC  → dentro del proyecto, piezas con menor número primero.
-                 #   3. Nivel Planificación DESC  → mayor nivel va antes (se usa negativo).
+                 #   3. Nivel Planificación ASC  → invertido para coincidir con la vista de tabla.
                  #   4. OrdenVisual ASC           → desempate: respeta arrastre manual del usuario.
                  #   5. target_start ASC          → desempate final por disponibilidad (dependencias).
                  proj_code = t.get('ProyectoCode') or ''
                  proj_prio = proj_priorities.get(proj_code, 999)
                  pieza_prio = int(t.get('prioridad_pieza') if t.get('prioridad_pieza') is not None else 9999)
-                 return (proj_prio, pieza_prio, -get_nivel(t), get_op_num(t), t.get('OrdenVisual', 999999), target_start)
+                 return (proj_prio, pieza_prio, get_nivel(t), get_op_num(t), t.get('OrdenVisual', 999999), target_start)
             
             tasks.sort(key=get_sort_key)
             recalc = calculate_timeline(maquina, tasks, start_date=start_simulation, 

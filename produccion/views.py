@@ -2577,24 +2577,16 @@ def planificacion_visual(request):
             except:
                 obj['Idorden'] = str(obj.get('Idorden', ''))
 
-            m_id = str(row['machine'].id_maquina).strip()
-            m_name = str(row['machine'].nombre).strip().upper()
-            is_mac00 = (m_id == 'MAC00' or 'SIN ASIGNAR' in m_name)
+            # Duración EXACTA de la tabla: reflejo directo de Tiempo_Proceso.
+            # Sin ancho mínimo, sin márgenes, sin optimizaciones que alteren la escala temporal original.
+            duration_px = el['duration_px']
 
-            # Ancho mínimo visible (ej. procesos muy cortos como 0.03hs)
-            # Para MAC00 respetamos el ancho exacto sin mínimos para no desfasar el grid
-            if is_mac00:
-                natural_w = el['duration_px']
-            else:
-                natural_w = max(24, el['duration_px']) 
-
-
-            # Posicionamiento exacto basado en el motor de planificación (sin cascadas artificiales)
+            # Posicionamiento exacto basado en el motor de planificación
             final_left = el['time_left']
-            cursor_card_end = final_left + el['duration_px']
-            
+            cursor_card_end = final_left + duration_px
+
             obj['visual_left']  = round(final_left, 2)
-            obj['visual_width'] = round(natural_w, 2)
+            obj['visual_width'] = round(duration_px, 2)
             
             # 3. Lógica de Escalonamiento de Badges (Staggering)
             has_badge = obj.get('is_delayed') and obj.get('segment_index', 0) == 0
