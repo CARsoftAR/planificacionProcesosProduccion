@@ -1,5 +1,6 @@
 from datetime import timedelta, datetime
 from .models import HorarioMaquina, Feriado
+#from .gantt_logic import simulate_task_scheduling
 
 def get_active_maintenances(maquina):
     if hasattr(maquina, '_cached_maintenances'):
@@ -293,6 +294,7 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
                           if not cand_min_start or cand_min_start <= current_time:
                               cand_duration = float(cand.get('Tiempo_Proceso', 0) or 0)
                               if cand_duration > 0.001:
+                                  from .gantt_logic import simulate_task_scheduling
                                   fit_success, cand_segments, next_t = simulate_task_scheduling(
                                       cand, current_time, cand_duration, gap_end, 
                                       schedules, non_working_days, half_day_holidays, active_maints, maquina
