@@ -699,22 +699,22 @@ def get_gantt_data(request, force_run=False):
     dependency_map = {}
 
     def get_nivel(t):
-        try:
-            # Primero: campo normalizado inyectado por el loop (minúsculas)
-            plan_lvl = t.get('nivel_planificacion')
-            if plan_lvl is not None and float(plan_lvl) != 0:
-                return float(plan_lvl)
-            # Segundo: campo directo del ERP (mayúsculas, como viene del SQL)
-            erp_lvl = t.get('Nivel_Planificacion')
-            if erp_lvl is not None and float(erp_lvl) != 0:
-                return float(erp_lvl)
-            # Fallback legacy
-            erp_lvl2 = t.get('Nivel')
-            if erp_lvl2 is not None:
-                return float(erp_lvl2)
-            return 0.0
-        except (ValueError, TypeError):
-            return 0.0
+        keys_to_check = ['Nivel_Planificacion', 'nivel_planificacion', 'nivel_manual', 'Nivel']
+        for key in keys_to_check:
+            val = None
+            if isinstance(t, dict):
+                val = t.get(key)
+            else:
+                val = getattr(t, key, None)
+                
+            if val is not None:
+                try:
+                    f_val = float(val)
+                    if f_val != 0:
+                        return f_val
+                except (ValueError, TypeError):
+                    pass
+        return 0.0
 
     def get_op_num(t):
         try:
@@ -926,13 +926,28 @@ def get_gantt_data(request, force_run=False):
         # Jerarquía estricta en Gantt:
         #   1. Prioridad Proyecto   ASC   (número menor = mayor prioridad)
         #   2. Prioridad Artículo   ASC   (número menor = mayor prioridad)
-        #   3. Nivel Planificación  ASC   (invertido a pedido para coincidir con la tabla)
+        #   3. Nivel Planificación  DESC  (número mayor = va antes, se usa negativo)
         #   4. Idorden (OP)         ASC   (desempate inteligente cuando el nivel es idéntico)
         #   + desempates de seguridad: secuencia de proceso y orden visual del usuario
+        print(f"--- DEBUG ORDENAMIENTO MÁQUINA: {machine_id} ---")
+        if machine_id == 'MAC26':
+            for t_debug in tasks:
+                if isinstance(t_debug, dict):
+                    print(f"--- DUMP OP {t_debug.get('Idorden')} (DICT) ---")
+                    print(t_debug.keys())
+                    print(f"Valores nivel posibles: {t_debug.get('nivel_planificacion')} | {t_debug.get('Nivel_Planificacion')} | {t_debug.get('nivel_manual')} | {t_debug.get('Nivel')}")
+                else:
+                    print(f"--- DUMP OP {getattr(t_debug, 'Idorden', 'N/A')} (OBJETO) ---")
+                    import pprint
+                    pprint.pprint(t_debug.__dict__)
+                    
+        for task_debug in tasks:
+            print(f"OP: {get_op_num(task_debug)} - Nivel Extraído: {get_nivel(task_debug)}")
+            
         tasks.sort(key=lambda x: (
             int(x.get('prioridad_proyecto') if x.get('prioridad_proyecto') is not None else 999),  # 1. Proyecto Prioridad ASC
             int(x.get('prioridad_pieza')    if x.get('prioridad_pieza')    is not None else 9999), # 2. Artículo Prioridad ASC
-            get_nivel(x),                                                                          # 3. Nivel Planificación ASC
+            -int(get_nivel(x)),                                                                    # 3. Nivel Planificación DESC
             get_op_num(x),                                                                         # 4. Tie-breaker ID orden (OP) ASC
             x.get('secuencia_proceso', 999),                                                       # desempate: secuencia ERP
             x.get('OrdenSecuencia', 999999),                                                       # desempate: orden manual
@@ -1056,13 +1071,13 @@ def get_gantt_data(request, force_run=False):
                  # PRIORIDAD ABSOLUTA e INVIOLABLE — jerarquía en cascada:
                  #   1. Prioridad Proyecto  ASC  → menor número = mayor prioridad.
                  #   2. Prioridad Artículo  ASC  → dentro del proyecto, piezas con menor número primero.
-                 #   3. Nivel Planificación ASC  → invertido para coincidir con la vista de tabla.
+                 #   3. Nivel Planificación DESC → mayor nivel va antes (se usa negativo).
                  #   4. OrdenVisual ASC           → desempate: respeta arrastre manual del usuario.
                  #   5. target_start ASC          → desempate final por disponibilidad (dependencias).
                  proj_code = t.get('ProyectoCode') or ''
                  proj_prio = proj_priorities.get(proj_code, 999)
                  pieza_prio = int(t.get('prioridad_pieza') if t.get('prioridad_pieza') is not None else 9999)
-                 return (proj_prio, pieza_prio, get_nivel(t), get_op_num(t), t.get('OrdenVisual', 999999), target_start)
+                 return (proj_prio, pieza_prio, -int(get_nivel(t)), get_op_num(t), t.get('OrdenVisual', 999999), target_start)
             
             tasks.sort(key=get_sort_key)
             recalc = calculate_timeline(maquina, tasks, start_date=start_simulation, 

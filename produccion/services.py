@@ -211,21 +211,32 @@ def get_planificacion_data(filtros=None, exclude_completed=True):
                 proyectos_list.extend([x.strip() for x in str(p).split(',') if x.strip()])
 
         if proyectos_list:
-            vals_to_check = set()
+            exact_codes = set()
+            like_patterns = set()
             for val in proyectos_list:
                 if val:
-                    vals_to_check.add(val)
-                    # User specifically requested searching by Formula for project codes like '25.006'
-                    vals_to_check.add(val.replace('.', '-'))
-                    vals_to_check.add(val.replace('-', '.'))
+                    exact_codes.add(val)
+                    exact_codes.add(val.replace('.', '-'))
+                    exact_codes.add(val.replace('-', '.'))
+                    # También busca subproyectos tipo 26-038-A, 26-038-B, etc.
+                    like_patterns.add(val.replace('-', '.') + '.%')
+                    like_patterns.add(val.replace('.', '-') + '-%')
             
-            if vals_to_check:
-                # Use strict IN clause as requested by the user
-                placeholders = ', '.join(['%s'] * len(vals_to_check))
-                where_clauses.append(f" AND (LTRIM(RTRIM(T2.Formula)) IN ({placeholders}) OR LTRIM(RTRIM(T.Formula)) IN ({placeholders}))")
-                # Add params twice (one for T2.Formula, one for T.Formula)
-                params.extend(list(vals_to_check))
-                params.extend(list(vals_to_check))
+            if exact_codes or like_patterns:
+                parts = []
+                if exact_codes:
+                    ph = ', '.join(['%s'] * len(exact_codes))
+                    parts.append(f"LTRIM(RTRIM(T2.Formula)) IN ({ph})")
+                    parts.append(f"LTRIM(RTRIM(T.Formula)) IN ({ph})")
+                    params.extend(list(exact_codes))
+                    params.extend(list(exact_codes))
+                if like_patterns:
+                    for pat in like_patterns:
+                        parts.append("LTRIM(RTRIM(T2.Formula)) LIKE %s")
+                        parts.append("LTRIM(RTRIM(T.Formula)) LIKE %s")
+                        params.append(pat)
+                        params.append(pat)
+                where_clauses.append(" AND (" + " OR ".join(parts) + ")")
 
     if 'machine_ids' in filtros and filtros['machine_ids']:
         # machine_ids matches T3.IdMaquina (Engineering BOM assignment)
@@ -380,5 +391,6 @@ def get_planificacion_data(filtros=None, exclude_completed=True):
                 # Solo lo normalizamos a int para garantizar tipos consistentes.
                 erp_nivel = r.get('Nivel_Planificacion')
                 r['Nivel_Planificacion'] = int(erp_nivel) if erp_nivel is not None else 0
+
 
     return results

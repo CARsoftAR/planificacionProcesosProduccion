@@ -55,7 +55,7 @@ def is_half_day_holiday(date_obj, half_day_holidays=None):
     return Feriado.objects.filter(fecha=date_obj, activo=True, tipo_jornada='MEDIO').exists()
 
 
-def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=None, task_force_start_times=None, non_working_days=None, half_day_holidays=None, plan_mode='auto'):
+def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=None, task_force_start_times=None, non_working_days=None, half_day_holidays=None):
     """
     Calculates the start and end datetime for a list of tasks for a specific machine,
     respecting the machine's configured schedule (LV, SA) and non-working holidays.
@@ -162,9 +162,6 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
         except (ValueError, TypeError):
             ord_vis_val = 999999.0
             
-        if plan_mode != 'original':
-            # Manual mode: user-defined sequence first, then fallback to automatic hierarchy
-            return (ord_sec_val, ord_vis_val, p_proj_val, p_pieza_val, -nivel_val, sec_val)
         return (p_proj_val, p_pieza_val, -nivel_val, sec_val, ord_sec_val, ord_vis_val)
 
     print(f"--- DEBUG ORDENAMIENTO TIMELINE: {m_id} ---")

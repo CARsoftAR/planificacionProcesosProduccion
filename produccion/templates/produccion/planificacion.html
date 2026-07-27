@@ -278,6 +278,34 @@
 
                 <div class="vr bg-secondary opacity-25" style="height: 25px;"></div>
 
+                <!-- Botones de modo de ordenamiento -->
+                <div class="d-flex align-items-center gap-2">
+                    <span class="smaller fw-bold text-muted mb-0"><i class="fas fa-sort-amount-down"></i> Modo:</span>
+                    
+                    <!-- Botón Orden Manual -->
+                    <a href="?scenario_id={{ active_scenario.id }}&plan_mode=manual" 
+                    id="btnModoManual" 
+                    data-mode="manual"
+                    class="btn btn-sm btn-outline-secondary rounded-pill px-3 fw-bold d-inline-flex align-items-center gap-1">
+                        <i class="fas fa-hand-pointer"></i> Orden Manual
+                    </a>
+                    
+                    <!-- Botón Optimización Automática -->
+                    <a href="?scenario_id={{ active_scenario.id }}&plan_mode=automatico" 
+                    id="btnModoAutomatico" 
+                    data-mode="automatico"
+                    class="btn btn-sm btn-outline-secondary rounded-pill px-3 fw-bold d-inline-flex align-items-center gap-1">
+                        <i class="fas fa-magic"></i> Optimización Automática
+                    </a>
+                    
+                    <!-- Indicador de estado dinámico -->
+                    <span id="modoIndicador" class="badge bg-secondary rounded-pill px-3 py-1">
+                        Modo: <span id="modoIndicadorTexto">Manual</span>
+                    </span>
+                </div>
+
+                <div class="vr bg-secondary opacity-25" style="height: 25px;"></div>
+
                 <!-- <div class="d-flex align-items-center gap-2">
                     <label for="plan_mode" class="smaller fw-bold text-muted mb-0"><i class="fas fa-cog"></i> Modo:</label>
                     <select name="plan_mode" id="plan-mode-selector" class="form-select form-select-sm rounded-pill border-secondary border-opacity-25" style="width: 160px; font-size: 0.8rem;">
@@ -899,6 +927,41 @@
         let currentLevel2MacroPk = ""; // Tracker for the active article in detail view
 
         document.addEventListener('DOMContentLoaded', function() {
+            // ─── SINCRONIZACIÓN VISUAL DEL MODO (plan_mode) ───────────────────────────
+            // Lee el parámetro 'plan_mode' directamente desde la URL para garantizar
+            // que el botón activo siempre coincida con el modo real, independientemente
+            // de la sesión o el valor renderizado por Django.
+            (function syncPlanModeButtons() {
+                const params = new URLSearchParams(window.location.search);
+                // Si no viene en la URL, el backend asume 'manual' por defecto
+                const currentMode = params.get('plan_mode') || 'manual';
+
+                const btnManual    = document.getElementById('btnModoManual');
+                const btnAutomAtico = document.getElementById('btnModoAutomatico');
+                const indicador    = document.getElementById('modoIndicador');
+                const indicadorTxt = document.getElementById('modoIndicadorTexto');
+
+                if (btnManual && btnAutomAtico) {
+                    // Limpiar ambos primero
+                    btnManual.classList.remove('btn-primary', 'btn-outline-secondary');
+                    btnAutomAtico.classList.remove('btn-primary', 'btn-outline-secondary');
+
+                    if (currentMode === 'automatico') {
+                        btnAutomAtico.classList.add('btn-primary');
+                        btnManual.classList.add('btn-outline-secondary');
+                        if (indicador) indicador.className = 'badge bg-success rounded-pill px-3 py-1';
+                        if (indicadorTxt) indicadorTxt.textContent = 'Automático';
+                    } else {
+                        // 'manual' o cualquier otro valor → Modo Manual activo
+                        btnManual.classList.add('btn-primary');
+                        btnAutomAtico.classList.add('btn-outline-secondary');
+                        if (indicador) indicador.className = 'badge bg-primary rounded-pill px-3 py-1';
+                        if (indicadorTxt) indicadorTxt.textContent = 'Manual';
+                    }
+                }
+            })();
+            // ─────────────────────────────────────────────────────────────────────────
+
             // Las prioridades de pieza vienen del backend (item.prioridad_pieza),
             // NO se renumeran en cliente.
             // Activar panel de proyectos inicialmente y observar cambios
@@ -915,16 +978,25 @@
              const planForm = document.getElementById('plan-filter-form');
             if (planForm) {
                 planForm.addEventListener('submit', async function(e) {
+                    // SIEMPRE prevenir el envío nativo del formulario para
+                    // que el navegador no navegue a ninguna URL por defecto
+                    e.preventDefault();
+                    e.stopPropagation();
+
                     const projectsInput = document.getElementById('proyectos');
                     const projValue = projectsInput ? projectsInput.value.trim() : "";
                     
-                    if (!projValue) return; // Si está vacío, sigue el flujo normal (limpiar filtros)
+                    if (!projValue) {
+                        // Vacío: recargar sin filtro de proyectos (limpia la vista)
+                        const params = new URLSearchParams(window.location.search);
+                        params.delete('proyectos');
+                        params.set('run', '1');
+                        window.location.href = window.location.pathname + "?" + params.toString();
+                        return;
+                    }
 
                      if (!projValue.includes(',')) {
                          // SINGLE PROJECT FLOW
-                         e.preventDefault();
-                         e.stopPropagation();
-                         
                          const urlParams = new URLSearchParams(window.location.search);
                          const scenarioId = urlParams.get('scenario_id') || "";
                          
@@ -932,23 +1004,39 @@
                              const checkResp = await fetch(`/api/check_project_planning/?proyecto=${encodeURIComponent(projValue)}&scenario_id=${scenarioId}`);
                              const checkData = await checkResp.json();
                              
-                             if (checkData.exists) {
-                                 const result = await Swal.fire({
-                                     title: 'Proyecto ya planificado',
-                                     text: `El proyecto ${projValue} ya cuenta con una planificación activa en "${checkData.scenario}". ¿Desea planificarlo nuevamente?`,
-                                     icon: 'warning',
-                                     showCancelButton: true,
-                                     confirmButtonText: 'Sí, planificar otra vez',
-                                     cancelButtonText: 'Cancelar',
-                                     confirmButtonColor: '#3b82f6',
-                                     customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm', cancelButton: 'premium-cancel' }
-                                 });
-                                 if (!result.isConfirmed) return;
-                             }
-                             
-                             openProductionSelector(projValue);
-                             projectsInput.value = ""; 
-                             projectsInput.focus(); // Recuperar foco
+                              if (checkData.exists && checkData.action === 'show') {
+                                  // Proyecto ya planificado: comportamiento permisivo.
+                                  // Si ya está visible en la URL actual, solo enfocamos sin recargar.
+                                  const currentProjs = new URLSearchParams(window.location.search).get('proyectos') || '';
+                                  const currentList = currentProjs.split(',').map(p => p.trim()).filter(p => p);
+                                  if (currentList.includes(projValue)) {
+                                      // Ya visible en grilla — scroll al proyecto sin recargar
+                                      projectsInput.value = "";
+                                      projectsInput.blur();
+                                      const projRow = document.querySelector(`[data-proyecto="${projValue}"]`);
+                                      if (projRow) {
+                                          projRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                          projRow.style.outline = '3px solid #0d6efd';
+                                          setTimeout(() => { projRow.style.outline = ''; }, 2000);
+                                      }
+                                      // Actualizar piezas trayendo lo último del ERP (refresh silencioso)
+                                      openProductionSelector(projValue);
+                                      return;
+                                  }
+                                  // Redirigimos a la grilla (misma página) con el proyecto cargado.
+                                  // Usamos window.location.pathname (NUNCA request.path del API)
+                                  const params = new URLSearchParams(window.location.search);
+                                  params.set('proyectos', projValue);
+                                  params.set('run', '1');
+                                  window.location.href = window.location.pathname + "?" + params.toString();
+                                  projectsInput.value = "";
+                                  return;
+                              }
+                              
+                              // Proyecto no existe aún en planificación → abrir selector
+                              openProductionSelector(projValue);
+                              projectsInput.value = ""; 
+                              projectsInput.focus();
                          } catch (err) {
                              console.error("Error checking planning state:", err);
                              openProductionSelector(projValue); 
@@ -957,7 +1045,6 @@
                          }
                     } else {
                         // MULTI PROJECT FLOW (Comma separated)
-                        e.preventDefault();
                         const params = new URLSearchParams(window.location.search);
                         params.set('proyectos', projValue);
                         params.set('run', '1');
@@ -1930,53 +2017,59 @@
 
 
             // --- Machine Change via Modal Logic ---
-            const machineModal = new bootstrap.Modal(document.getElementById('machineSelectorModal'));
+            let machineModal = null;
             let currentEditingOp = null;
             let currentOriginMachine = null;
 
-            document.querySelectorAll('.open-machine-modal').forEach(btn => {
-                btn.addEventListener('click', function() {
-                    currentEditingOp = this.dataset.op;
-                    currentOriginMachine = this.dataset.currentMachineId;
+            // Initialize machine modal only if element exists
+            const machineModalEl = document.getElementById('machineSelectorModal');
+            if (machineModalEl) {
+                machineModal = new bootstrap.Modal(machineModalEl);
+            }
+
+            // Event delegation for opening machine selector modal
+            document.addEventListener('click', function(e) {
+                const openBtn = e.target.closest('.open-machine-modal');
+                if (openBtn) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    currentEditingOp = openBtn.dataset.op;
+                    currentOriginMachine = openBtn.dataset.currentMachineId;
                     
-                    document.getElementById('modal-op-title').innerText = `OP: ${currentEditingOp}`;
+                    const modalTitleEl = document.getElementById('modal-op-title');
+                    if (modalTitleEl) {
+                        modalTitleEl.innerText = `OP: ${currentEditingOp}`;
+                    }
                     
                     // Reset search
                     const filterInput = document.getElementById('machineFilterInput');
-                    filterInput.value = '';
+                    if (filterInput) {
+                        filterInput.value = '';
+                    }
                     document.querySelectorAll('.machine-item').forEach(item => item.classList.remove('hidden'));
                     
-                    machineModal.show();
-                });
-            });
-
-            // Machine Search Filtering
-            document.getElementById('machineFilterInput').addEventListener('input', function() {
-                const term = this.value.toLowerCase();
-                document.querySelectorAll('.machine-item').forEach(item => {
-                    const name = item.querySelector('.fw-bold').innerText.toLowerCase();
-                    if (name.includes(term)) {
-                        item.classList.remove('hidden');
-                    } else {
-                        item.classList.add('hidden');
+                    if (machineModal) {
+                        machineModal.show();
                     }
-                });
-            });
+                }
 
-            document.querySelectorAll('.btn-select-machine-modal').forEach(btn => {
-                btn.addEventListener('click', async function() {
-                    const targetMachineId = this.dataset.targetId;
-                    const targetMachineName = this.dataset.targetName;
+                // Event delegation for selecting machine in modal
+                const selectBtn = e.target.closest('.btn-select-machine-modal');
+                if (selectBtn) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const targetMachineId = selectBtn.dataset.targetId;
+                    const targetMachineName = selectBtn.dataset.targetName;
                     const scenarioId = new URLSearchParams(window.location.search).get('scenario_id');
 
                     if (currentOriginMachine === targetMachineId) {
-                        machineModal.hide();
+                        if (machineModal) machineModal.hide();
                         return;
                     }
 
-                    machineModal.hide();
+                    if (machineModal) machineModal.hide();
 
-                    const result = await Swal.fire({
+                    Swal.fire({
                         title: '¿Cambiar de Máquina?',
                         html: `¿Desea mover la <b>OP ${currentEditingOp}</b> a la máquina <b>${targetMachineName}</b>?`,
                         icon: 'question',
@@ -1988,238 +2081,358 @@
                             confirmButton: 'premium-confirm',
                             cancelButton: 'premium-cancel'
                         }
-                    });
+                    }).then(async (result) => {
+                        if (!result.isConfirmed) return;
 
-                    if (!result.isConfirmed) return;
-
-                    Swal.fire({
-                        title: 'Procesando...',
-                        text: 'Recalculando tiempos y prioridades...',
-                        allowOutsideClick: false,
-                        didOpen: () => {
-                            Swal.showLoading();
-                        },
-                        customClass: { popup: 'premium-swal' }
-                    });
-
-                    try {
-                        const response = await fetch('/api/move_task/', {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'X-CSRFToken': '{{ csrf_token }}'
+                        Swal.fire({
+                            title: 'Procesando...',
+                            text: 'Recalculando tiempos y prioridades...',
+                            allowOutsideClick: false,
+                            didOpen: () => {
+                                Swal.showLoading();
                             },
-                            body: JSON.stringify({
-                                id_orden: currentEditingOp,
-                                target_machine_id: targetMachineId,
-                                new_priority: 99999, 
-                                modo_solapamiento: 'manual',
-                                scenario_id: scenarioId
-                            })
+                            customClass: { popup: 'premium-swal' }
                         });
 
-                        if (response.ok) {
-                            window.location.reload();
-                        } else {
-                            const data = await response.json();
-                            Swal.fire({ title: 'Error', text: data.error || 'No se pudo mover la tarea.', icon: 'error' });
-                        }
-                    } catch (err) {
-                        console.error(err);
-                        Swal.fire({ title: 'Error de Red', text: 'Desconexión con el servidor.', icon: 'error' });
-                    }
-                });
-            });
-            
-            // --- Drag and Drop Logic (SortableJS for EVERYTHING) ---
-            // We use SortableJS to handle the drag. On drop (onEnd), we check if the mouse 
-            // is over a Tab Header using elementFromPoint. If so, we treat it as a Move.
-            // Otherwise, we treat it as a Reorder.
-            
-            const tobodies = document.querySelectorAll('tbody');
-            tobodies.forEach(tbody => {
-                new Sortable(tbody, {
-                    animation: 150,
-                    handle: 'tr', // Drag by whole row
-                    ghostClass: 'table-active', // Class for the placeholder
-                    forceFallback: true, // Crucial: Ensures we can get consistent coordinates
-                    onEnd: async function (evt) {
-                        const itemEl = evt.item; 
-                        const idOrden = itemEl.dataset.id;
-                        const maquinaOrigin = itemEl.dataset.maquina; // The machine it came from
-                        
-                        // 1. CHECK FOR DROP ON TAB (Move to Machine)
-                        // We need mouse coordinates. Sortable provides a touch/mouse event in originalEvent.
-                        const touch = evt.originalEvent.changedTouches ? evt.originalEvent.changedTouches[0] : evt.originalEvent;
-                        const x = touch.clientX;
-                        const y = touch.clientY;
-                        
-                        // Hide the helper momentarily so we can see what's under it
-                        itemEl.style.display = 'none'; 
-                        const elemBelow = document.elementFromPoint(x, y);
-                        itemEl.style.display = ''; // Restore
-                        
-                        const targetTab = elemBelow ? elemBelow.closest('.nav-link') : null;
-                        
-                        if (targetTab && targetTab.getAttribute('role') === 'tab') {
-                            const targetMachine = targetTab.dataset.machine;
-                            
-                            // Prevent moving to self (tab names match)
-                            // The tab text is the machine name.
-                            if (targetMachine === maquinaOrigin) {
-                                return; // Dropped on self, treat as reorder if index changed, but safer to ignore cross-logic
-                            }
-
-                            const result = await Swal.fire({
-                                title: '¿Mover Tarea?',
-                                html: `¿Confirma que desea mover la <b>OP ${idOrden}</b> a la máquina <b>${targetMachine}</b>?`,
-                                icon: 'question',
-                                showCancelButton: true,
-                                confirmButtonText: 'Sí, mover',
-                                cancelButtonText: 'Cancelar',
-                                customClass: {
-                                    popup: 'premium-swal',
-                                    confirmButton: 'premium-confirm',
-                                    cancelButton: 'premium-cancel'
-                                }
-                            });
-
-                            if (!result.isConfirmed) {
-                                window.location.reload(); // Revert visual drag
-                                return;
-                            }
-                            
-                            // Calculate Priority: End of Target Queue
-                            // Find target tab content
-                            const contentSelector = targetTab.getAttribute('data-bs-target');
-                            const contentDiv = document.querySelector(contentSelector);
-                            let newPriority = 1000;
-                            
-                            if (contentDiv) {
-                                const rows = contentDiv.querySelectorAll('tbody tr[data-priority]');
-                                if (rows.length > 0) {
-                                    const lastRow = rows[rows.length - 1];
-                                    const lastPrio = parseFloat(lastRow.dataset.priority) || 0;
-                                    newPriority = lastPrio + 1000;
-                                }
-                            }
-                            
-                            // Visual toggle update (Manual) and enable input
-                             const rowToggleBtn = itemEl.querySelector('.solapamiento-modo-toggle');
-                             if (rowToggleBtn) {
-                                 rowToggleBtn.classList.remove('btn-success');
-                                 rowToggleBtn.classList.add('btn-warning');
-                                 rowToggleBtn.textContent = 'Manual';
-                                 const rowPctInput = itemEl.querySelector('.solapamiento-porcentaje-input');
-                                 if (rowPctInput) {
-                                     rowPctInput.disabled = false;
-                                     rowPctInput.style.backgroundColor = '#ffeeba';
-                                     rowPctInput.style.color = '';
-                                 }
-                             }
-
-                             try {
-                                console.log('--- DRAG MOVE_TASK ---', {id_orden: idOrden, target_machine_id: targetMachine, new_priority: newPriority});
-                                const response = await fetch('/api/move_task/', {
-                                    method: 'POST',
-                                    headers: {
-                                        'Content-Type': 'application/json',
-                                        'X-CSRFToken': '{{ csrf_token }}'
-                                    },
-                                    body: JSON.stringify({
-                                        id_orden: idOrden,
-                                        target_machine_id: targetMachine,
-                                        new_priority: newPriority,
-                                        modo_solapamiento: 'manual',
-                                        scenario_id: new URLSearchParams(window.location.search).get('scenario_id')
-                                    })
-                                });
-                                
-                                if (response.ok) {
-                                    window.location.reload();
-                                } else {
-                                    const data = await response.json();
-                                    alert('Error: ' + data.error);
-                                    window.location.reload();
-                                }
-                            } catch (err) {
-                                alert('Error de red');
-                                window.location.reload();
-                            }
-                            return; // STOP HERE, DO NOT DO REORDER LOGIC
-                        }
-
-                        // 2. NORMAL REORDER LOGIC (Same Machine)
-                        // Check if order actually changed
-                        if (evt.oldIndex === evt.newIndex) return;
-
-                        // Find neighbors
-                        const prev = itemEl.previousElementSibling;
-                        const next = itemEl.nextElementSibling;
-                        
-                        let newPriority = 0;
-                        
-                        if (prev && next) {
-                            const p1 = parseFloat(prev.dataset.priority) || 0;
-                            const p2 = parseFloat(next.dataset.priority) || 0;
-                            newPriority = (p1 + p2) / 2; 
-                        } else if (prev) {
-                            const p = parseFloat(prev.dataset.priority) || 0;
-                            newPriority = p + 1000;
-                        } else if (next) {
-                            const p = parseFloat(next.dataset.priority) || 0;
-                            newPriority = p / 2; 
-                            if (newPriority <= 0) newPriority = 100;
-                        } else {
-                            return;
-                        }
-
-                        console.log(`Reordering ${idOrden} to Priority ${newPriority}`);
-
-                        // Call API to set new priority
                         try {
-                            const response = await fetch(`/api/set_priority/${idOrden}/`, {
+                            const response = await fetch('/api/move_task/', {
                                 method: 'POST',
                                 headers: {
                                     'Content-Type': 'application/json',
                                     'X-CSRFToken': '{{ csrf_token }}'
                                 },
                                 body: JSON.stringify({
-                                    maquina: maquinaOrigin,
-                                    new_priority: newPriority,
-                                    scenario_id: new URLSearchParams(window.location.search).get('scenario_id')
+                                    id_orden: currentEditingOp,
+                                    target_machine_id: targetMachineId,
+                                    new_priority: 99999, 
+                                    modo_solapamiento: 'manual',
+                                    scenario_id: scenarioId
                                 })
                             });
 
                             if (response.ok) {
-                                // Optimistic Update
-                                itemEl.dataset.priority = newPriority;
+                                window.location.reload();
                             } else {
                                 const data = await response.json();
-                                Swal.fire({
-                                    title: 'Error',
-                                    text: "Error al guardar la nueva posición: " + (data.error || response.statusText),
-                                    icon: 'error',
-                                    confirmButtonText: 'Cerrar',
-                                    customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
-                                }).then(() => {
+                                Swal.fire({ title: 'Error', text: data.error || 'No se pudo mover la tarea.', icon: 'error' });
+                            }
+                        } catch (err) {
+                            console.error(err);
+                            Swal.fire({ title: 'Error de Red', text: 'Desconexión con el servidor.', icon: 'error' });
+                        }
+                    });
+                }
+            });
+
+            // Event delegation for machine search input
+            document.addEventListener('input', function(e) {
+                if (e.target.id === 'machineFilterInput') {
+                    const term = e.target.value.toLowerCase();
+                    document.querySelectorAll('.machine-item').forEach(item => {
+                        const nameEl = item.querySelector('.fw-bold');
+                        if (nameEl) {
+                            const name = nameEl.innerText.toLowerCase();
+                            if (name.includes(term)) {
+                                item.classList.remove('hidden');
+                            } else {
+                                item.classList.add('hidden');
+                            }
+                        }
+                    });
+                }
+            });
+            
+            // --- Sistema de Modos de Ordenamiento ---
+            let ordenamientoMode = 'manual'; // 'manual' or 'automatico'
+            const sortableInstances = [];
+
+            // Inicializar SortableJS para todos los tbody (pero inicialmente en modo manual, activo)
+            const inicializarSortables = () => {
+                const tobodies = document.querySelectorAll('tbody');
+                sortableInstances.length = 0; // Limpiar instancias anteriores
+                tobodies.forEach(tbody => {
+                    const sortable = new Sortable(tbody, {
+                        animation: 150,
+                        disabled: ordenamientoMode !== 'manual',
+                        filter: 'button, input, .open-machine-modal, .btn-up, .btn-down, .btn-delete, .btn-reactivate, .solapamiento-modo-toggle, .solapamiento-porcentaje-input',
+                        preventOnFilter: false,
+                        ghostClass: 'table-active',
+                        forceFallback: true,
+                        onEnd: async function (evt) {
+                            if (ordenamientoMode !== 'manual') return;
+
+                            const itemEl = evt.item; 
+                            const idOrden = itemEl.dataset.id;
+                            const maquinaOrigin = itemEl.dataset.maquina;
+                            
+                            // 1. CHECK FOR DROP ON TAB (Move to Machine)
+                            const touch = evt.originalEvent.changedTouches ? evt.originalEvent.changedTouches[0] : evt.originalEvent;
+                            const x = touch.clientX;
+                            const y = touch.clientY;
+                            
+                            itemEl.style.display = 'none'; 
+                            const elemBelow = document.elementFromPoint(x, y);
+                            itemEl.style.display = ''; 
+                            
+                            const targetTab = elemBelow ? elemBelow.closest('.nav-link') : null;
+                            
+                            if (targetTab && targetTab.getAttribute('role') === 'tab') {
+                                const targetMachine = targetTab.dataset.machine;
+                                
+                                if (targetMachine === maquinaOrigin) return;
+
+                                const result = await Swal.fire({
+                                    title: '¿Mover Tarea?',
+                                    html: `¿Confirma que desea mover la <b>OP ${idOrden}</b> a la máquina <b>${targetMachine}</b>?`,
+                                    icon: 'question',
+                                    showCancelButton: true,
+                                    confirmButtonText: 'Sí, mover',
+                                    cancelButtonText: 'Cancelar',
+                                    customClass: {
+                                        popup: 'premium-swal',
+                                        confirmButton: 'premium-confirm',
+                                        cancelButton: 'premium-cancel'
+                                    }
+                                });
+
+                                if (!result.isConfirmed) {
                                     window.location.reload();
-                                });                            }
-                        } catch (e) {
-                            console.error(e);
-                            Swal.fire({
-                                title: 'Error de Conexión',
-                                text: "No se pudo guardar la posición: " + e.message,
-                                icon: 'error',
-                                confirmButtonText: 'Cerrar',
-                                customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
-                            }).then(() => {
-                                window.location.reload();
+                                    return;
+                                }
+                                
+                                const contentSelector = targetTab.getAttribute('data-bs-target');
+                                const contentDiv = document.querySelector(contentSelector);
+                                let newPriority = 1000;
+                                
+                                if (contentDiv) {
+                                    const rows = contentDiv.querySelectorAll('tbody tr[data-priority]');
+                                    if (rows.length > 0) {
+                                        const lastRow = rows[rows.length - 1];
+                                        const lastPrio = parseFloat(lastRow.dataset.priority) || 0;
+                                        newPriority = lastPrio + 1000;
+                                    }
+                                }
+                                
+                                 const rowToggleBtn = itemEl.querySelector('.solapamiento-modo-toggle');
+                                 if (rowToggleBtn) {
+                                     rowToggleBtn.classList.remove('btn-success');
+                                     rowToggleBtn.classList.add('btn-warning');
+                                     rowToggleBtn.textContent = 'Manual';
+                                     const rowPctInput = itemEl.querySelector('.solapamiento-porcentaje-input');
+                                     if (rowPctInput) {
+                                         rowPctInput.disabled = false;
+                                         rowPctInput.style.backgroundColor = '#ffeeba';
+                                         rowPctInput.style.color = '';
+                                     }
+                                 }
+
+                                 try {
+                                    const response = await fetch('/api/move_task/', {
+                                        method: 'POST',
+                                        headers: {
+                                            'Content-Type': 'application/json',
+                                            'X-CSRFToken': '{{ csrf_token }}'
+                                        },
+                                        body: JSON.stringify({
+                                            id_orden: idOrden,
+                                            target_machine_id: targetMachine,
+                                            new_priority: newPriority,
+                                            modo_solapamiento: 'manual',
+                                            scenario_id: new URLSearchParams(window.location.search).get('scenario_id')
+                                        })
+                                    });
+                                    
+                                    if (response.ok) window.location.reload();
+                                    else {
+                                        const data = await response.json();
+                                        Swal.fire({ title: 'Error', text: data.error, icon: 'error' });
+                                        window.location.reload();
+                                    }
+                                } catch (err) {
+                                    Swal.fire({ title: 'Error de Red', icon: 'error' });
+                                    window.location.reload();
+                                }
+                                return;
+                            }
+
+                            // 2. NORMAL REORDER (Same Machine) - Guardar orden manual
+                            if (evt.oldIndex === evt.newIndex) return;
+
+                            // Obtener el orden de IDs de toda la tabla de esta máquina
+                            const tbody = itemEl.closest('tbody');
+                            const rows = Array.from(tbody.querySelectorAll('tr[data-id]'));
+                            const nuevoOrden = rows.map(row => row.dataset.id);
+                            const maquinaId = maquinaOrigin;
+                            const scenarioId = new URLSearchParams(window.location.search).get('scenario_id');
+                            
+                            console.log('IDs ordenados obtenidos:', nuevoOrden);
+                            console.log('DEBUG JS: ORDEN MANUAL - maquinaId:', maquinaId);
+                            console.log('DEBUG JS: ORDEN MANUAL - scenarioId:', scenarioId);
+
+                            try {
+                                const response = await fetch('/api/guardar_orden_manual/', {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/json',
+                                        'X-CSRFToken': '{{ csrf_token }}'
+                                    },
+                                    body: JSON.stringify({
+                                        maquina_id: maquinaId,
+                                        orden_ids: nuevoOrden,
+                                        scenario_id: scenarioId
+                                    })
+                                });
+
+                                console.log('Respuesta del servidor (Status):', response.status);
+
+                                if (response.ok) {
+                                    const data = await response.json();
+                                    console.log('Datos devueltos por Django:', data);
+                                    if (data.status !== 'success' && data.status !== 'ok') {
+                                        alert('Error en el backend: ' + JSON.stringify(data));
+                                    }
+                                    if (data.ordenes) {
+                                        rows.forEach((row, idx) => {
+                                            const ordenInfo = data.ordenes.find(o => o.id_orden == row.dataset.id);
+                                            if (ordenInfo) {
+                                                row.dataset.priority = ordenInfo.prioridad;
+                                            }
+                                        });
+                                    }
+                                } else {
+                                    const data = await response.json();
+                                    console.log('Datos devueltos por Django:', data);
+                                    alert('Error en el backend: ' + JSON.stringify(data));
+                                }
+                            } catch (error) {
+                                console.error('Error en la petición Fetch:', error);
+                                alert('Fallo crítico en la red/petición Fetch.');
+                            }
+                        }
+                    });
+                    sortableInstances.push(sortable);
+                });
+            };
+
+            // Función para cambiar el modo de ordenamiento
+            const cambiarModo = (nuevoModo) => {
+                if (ordenamientoMode === nuevoModo) return;
+                
+                ordenamientoMode = nuevoModo;
+                
+                // Actualizar botones y indicador
+                const btnManual = document.getElementById('btnModoManual');
+                const btnAutomatico = document.getElementById('btnModoAutomatico');
+                const indicador = document.getElementById('modoIndicador');
+
+                if (nuevoModo === 'manual') {
+                    btnManual.classList.remove('btn-outline-secondary');
+                    btnManual.classList.add('btn-primary');
+                    btnAutomatico.classList.remove('btn-primary');
+                    btnAutomatico.classList.add('btn-outline-secondary');
+                    indicador.textContent = 'Modo: Manual';
+                    indicador.classList.remove('bg-secondary');
+                    indicador.classList.add('bg-primary');
+                } else {
+                    btnAutomatico.classList.remove('btn-outline-secondary');
+                    btnAutomatico.classList.add('btn-primary');
+                    btnManual.classList.remove('btn-primary');
+                    btnManual.classList.add('btn-outline-secondary');
+                    indicador.textContent = 'Modo: Automático';
+                    indicador.classList.remove('bg-primary');
+                    indicador.classList.add('bg-secondary');
+                }
+
+                // Habilitar/deshabilitar Sortable
+                sortableInstances.forEach(sortable => {
+                    sortable.option('disabled', nuevoModo !== 'manual');
+                });
+
+                // Acciones específicas según el modo
+                if (nuevoModo === 'automatico') {
+                    ejecutarOrdenAutomatico();
+                } else if (nuevoModo === 'manual') {
+                    // Para restaurar el orden manual desde la base de datos sin alterar la sesión
+                    const scenarioId = new URLSearchParams(window.location.search).get('scenario_id') || '';
+                    const proyectos = new URLSearchParams(window.location.search).get('proyectos') || '';
+                    window.location.href = `/planificacion/?scenario_id=${scenarioId}&proyectos=${encodeURIComponent(proyectos)}&plan_mode=manual`;
+                }
+            };
+
+            // Función para ejecutar ordenamiento automático
+            const ejecutarOrdenAutomatico = async () => {
+                const scenarioId = new URLSearchParams(window.location.search).get('scenario_id');
+                
+                Swal.fire({
+                    title: 'Optimizando...',
+                    text: 'Calculando el orden óptimo...',
+                    allowOutsideClick: false,
+                    didOpen: () => Swal.showLoading(),
+                    customClass: { popup: 'premium-swal' }
+                });
+
+                try {
+                    const response = await fetch('/api/ordenar_automatico/', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRFToken': '{{ csrf_token }}'
+                        },
+                        body: JSON.stringify({ scenario_id: scenarioId })
+                    });
+
+                    if (response.ok) {
+                        const data = await response.json();
+                        // Aplicar el nuevo orden a cada máquina
+                        if (data.orden_por_maquina) {
+                            Object.keys(data.orden_por_maquina).forEach(maquinaId => {
+                                const ordenIds = data.orden_por_maquina[maquinaId];
+                                // Encontrar el tab de esta máquina
+                                const tabBtn = document.querySelector(`.nav-link[data-machine="${maquinaId}"]`);
+                                if (tabBtn) {
+                                    const tabId = tabBtn.getAttribute('data-bs-target');
+                                    const tabContent = document.querySelector(tabId);
+                                    if (tabContent) {
+                                        const tbody = tabContent.querySelector('tbody');
+                                        if (tbody) {
+                                            // Reordenar las filas
+                                            const rowsMap = {};
+                                            tbody.querySelectorAll('tr[data-id]').forEach(row => {
+                                                rowsMap[row.dataset.id] = row;
+                                            });
+                                            // Vaciar y volver a agregar en el nuevo orden
+                                            ordenIds.forEach(id => {
+                                                if (rowsMap[id]) tbody.appendChild(rowsMap[id]);
+                                            });
+                                        }
+                                    }
+                                }
                             });
                         }
+                        Swal.fire({
+                            title: '¡Listo!',
+                            text: 'Ordenamiento automático completado',
+                            icon: 'success',
+                            timer: 1500,
+                            showConfirmButton: false,
+                            customClass: { popup: 'premium-swal' }
+                        });
+                    } else {
+                        const data = await response.json();
+                        Swal.fire({ title: 'Error', text: data.error, icon: 'error' });
                     }
-                });
-            });
+                } catch (err) {
+                    console.error(err);
+                    Swal.fire({ title: 'Error de Red', icon: 'error' });
+                }
+            };
+
+            // Event listeners para los botones
+            document.getElementById('btnModoManual').addEventListener('click', () => cambiarModo('manual'));
+            document.getElementById('btnModoAutomatico').addEventListener('click', () => cambiarModo('automatico'));
+
+            // Inicializar Sortables al cargar la página
+            inicializarSortables();
 
             // Logic for mode selector - decouple scenario when moving to manual
             const planModeSelector = document.getElementById('plan-mode-selector');
@@ -2450,8 +2663,9 @@
                                         maquina: maquina,
                                         orden_secuencia: index
                                     };
-                                    // Solo incluir nivel si es un número válido (incluso 0 es válido si el usuario lo puso)
-                                    if (prioridadManual !== null && !isNaN(prioridadManual)) {
+                                    // En modo manual preservamos exclusivamente la secuencia arrastrada.
+                                    // El backend no debe reinterpretar estos valores como una prioridad automática.
+                                    if (ordenamientoMode !== 'manual' && prioridadManual !== null && !isNaN(prioridadManual)) {
                                         seq.nivel_planificacion = prioridadManual;
                                         seq.prioridad_manual = prioridadManual;
                                     }
@@ -2463,7 +2677,8 @@
                         let payload = {
                             nombre: name,
                             proyectos: proyectosList,
-                            secuencias: secuencias
+                            secuencias: secuencias,
+                            plan_mode: ordenamientoMode
                         };
 
                         // Word/Excel style flow:

@@ -4171,23 +4171,19 @@ def api_confirm_selected_tasks(request):
             request.session.modified = True
             print(f"DEBUG SELECTOR: Sesión sincronizada con Scenario ID: {active_scenario.id}")
         
-        # Backend Security Layer: Check if already planned unless forced
-        if not force and project_code:
+        # Comportamiento permisivo: si el proyecto ya existe en el escenario,
+        # no bloqueamos — permitimos que se actualicen/recarguen las operaciones.
+        if project_code:
             v1 = project_code
             v2 = project_code.replace('-', '.')
             v3 = project_code.replace('.', '-')
             codes = list({v1, v2, v3})
-            
             exists = PlannedTask.objects.using('default').filter(
                 proyecto_code__in=codes,
                 scenario=active_scenario
             ).exists()
             if exists:
-                return JsonResponse({
-                    'status': 'warning', 
-                    'message': f'El proyecto {project_code} ya está planificado.',
-                    'already_exists': True
-                })
+                print(f"DEBUG SELECTOR: Proyecto {project_code} ya planificado. Procediendo a actualizar/recargar operaciones existentes.")
 
         # REPLACE: Borramos solo lo que pertenece al proyecto actual (para permitir acumulación)
         with transaction.atomic(using='default'):
@@ -4382,18 +4378,18 @@ def api_confirm_selected_tasks(request):
 def check_project_planning(request):
     """
     API to check if a project code already has planned tasks in a scenario.
-    Used for security warnings before re-planning.
+    Permissive behavior: returns action='show' when project exists so the frontend
+    navigates to display it, never blocking the interface.
     """
     project_code = request.GET.get('proyecto', '').strip()
     scenario_id = request.GET.get('scenario_id')
     
     if not project_code:
-        return JsonResponse({'exists': False})
+        return JsonResponse({'exists': False, 'action': 'select'})
         
     try:
         active_scenario = get_active_scenario(request, scenario_id=scenario_id)
         
-        # Robust check: variations of the code (26-028 vs 26.028)
         v1 = project_code
         v2 = project_code.replace('-', '.')
         v3 = project_code.replace('.', '-')
@@ -4406,10 +4402,23 @@ def check_project_planning(request):
         
         print(f"DEBUG: check_project_planning - Proj: {project_code}, Codes: {codes}, Scenario: {active_scenario.nombre}, Exists: {exists}")
         
-        return JsonResponse({'exists': exists, 'proyecto': project_code, 'scenario': active_scenario.nombre})
+        if exists:
+            return JsonResponse({
+                'exists': True,
+                'action': 'show',
+                'proyecto': project_code,
+                'scenario': active_scenario.nombre
+            })
+        else:
+            return JsonResponse({
+                'exists': False,
+                'action': 'select',
+                'proyecto': project_code,
+                'scenario': active_scenario.nombre
+            })
     except Exception as e:
         print(f"ERROR check_project_planning: {e}")
-        return JsonResponse({'exists': False, 'error': str(e)})
+        return JsonResponse({'exists': False, 'action': 'select', 'error': str(e)})
 
 @csrf_exempt
 def api_clear_all_planning(request):

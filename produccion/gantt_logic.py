@@ -336,13 +336,19 @@ def get_gantt_data(request, force_run=False):
             
     if not raw_proyectos and active_scenario:
         from .models import PlannedTask
-        # SNAPSHOT RULE: Solo leemos los proyectos de las tareas congeladas (en_gantt=True).
-        # Si no filtramos aquí, los proyectos nuevos que agregó el usuario (en_gantt=False)
-        # contaminarían el Gantt aunque el usuario no haya presionado "Graficar".
+        # SNAPSHOT RULE: Primero intentamos leer las tareas congeladas (en_gantt=True).
+        # Si no hay ninguna congelada, usamos TODAS las PlannedTasks del escenario
+        # como fallback para que el Gantt no quede vacío.
         db_proyectos = list(PlannedTask.objects.using('default').filter(
             scenario=active_scenario,
             enviado_a_gantt=True
         ).values_list('proyecto_code', flat=True).distinct())
+        if not db_proyectos:
+            # FALLBACK: No hay snapshot congelado → usar todas las tareas del escenario
+            db_proyectos = list(PlannedTask.objects.using('default').filter(
+                scenario=active_scenario
+            ).values_list('proyecto_code', flat=True).distinct())
+            print(f"DEBUG: [Gantt] No hay tareas con enviado_a_gantt=True. Fallback a todas las PlannedTasks: {db_proyectos}")
         if db_proyectos:
             raw_proyectos = ','.join(p for p in db_proyectos if p)
             
@@ -427,6 +433,20 @@ def get_gantt_data(request, force_run=False):
         lista_proyectos = [p.strip() for p in active_scenario.proyectos.split(',') if p.strip()]
     else:
         lista_proyectos = []
+    
+    # FALLBACK: Si scenario.proyectos está vacío, derivar de PlannedTasks o de raw_proyectos
+    if not lista_proyectos and active_scenario:
+        # Primero intentar desde raw_proyectos (ya poblado por el fallback de enviado_a_gantt)
+        if raw_proyectos:
+            lista_proyectos = [p.strip() for p in raw_proyectos.split(',') if p.strip()]
+        else:
+            # Derivar directamente de PlannedTasks
+            db_proj_codes = list(PlannedTask.objects.using('default').filter(
+                scenario=active_scenario
+            ).values_list('proyecto_code', flat=True).distinct())
+            lista_proyectos = [p for p in db_proj_codes if p]
+            if lista_proyectos:
+                print(f"DEBUG: [Gantt] scenario.proyectos vacío. Fallback a PlannedTasks: {lista_proyectos}")
         
     print(f"Proyectos encontrados: {lista_proyectos}")
     
@@ -448,7 +468,7 @@ def get_gantt_data(request, force_run=False):
     show_completed = (plan_mode != 'original')
     
     # --- 1. ENTRANCE VALIDATION ---
-    has_selection = bool(lista_proyectos or id_orden)
+    has_selection = bool(lista_proyectos or id_orden or raw_proyectos)
     
     if not has_selection and not force_run:
         print("DEBUG: [Validation] No projects or tasks selected. Aborting planning execution.")
@@ -490,8 +510,12 @@ def get_gantt_data(request, force_run=False):
         if not p_code or not m_name:
             return False
         # Also exclude tasks with 0 duration as they cause "ghost" rendering
-        if float(t.get('Tiempo_Proceso', 0) or 0) <= 0.001:
-            return False
+        # BUT: if the override has tiempo_manual > 0, keep it regardless of ERP Tiempo_Proceso
+        erp_duration = float(t.get('Tiempo_Proceso', 0) or 0)
+        if erp_duration <= 0.001:
+            override_tm = virtual_overrides.get(clean_id, {}).get('tiempo_manual')
+            if override_tm is None or float(override_tm) <= 0.001:
+                return False
         return True
 
     original_count = len(all_tasks_raw)
@@ -699,22 +723,22 @@ def get_gantt_data(request, force_run=False):
     dependency_map = {}
 
     def get_nivel(t):
-        try:
-            # Primero: campo normalizado inyectado por el loop (minúsculas)
-            plan_lvl = t.get('nivel_planificacion')
-            if plan_lvl is not None and float(plan_lvl) != 0:
-                return float(plan_lvl)
-            # Segundo: campo directo del ERP (mayúsculas, como viene del SQL)
-            erp_lvl = t.get('Nivel_Planificacion')
-            if erp_lvl is not None and float(erp_lvl) != 0:
-                return float(erp_lvl)
-            # Fallback legacy
-            erp_lvl2 = t.get('Nivel')
-            if erp_lvl2 is not None:
-                return float(erp_lvl2)
-            return 0.0
-        except (ValueError, TypeError):
-            return 0.0
+        keys_to_check = ['Nivel_Planificacion', 'nivel_planificacion', 'nivel_manual', 'Nivel']
+        for key in keys_to_check:
+            val = None
+            if isinstance(t, dict):
+                val = t.get(key)
+            else:
+                val = getattr(t, key, None)
+                
+            if val is not None:
+                try:
+                    f_val = float(val)
+                    if f_val != 0:
+                        return f_val
+                except (ValueError, TypeError):
+                    pass
+        return 0.0
 
     def get_op_num(t):
         try:
@@ -829,12 +853,19 @@ def get_gantt_data(request, force_run=False):
         active_tasks = []
         for t in native_tasks:
             # FILTRO CRÍTICO: Si el tiempo es despreciable o cero, ignorar
+            # PERO respetar tiempo_manual del override si existe
             tp = float(t.get('Tiempo_Proceso', 0) or 0)
             if machine_id == 'MAC06':
                 print(f"DEBUG: MAC06 task {t.get('Idorden')} Tiempo_Proceso: {tp}")
             
             if tp <= 0.01:
-                continue
+                try:
+                    _oid_check = str(int(float(t.get('Idorden') or 0)))
+                except:
+                    _oid_check = str(t.get('Idorden', ''))
+                _override_tm = virtual_overrides.get(_oid_check, {}).get('tiempo_manual')
+                if _override_tm is None or float(_override_tm) <= 0.01:
+                    continue
 
             try:
                 oid = str(int(float(t.get('Idorden'))))
@@ -869,9 +900,11 @@ def get_gantt_data(request, force_run=False):
 
                 task_found = next((tx for tx in all_tasks_raw if str(int(float(tx['Idorden']))) == tid_s), None)
                 if task_found and str(int(float(task_found['Idorden']))) not in hidden_ids:
-                    # FILTRO CRÍTICO para tareas movidas
+                    # FILTRO CRÍTICO para tareas movidas — respetar tiempo_manual
                     if float(task_found.get('Tiempo_Proceso', 0) or 0) <= 0.01:
-                        continue
+                        _ov_tm = virtual_overrides.get(tid_s, {}).get('tiempo_manual')
+                        if _ov_tm is None or float(_ov_tm) <= 0.01:
+                            continue
 
                     # IMPORTANT: copy the dict to avoid mutating the original object
                     task_copy = dict(task_found)
@@ -926,23 +959,52 @@ def get_gantt_data(request, force_run=False):
         # Jerarquía estricta en Gantt:
         #   1. Prioridad Proyecto   ASC   (número menor = mayor prioridad)
         #   2. Prioridad Artículo   ASC   (número menor = mayor prioridad)
-        #   3. Nivel Planificación  ASC   (invertido a pedido para coincidir con la tabla)
+        #   3. Nivel Planificación  DESC  (número mayor = va antes, se usa negativo)
         #   4. Idorden (OP)         ASC   (desempate inteligente cuando el nivel es idéntico)
         #   + desempates de seguridad: secuencia de proceso y orden visual del usuario
-        tasks.sort(key=lambda x: (
-            int(x.get('prioridad_proyecto') if x.get('prioridad_proyecto') is not None else 999),  # 1. Proyecto Prioridad ASC
-            int(x.get('prioridad_pieza')    if x.get('prioridad_pieza')    is not None else 9999), # 2. Artículo Prioridad ASC
-            get_nivel(x),                                                                          # 3. Nivel Planificación ASC
-            get_op_num(x),                                                                         # 4. Tie-breaker ID orden (OP) ASC
-            x.get('secuencia_proceso', 999),                                                       # desempate: secuencia ERP
-            x.get('OrdenSecuencia', 999999),                                                       # desempate: orden manual
-            x.get('OrdenVisual', 999999)                                                           # desempate: arrastre visual
-        ))
+        print(f"--- DEBUG ORDENAMIENTO MÁQUINA: {machine_id} ---")
+        if machine_id == 'MAC26':
+            for t_debug in tasks:
+                if isinstance(t_debug, dict):
+                    print(f"--- DUMP OP {t_debug.get('Idorden')} (DICT) ---")
+                    print(t_debug.keys())
+                    print(f"Valores nivel posibles: {t_debug.get('nivel_planificacion')} | {t_debug.get('Nivel_Planificacion')} | {t_debug.get('nivel_manual')} | {t_debug.get('Nivel')}")
+                else:
+                    print(f"--- DUMP OP {getattr(t_debug, 'Idorden', 'N/A')} (OBJETO) ---")
+                    import pprint
+                    pprint.pprint(t_debug.__dict__)
+                    
+        for task_debug in tasks:
+            print(f"OP: {get_op_num(task_debug)} - Nivel Extraído: {get_nivel(task_debug)}")
+            
+        if plan_mode != 'original':
+            # Manual Mode: Prioritize OrdenVisual (dragging) and OrdenSecuencia (explicit sequence)
+            tasks.sort(key=lambda x: (
+                x.get('OrdenSecuencia', 999999),                                                       # 1. Manual order sequence
+                x.get('OrdenVisual', 999999),                                                           # 2. Manual visual priority
+                int(x.get('prioridad_proyecto') if x.get('prioridad_proyecto') is not None else 999),  # 3. Fallback: Project Priority ASC
+                int(x.get('prioridad_pieza')    if x.get('prioridad_pieza')    is not None else 9999), # 4. Fallback: Article Priority ASC
+                -int(get_nivel(x)),                                                                    # 5. Fallback: Nivel DESC
+                get_op_num(x),                                                                         # 6. Fallback: OP ID ASC
+                x.get('secuencia_proceso', 999)                                                        # 7. Fallback: ERP process sequence
+            ))
+        else:
+            # Original Mode: Standard hierarchical automatic sorting
+            tasks.sort(key=lambda x: (
+                int(x.get('prioridad_proyecto') if x.get('prioridad_proyecto') is not None else 999),  # 1. Proyecto Prioridad ASC
+                int(x.get('prioridad_pieza')    if x.get('prioridad_pieza')    is not None else 9999), # 2. Artículo Prioridad ASC
+                -int(get_nivel(x)),                                                                    # 3. Nivel Planificación DESC
+                get_op_num(x),                                                                         # 4. Tie-breaker ID orden (OP) ASC
+                x.get('secuencia_proceso', 999),                                                       # desempate: secuencia ERP
+                x.get('OrdenSecuencia', 999999),                                                       # desempate: orden manual
+                x.get('OrdenVisual', 999999)                                                           # desempate: arrastre visual
+            ))
         machine_tasks_map[machine_id] = {'maquina': maquina, 'tasks': tasks}
         
         calculated_tasks = calculate_timeline(maquina, tasks, start_date=start_simulation, 
                                             task_min_start_times=None, task_force_start_times=force_start_times_pass1,
-                                            non_working_days=non_working_days, half_day_holidays=half_day_holidays)
+                                            non_working_days=non_working_days, half_day_holidays=half_day_holidays,
+                                            plan_mode=plan_mode)
         
         for ct in calculated_tasks:
              tid = str(ct.get('Idorden'))
@@ -1044,30 +1106,24 @@ def get_gantt_data(request, force_run=False):
             def get_sort_key(t):
                  tid = str(t.get('Idorden'))
                  ms = min_start_times.get(tid, start_simulation)
-                 
-                 # Si está pineada, su "tiempo objetivo" es el pin
-                 # Si no, es su tiempo de disponibilidad (dependencia)
                  target_start = ms
                  is_pinned = 0
                  if tid in force_start_times:
                      target_start = force_start_times[tid]
                      is_pinned = 1
-                 
-                 # PRIORIDAD ABSOLUTA e INVIOLABLE — jerarquía en cascada:
-                 #   1. Prioridad Proyecto  ASC  → menor número = mayor prioridad.
-                 #   2. Prioridad Artículo  ASC  → dentro del proyecto, piezas con menor número primero.
-                 #   3. Nivel Planificación ASC  → invertido para coincidir con la vista de tabla.
-                 #   4. OrdenVisual ASC           → desempate: respeta arrastre manual del usuario.
-                 #   5. target_start ASC          → desempate final por disponibilidad (dependencias).
                  proj_code = t.get('ProyectoCode') or ''
                  proj_prio = proj_priorities.get(proj_code, 999)
                  pieza_prio = int(t.get('prioridad_pieza') if t.get('prioridad_pieza') is not None else 9999)
-                 return (proj_prio, pieza_prio, get_nivel(t), get_op_num(t), t.get('OrdenVisual', 999999), target_start)
+                 if plan_mode != 'original':
+                     # Manual mode: OrdenSecuencia y OrdenVisual primero
+                     return (t.get('OrdenSecuencia', 999999), t.get('OrdenVisual', 999999), proj_prio, pieza_prio, -int(get_nivel(t)), get_op_num(t), target_start)
+                 return (proj_prio, pieza_prio, -int(get_nivel(t)), get_op_num(t), t.get('OrdenVisual', 999999), target_start)
             
             tasks.sort(key=get_sort_key)
             recalc = calculate_timeline(maquina, tasks, start_date=start_simulation, 
                                       task_min_start_times=min_start_times, task_force_start_times=force_start_times,
-                                      non_working_days=non_working_days, half_day_holidays=half_day_holidays)
+                                      non_working_days=non_working_days, half_day_holidays=half_day_holidays,
+                                      plan_mode=plan_mode)
             
             if machine_id == 'MAC06' and pass_idx == 4:
                  print(f"DEBUG: Final pass for MAC06: {len(recalc)} segments calculated.")

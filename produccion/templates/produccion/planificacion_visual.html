@@ -2349,8 +2349,8 @@
         const url = new URL("{% url 'planificacion_visual' %}", window.location.origin);
         url.searchParams.set('graficar', '1');
         if (scenarioId && scenarioId !== 'null') url.searchParams.set('scenario_id', scenarioId);
-        // Enviar explícitamente plan_mode=auto para recalcular posiciones ignorando pines
-        url.searchParams.set('plan_mode', 'auto');
+        // Mantener el plan_mode actual (manual/auto) para respetar el ordenamiento del usuario
+        url.searchParams.set('plan_mode', planMode || 'manual');
         
         // Persistir la lista de proyectos en la redirección
         if (proyectosVal) {

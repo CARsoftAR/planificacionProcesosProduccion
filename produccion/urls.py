@@ -67,6 +67,8 @@ urlpatterns = [
     path('api/clear_all_planning/', views.api_clear_all_planning, name='api_clear_all_planning'),
     path('api/delete_project_planning/', views.api_delete_project_planning, name='api_delete_project_planning'),
     path('api/get_planned_projects/', views.api_get_planned_projects, name='api_get_planned_projects'),
+    path('api/guardar_orden_manual/', views.api_guardar_orden_manual, name='api_guardar_orden_manual'),
+    path('api/ordenar_automatico/', views.api_ordenar_automatico, name='api_ordenar_automatico'),
 
     path('', views.main_menu, name='home'),
 ]

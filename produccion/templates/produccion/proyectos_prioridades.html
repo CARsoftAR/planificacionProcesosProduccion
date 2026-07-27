@@ -43,6 +43,13 @@
             box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
             border-color: #86b7fe;
         }
+        .table-wrapper {
+            max-height: none;
+            overflow-y: visible;
+        }
+        #projectsTableBody tr {
+            display: table-row;
+        }
     </style>
 </head>
 <body>
@@ -69,12 +76,15 @@
         </div>
 
         {% if has_projects %}
-        <div class="alert alert-info border-0 shadow-sm">
-            <i class="fas fa-info-circle me-2"></i>El algoritmo programará <strong>primero</strong> los proyectos con prioridad <strong>1</strong>.
+        <div class="d-flex justify-content-between align-items-center">
+            <div class="alert alert-info border-0 shadow-sm flex-grow-1 mb-0">
+                <i class="fas fa-info-circle me-2"></i>El algoritmo programará <strong>primero</strong> los proyectos con prioridad <strong>1</strong>.
+            </div>
+            <span class="badge bg-secondary ms-3 fs-6" id="projectCountBadge">{{ proyectos|length }} proyecto(s)</span>
         </div>
         
-        <div class="table-responsive">
-            <table class="table table-hover table-custom align-middle">
+        <div class="table-responsive table-wrapper mt-3">
+            <table class="table table-hover table-custom align-middle" id="projectsTable">
                 <thead>
                     <tr>
                         <th style="width: 60%">Proyecto / Número de Orden</th>
@@ -107,7 +117,8 @@
             </table>
         </div>
         
-        <div class="text-end mt-4">
+        <div class="d-flex justify-content-between align-items-center mt-4">
+            <span class="text-muted small">Total: <strong>{{ proyectos|length }}</strong> proyecto(s)</span>
             <button class="btn btn-primary px-4 py-2 fw-bold shadow-sm" onclick="savePriorities()">
                 <i class="fas fa-save me-2"></i>Guardar Prioridades
             </button>
@@ -183,7 +194,6 @@
             .then(data => {
                 myModal.hide();
                 if(data.status === 'ok') {
-                    // Refresh perfectly ordered
                     location.reload();
                 } else {
                     alert("Error: " + data.error);
@@ -194,8 +204,11 @@
                 alert("Error de red: " + err);
             });
         }
-    </script>
-        // Removed CLIENT-SIDE HARD PURGE: The backend now correctly provides exactly the projects that exist in the active scenario, so we should not arbitrarily hide them in the frontend.
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const rows = document.querySelectorAll('#projectsTableBody tr');
+            console.log('Prioridades: Total filas renderizadas =', rows.length);
+        });
     </script>
 </body>
 </html>

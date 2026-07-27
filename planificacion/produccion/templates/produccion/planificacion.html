@@ -915,33 +915,30 @@
                          const urlParams = new URLSearchParams(window.location.search);
                          const scenarioId = urlParams.get('scenario_id') || "";
                          
-                         try {
-                             const checkResp = await fetch(`/api/check_project_planning/?proyecto=${encodeURIComponent(projValue)}&scenario_id=${scenarioId}`);
-                             const checkData = await checkResp.json();
-                             
-                             if (checkData.exists) {
-                                 const result = await Swal.fire({
-                                     title: 'Proyecto ya planificado',
-                                     text: `El proyecto ${projValue} ya cuenta con una planificación activa en "${checkData.scenario}". ¿Desea planificarlo nuevamente?`,
-                                     icon: 'warning',
-                                     showCancelButton: true,
-                                     confirmButtonText: 'Sí, planificar otra vez',
-                                     cancelButtonText: 'Cancelar',
-                                     confirmButtonColor: '#3b82f6',
-                                     customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm', cancelButton: 'premium-cancel' }
-                                 });
-                                 if (!result.isConfirmed) return;
-                             }
-                             
-                             openProductionSelector(projValue);
-                             projectsInput.value = ""; 
-                             projectsInput.focus(); // Recuperar foco
-                         } catch (err) {
-                             console.error("Error checking planning state:", err);
-                             openProductionSelector(projValue); 
-                             projectsInput.value = "";
-                             projectsInput.focus();
-                         }
+                          try {
+                              const checkResp = await fetch(`/api/check_project_planning/?proyecto=${encodeURIComponent(projValue)}&scenario_id=${scenarioId}`);
+                              const checkData = await checkResp.json();
+                              
+                              if (checkData.exists && checkData.action === 'show') {
+                                  // Proyecto ya planificado: comportamiento permisivo.
+                                  // Redirigimos a la grilla para mostrar el proyecto sin bloqueo.
+                                  const params = new URLSearchParams(window.location.search);
+                                  params.set('proyectos', projValue);
+                                  params.set('run', '1');
+                                  projectsInput.value = "";
+                                  window.location.href = window.location.pathname + "?" + params.toString();
+                                  return;
+                              }
+                              
+                              openProductionSelector(projValue);
+                              projectsInput.value = ""; 
+                              projectsInput.focus();
+                          } catch (err) {
+                              console.error("Error checking planning state:", err);
+                              openProductionSelector(projValue); 
+                              projectsInput.value = "";
+                              projectsInput.focus();
+                          }
                     } else {
                         // MULTI PROJECT FLOW (Comma separated)
                         e.preventDefault();
