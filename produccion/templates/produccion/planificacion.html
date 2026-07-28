@@ -2554,17 +2554,32 @@
             const btnNewScenario = document.getElementById('btnNewScenario');
             if (btnNewScenario) {
                 btnNewScenario.addEventListener('click', async function() {
+                    const todayStr = new Date().toISOString().split('T')[0];
                     const result = await Swal.fire({
                         title: '¿Empezar Plan Nuevo?',
-                        text: 'Se iniciará un escenario de planificación vacío. Los planes existentes guardados no se modificarán.',
+                        html: `
+                            <p class="mb-3">Se iniciará un escenario de planificación vacío. Los planes existentes guardados no se modificarán.</p>
+                            <div class="text-start">
+                                <label for="swal-fecha-inicio" class="form-label fw-bold">Fecha de inicio de planificación:</label>
+                                <input type="date" id="swal-fecha-inicio" class="form-control" value="${todayStr}">
+                            </div>
+                        `,
                         icon: 'question',
                         showCancelButton: true,
                         confirmButtonText: 'Sí, empezar nuevo',
                         cancelButtonText: 'Cancelar',
+                        preConfirm: () => {
+                            const dateStr = document.getElementById('swal-fecha-inicio').value;
+                            if (!dateStr) {
+                                Swal.showValidationMessage('Debe seleccionar una fecha de inicio.');
+                            }
+                            return dateStr;
+                        },
                         customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
                     });
                     
                     if (result.isConfirmed) {
+                        const fechaInicio = result.value;
                         try {
                             const response = await fetch('/api/scenarios/create/', {
                                 method: 'POST',
@@ -2574,7 +2589,8 @@
                                 },
                                 body: JSON.stringify({
                                     nombre: 'Nuevo Plan',
-                                    proyectos: ''
+                                    proyectos: '',
+                                    fecha_inicio: fechaInicio
                                 })
                             });
                             

@@ -310,6 +310,9 @@ def get_gantt_data(request, force_run=False):
             start_simulation = timezone.make_aware(naive_dt)
         except (ValueError, TypeError):
             start_simulation = timezone.now()
+    elif active_scenario and active_scenario.fecha_inicio:
+        naive_dt = datetime.combine(active_scenario.fecha_inicio, datetime.min.time())
+        start_simulation = timezone.make_aware(naive_dt)
     else:
         start_simulation = timezone.now()
     
@@ -920,6 +923,14 @@ def get_gantt_data(request, force_run=False):
                 tid = str(t.get('Idorden'))
             if tid not in unique_tasks_map: unique_tasks_map[tid] = t
         tasks = list(unique_tasks_map.values())
+        
+        # Pre-sort tasks by automatic hierarchy to align default OrdenVisual assignments with frontend table defaults
+        tasks.sort(key=lambda x: (
+            proj_priorities.get(x.get('ProyectoCode'), 999),
+            int(x.get('prioridad_pieza') if x.get('prioridad_pieza') is not None else 9999),
+            -int(get_nivel(x)),
+            get_op_num(x)
+        ))
         
         force_start_times_pass1 = {}
         for idx, item in enumerate(tasks):

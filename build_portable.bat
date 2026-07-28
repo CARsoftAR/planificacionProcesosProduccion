@@ -20,7 +20,7 @@ echo [2/3] Empaquetando con PyInstaller (--onedir)...
 REM Forzar el cierre de procesos activos para desbloquear directorios build/dist
 taskkill /f /im ABBAMAT_PROD_Desktop.exe 2>nul
 taskkill /f /im python.exe 2>nul
-timeout /t 2 /nobreak >nul
+ping 127.0.0.1 -n 3 >nul
 
 REM Limpieza de cache y directorios previos de forma protegida
 if exist "build" rmdir /s /q "build"
@@ -48,4 +48,4 @@ echo COMPILACION EXITOSA.
 echo La aplicacion empaquetada se encuentra en la carpeta:
 echo dist\ABBAMAT_PROD_Desktop\
 echo ========================================================
-pause
+if "%1" neq "/nopause" pause

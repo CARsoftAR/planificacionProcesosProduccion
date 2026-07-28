@@ -1365,23 +1365,25 @@ def planificacion_visual_OLD(request):
     # 2. Get Data and Calculate Timeline
     timeline_data = [] 
     
+    # 3. Check for Local Manual Priorities/Group Assignments & Time Overrides
+    active_scenario = get_active_scenario(request)
+
     # 2. Prepare Start Date for Simulation
-    # Parse fecha_desde if provided, otherwise use today
+    # Parse fecha_desde if provided, otherwise use scenario's start date, otherwise use today
     fecha_desde = request.GET.get('fecha_desde')
     if fecha_desde:
         try:
             start_simulation = datetime.strptime(fecha_desde, '%Y-%m-%d')
         except ValueError:
             start_simulation = datetime.now()
+    elif active_scenario and active_scenario.fecha_inicio:
+        start_simulation = datetime.combine(active_scenario.fecha_inicio, datetime.min.time())
     else:
         start_simulation = datetime.now()
     
     # IMPORTANT: Start from beginning of workday (7:00 AM), not current time
     # This ensures tasks are scheduled from the start of the day
     start_simulation = start_simulation.replace(hour=7, minute=0, second=0, microsecond=0)
-    
-    # 3. Check for Local Manual Priorities/Group Assignments & Time Overrides
-    active_scenario = get_active_scenario(request)
 
     # --------------------------------------------------------------------------
     # FILTER: Determine active projects EXCLUSIVELY from URL parameters.
@@ -3214,6 +3216,7 @@ def create_scenario(request):
         descripcion = data.get('descripcion', '')
         es_principal = data.get('es_principal', False)
         proyectos = data.get('proyectos', '')
+        fecha_inicio_str = data.get('fecha_inicio')
         copy_from_id = data.get('copy_from_id')
         scenario_id = data.get('id') or data.get('update_id')
         secuencias = data.get('secuencias', [])
@@ -3241,6 +3244,11 @@ def create_scenario(request):
                     scenario.descripcion = descripcion
                 scenario.es_principal = es_principal
                 scenario.proyectos = proyectos
+                if fecha_inicio_str:
+                    try:
+                        scenario.fecha_inicio = datetime.strptime(fecha_inicio_str, '%Y-%m-%d').date()
+                    except ValueError:
+                        pass
                 scenario.save(using='default')
                 
                 # If we are "overwriting" (copying data from another scenario)
@@ -3362,6 +3370,13 @@ def create_scenario(request):
                 if not nombre:
                     return JsonResponse({'error': 'Nombre es requerido'}, status=400)
 
+                fecha_inicio_obj = None
+                if fecha_inicio_str:
+                    try:
+                        fecha_inicio_obj = datetime.strptime(fecha_inicio_str, '%Y-%m-%d').date()
+                    except ValueError:
+                        pass
+
                 # FIX: Si ya existe un escenario con ese nombre, lo reutilizamos en lugar de crear duplicados
                 new_scenario, _created = Scenario.objects.using('default').get_or_create(
                     nombre=nombre,
@@ -3369,8 +3384,14 @@ def create_scenario(request):
                         'descripcion': descripcion,
                         'es_principal': es_principal,
                         'proyectos': proyectos,
+                        'fecha_inicio': fecha_inicio_obj,
                     }
                 )
+                
+                # If we retrieved an existing scenario rather than creating it, update the fecha_inicio if provided
+                if not _created and fecha_inicio_obj:
+                    new_scenario.fecha_inicio = fecha_inicio_obj
+                    new_scenario.save(using='default')
                 
                 # Clone overrides if requested
                 if copy_from_id:
@@ -3824,24 +3845,35 @@ def planillas_diarias(request):
     DAYS_ES = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"]
     nice_target_dates = []
     
-    if active_dates:
-        sorted_dates = sorted([datetime.fromisoformat(d) for d in active_dates])
-        earliest_date = sorted_dates[0].date()
+    try:
+        semanas = int(request.GET.get('semanas', 1))
+    except ValueError:
+        semanas = 1
         
-        # El rango arranca en el primer día con tareas y frena obligatoriamente el viernes de esa semana
-        curr = earliest_date
-        end_of_week = earliest_date + timedelta(days=(4 - earliest_date.weekday()))
-        
-        while curr <= end_of_week:
-            if curr.weekday() < 5: 
-                if curr.isoformat() in active_dates:
-                    nice_target_dates.append((curr.isoformat(), f"{DAYS_ES[curr.weekday()]} {curr.strftime('%d/%m')}"))
-            curr += timedelta(days=1)
+    active_scenario = gantt_res.get('active_scenario')
+    if active_scenario and active_scenario.fecha_inicio:
+        base_date = active_scenario.fecha_inicio
+    else:
+        # Fallback to earliest active date or today
+        if active_dates:
+            sorted_dates = sorted([datetime.fromisoformat(d) for d in active_dates])
+            base_date = sorted_dates[0].date()
+        else:
+            base_date = datetime.now().date()
+            
+    curr = base_date
+    end_date = base_date + timedelta(days=(semanas * 7) - 1)
+    
+    while curr <= end_date:
+        if curr.weekday() < 5: 
+            nice_target_dates.append((curr.isoformat(), f"{DAYS_ES[curr.weekday()]} {curr.strftime('%d/%m')}"))
+        curr += timedelta(days=1)
     
     context = {
         'daily_plan': daily_plan_list,
         'target_dates': nice_target_dates,
-        'active_scenario': gantt_res.get('active_scenario')
+        'active_scenario': gantt_res.get('active_scenario'),
+        'semanas': semanas
     }
     
     return render(request, 'produccion/planillas_diarias.html', context)

@@ -298,7 +298,7 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
                   current_time = dj_tz.localtime(current_time)
                   
                   # BACKFILLING: Escanear hueco
-                  if found_min_start > current_time:
+                  if found_min_start > current_time and plan_mode != 'manual':
                       gap_start = current_time
                       gap_end = found_min_start
                       

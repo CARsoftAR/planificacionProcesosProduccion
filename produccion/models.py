@@ -72,6 +72,7 @@ class Scenario(models.Model):
     descripcion = models.TextField(blank=True, null=True, verbose_name="Descripción")
     es_principal = models.BooleanField(default=False, verbose_name="Es Plan Oficial")
     proyectos = models.TextField(blank=True, null=True, verbose_name="Proyectos (Comas)")
+    fecha_inicio = models.DateField(null=True, blank=True, verbose_name="Fecha de Inicio")
     fecha_creacion = models.DateTimeField(auto_now_add=True)
     
     class Meta:
