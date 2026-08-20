@@ -3340,6 +3340,10 @@ def create_scenario(request):
                             except ValueError:
                                 pass
                         
+                        # Extraer cantidad_producida y tiempo_proceso del payload
+                        cantidad_producida_manual = seq.get('cantidad_producida_manual')
+                        tiempo_manual = seq.get('tiempo_manual')
+                        
                         print(f"[GUARDANDO] OP: {id_orden} | Maquina: {maquina} | plan_mode: {plan_mode_payload} | raw_nivel: {repr(raw_nivel)} | nivel_final: {nivel_final} | seq_keys: {list(seq.keys())}")
                         
                         if id_orden and maquina:
@@ -3353,6 +3357,10 @@ def create_scenario(request):
                             # Solo pisamos el nivel_manual en la BD si vino un valor válido en el POST
                             if nivel_final is not None:
                                 defaults_dict['nivel_manual'] = nivel_final
+                            if cantidad_producida_manual is not None:
+                                defaults_dict['cantidad_producida_manual'] = cantidad_producida_manual
+                            if tiempo_manual is not None:
+                                defaults_dict['tiempo_manual'] = tiempo_manual
                             
                             print(f"[DEBUG BD] Escribiendo en BD para OP {id_orden}: {defaults_dict}")
                                 
@@ -3466,6 +3474,10 @@ def create_scenario(request):
                             except ValueError:
                                 pass
                         
+                        # Extraer cantidad_producida y tiempo_proceso del payload
+                        cantidad_producida_manual = seq.get('cantidad_producida_manual')
+                        tiempo_manual = seq.get('tiempo_manual')
+                        
                         if id_orden and maquina:
                             defaults_dict = {
                                 'orden_secuencia': orden_secuencia
@@ -3473,6 +3485,10 @@ def create_scenario(request):
                             # Solo pisamos el nivel_manual en la BD si vino un valor válido en el POST
                             if nivel_final is not None:
                                 defaults_dict['nivel_manual'] = nivel_final
+                            if cantidad_producida_manual is not None:
+                                defaults_dict['cantidad_producida_manual'] = cantidad_producida_manual
+                            if tiempo_manual is not None:
+                                defaults_dict['tiempo_manual'] = tiempo_manual
                                 
                             PrioridadManual.objects.using('default').update_or_create(
                                 scenario=new_scenario,

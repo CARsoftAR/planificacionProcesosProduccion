@@ -362,6 +362,47 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
                 if fence_time > current_time:
                     current_time = fence_time
         
+        # Avoid fragmentation of initial block for unstarted tasks by aligning to next shift start
+        # if the remaining time in the current shift is less than 0.5 hours.
+        is_not_started = (float(task.get('Tiempo_Logrado', 0.0) or 0.0) == 0.0) or (float(task.get('Cantidadpp', 0.0) or 0.0) == 0.0)
+        if is_not_started and not forced_time:
+            from django.utils import timezone as dj_tz
+            local_curr = dj_tz.localtime(current_time) if dj_tz.is_aware(current_time) else dj_tz.make_aware(current_time)
+            weekday = local_curr.weekday()
+            day_type = 'LV' if 0 <= weekday <= 4 else ('SA' if weekday == 5 else 'DO')
+            
+            is_working = False
+            active_shift = None
+            if day_type in schedules and not is_non_working_holiday(local_curr, non_working_days):
+                curr_t = local_curr.time()
+                is_half = is_half_day_holiday(local_curr, half_day_holidays)
+                for sch in schedules[day_type]:
+                    s = sch['start']
+                    e = sch['end']
+                    if is_half:
+                        e = datetime.strptime("12:00", "%H:%M").time()
+                    if s < e:
+                        if s <= curr_t < e:
+                            is_working = True
+                            active_shift = {'start': s, 'end': e}
+                            break
+                    else:
+                        if curr_t >= s or curr_t < e:
+                            is_working = True
+                            active_shift = {'start': s, 'end': e}
+                            break
+            
+            if is_working and active_shift:
+                e_t = active_shift['end']
+                if is_half_day_holiday(local_curr, half_day_holidays):
+                    e_t = datetime.strptime("12:00", "%H:%M").time()
+                shift_end_dt = datetime.combine(local_curr.date(), e_t, tzinfo=local_curr.tzinfo)
+                time_left_hours = (shift_end_dt - local_curr).total_seconds() / 3600.0
+                if time_left_hours < 0.5:
+                    current_time = _jump_to_next_start(shift_end_dt, schedules, non_working_days, half_day_holidays)
+            else:
+                current_time = _jump_to_next_start(current_time, schedules, non_working_days, half_day_holidays)
+
         # Instead of one block per task, create multiple segments if task spans multiple days
         task_segments = []
         task_start = None

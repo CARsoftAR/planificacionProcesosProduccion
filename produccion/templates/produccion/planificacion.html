@@ -2671,7 +2671,14 @@
                                 let textoNivel = rawTexto.replace(/\s+/g, '').replace(/[^\d-]/g, '');
                                 let prioridadManual = textoNivel !== '' ? parseInt(textoNivel, 10) : null;
                                 
-                                console.log(`[GUARDAR] OP ${idOrden} | rawTexto='${rawTexto}' | textoNivel='${textoNivel}' | prioridadManual=${prioridadManual}`);
+                                // Extraer Cantidad Producida y Tiempo de las celdas
+                                let cantidadCell = row.querySelector('.editable-cantidad');
+                                let cantidadProducida = cantidadCell ? parseFloat(cantidadCell.textContent.replace(',', '.')) : null;
+                                
+                                let tiempoCell = row.querySelector('.editable-time');
+                                let tiempoManual = tiempoCell ? parseFloat(tiempoCell.textContent.replace(',', '.')) : null;
+                                
+                                console.log(`[GUARDAR] OP ${idOrden} | rawTexto='${rawTexto}' | textoNivel='${textoNivel}' | prioridadManual=${prioridadManual} | cant=${cantidadProducida} | tiempo=${tiempoManual}`);
                                 
                                 if (idOrden) {
                                     let seq = {
@@ -2684,6 +2691,12 @@
                                     if (ordenamientoMode !== 'manual' && prioridadManual !== null && !isNaN(prioridadManual)) {
                                         seq.nivel_planificacion = prioridadManual;
                                         seq.prioridad_manual = prioridadManual;
+                                    }
+                                    if (cantidadProducida !== null && !isNaN(cantidadProducida)) {
+                                        seq.cantidad_producida_manual = cantidadProducida;
+                                    }
+                                    if (tiempoManual !== null && !isNaN(tiempoManual)) {
+                                        seq.tiempo_manual = tiempoManual;
                                     }
                                     secuencias.push(seq);
                                 }

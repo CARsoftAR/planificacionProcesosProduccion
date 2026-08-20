@@ -964,8 +964,10 @@ def get_gantt_data(request, force_run=False):
              
              if p_id in virtual_overrides and virtual_overrides[p_id].get('cantidad_producida_manual') is not None:
                  item['Cantidadpp'] = float(virtual_overrides[p_id]['cantidad_producida_manual'])
+                 item['cantidad_producida'] = float(virtual_overrides[p_id]['cantidad_producida_manual'])
              else:
                  item['Cantidadpp'] = item.get('cantidad_producida', 0)
+                 item['cantidad_producida'] = item.get('cantidad_producida', 0)
                   
         # Jerarquía estricta en Gantt:
         #   1. Prioridad Proyecto   ASC   (número menor = mayor prioridad)
@@ -1127,8 +1129,8 @@ def get_gantt_data(request, force_run=False):
                  pieza_prio = int(t.get('prioridad_pieza') if t.get('prioridad_pieza') is not None else 9999)
                  if plan_mode != 'original':
                      # Manual mode: OrdenSecuencia y OrdenVisual primero
-                     return (t.get('OrdenSecuencia', 999999), t.get('OrdenVisual', 999999), proj_prio, pieza_prio, -int(get_nivel(t)), get_op_num(t), target_start)
-                 return (proj_prio, pieza_prio, -int(get_nivel(t)), get_op_num(t), t.get('OrdenVisual', 999999), target_start)
+                     return (t.get('OrdenSecuencia', 999999), t.get('OrdenVisual', 999999), proj_prio, pieza_prio, -int(get_nivel(t)), get_op_num(t))
+                 return (proj_prio, pieza_prio, -int(get_nivel(t)), get_op_num(t), t.get('OrdenVisual', 999999))
             
             tasks.sort(key=get_sort_key)
             recalc = calculate_timeline(maquina, tasks, start_date=start_simulation, 
