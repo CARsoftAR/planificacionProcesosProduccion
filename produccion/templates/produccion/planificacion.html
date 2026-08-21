@@ -2611,11 +2611,29 @@
                                 
                                 // Extraer Cantidad Producida y Tiempo de las celdas
                                 let cantidadCell = row.querySelector('.editable-cantidad');
-                                let cantidadProducida = cantidadCell ? parseFloat(cantidadCell.textContent.replace(',', '.')) : null;
+                                let cantidadProducida = null;
+                                if (cantidadCell) {
+                                    let strValQty = cantidadCell.textContent.trim();
+                                    if (strValQty.includes(',')) {
+                                        cantidadProducida = parseFloat(strValQty.replace(/\./g, '').replace(',', '.'));
+                                    } else {
+                                        cantidadProducida = parseFloat(strValQty);
+                                    }
+                                }
                                 
                                 let tiempoCell = row.querySelector('.editable-time');
                                 // Leemos el innerText actual (el valor visual que acaba de recalcularse)
-                                let tiempoManual = tiempoCell ? parseFloat(tiempoCell.innerText.trim().replace(/\./g, '').replace(',', '.')) : null;
+                                let tiempoManual = null;
+                                if (tiempoCell) {
+                                    let strVal = tiempoCell.innerText.trim();
+                                    if (strVal.includes(',')) {
+                                        // Formato español: 1.200,50 -> 1200.50
+                                        tiempoManual = parseFloat(strVal.replace(/\./g, '').replace(',', '.'));
+                                    } else {
+                                        // Formato estándar/inglés: 1200.50 o 4.73
+                                        tiempoManual = parseFloat(strVal);
+                                    }
+                                }
                                 
                                 console.log(`[GUARDAR] OP ${idOrden} | rawTexto='${rawTexto}' | textoNivel='${textoNivel}' | prioridadManual=${prioridadManual} | cant=${cantidadProducida} | tiempo=${tiempoManual}`);
                                 

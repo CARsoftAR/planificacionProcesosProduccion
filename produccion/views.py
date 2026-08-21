@@ -3363,8 +3363,18 @@ def create_scenario(request):
                         # Extraer cantidad_producida y tiempo_proceso del payload
                         def sanitize_number(val):
                             if val is None or str(val).strip() == '': return None
+                            if isinstance(val, (int, float)): return float(val)
+                            
+                            val_str = str(val).strip()
+                            # If the string contains a comma, we assume Spanish locale: 1.200,50 -> 1200.50
+                            if ',' in val_str:
+                                try:
+                                    return float(val_str.replace('.', '').replace(',', '.'))
+                                except ValueError:
+                                    return None
+                            # Otherwise assume standard format: 1200.50
                             try:
-                                return float(str(val).replace('.', '').replace(',', '.'))
+                                return float(val_str)
                             except ValueError:
                                 return None
 
@@ -3507,8 +3517,18 @@ def create_scenario(request):
                         # Extraer cantidad_producida y tiempo_proceso del payload
                         def sanitize_number(val):
                             if val is None or str(val).strip() == '': return None
+                            if isinstance(val, (int, float)): return float(val)
+                            
+                            val_str = str(val).strip()
+                            # If the string contains a comma, we assume Spanish locale: 1.200,50 -> 1200.50
+                            if ',' in val_str:
+                                try:
+                                    return float(val_str.replace('.', '').replace(',', '.'))
+                                except ValueError:
+                                    return None
+                            # Otherwise assume standard format: 1200.50
                             try:
-                                return float(str(val).replace('.', '').replace(',', '.'))
+                                return float(val_str)
                             except ValueError:
                                 return None
 
