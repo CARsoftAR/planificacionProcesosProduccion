@@ -1839,43 +1839,17 @@
                 const neighborId = neighbor.dataset.id;
                 const neighborPriority = parseFloat(String(neighbor.dataset.priority).replace(',', '.')) || 0;
 
-                // Call API
-                try {
-                    const response = await fetch(`/api/move_priority/${idOrden}/${direction}/`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-CSRFToken': '{{ csrf_token }}'
-                        },
-                        body: JSON.stringify({
-                            maquina: maquina,
-                            priority: priority,
-                            neighbor_id: neighborId,
-                            neighbor_priority: neighborPriority,
-                            scenario_id: new URLSearchParams(window.location.search).get('scenario_id')
-                        })
-                    });
+                // Purely visual swap
+                // 1. Swap Priorities in Dataset (Optional but good for consistency)
+                row.dataset.priority = neighborPriority.toString();
+                neighbor.dataset.priority = priority.toString();
 
-                    if (response.ok) {
-                        // Optimistic Update (No Reload)
-                        // 1. Swap Priorities in Dataset
-                        row.dataset.priority = neighborPriority.toString();
-                        neighbor.dataset.priority = priority.toString();
-
-                        // 2. Swap DOM Elements
-                        if (direction === 'up') {
-                            row.parentNode.insertBefore(row, neighbor);
-                        } else {
-                            // Moving down: Insert neighbor before row (effectively swapping)
-                            row.parentNode.insertBefore(neighbor, row);
-                        }
-                    } else {
-                        const data = await response.json();
-                        alert("Error al mover la fila: " + (data.error || response.statusText));
-                    }
-                } catch (error) {
-                    console.error(error);
-                    alert("Error de conexión: " + error.message);
+                // 2. Swap DOM Elements
+                if (direction === 'up') {
+                    row.parentNode.insertBefore(row, neighbor);
+                } else {
+                    // Moving down: Insert neighbor before row (effectively swapping)
+                    row.parentNode.insertBefore(neighbor, row);
                 }
             }
 
@@ -2266,58 +2240,12 @@
                             }
 
                             // 2. NORMAL REORDER (Same Machine) - Guardar orden manual
+                            // The visual order has been changed by SortableJS in the DOM.
+                            // We do NOT send this to the backend automatically.
+                            // It will be sent when the user explicitly clicks the 'Guardar' button.
                             if (evt.oldIndex === evt.newIndex) return;
-
-                            // Obtener el orden de IDs de toda la tabla de esta máquina
-                            const tbody = itemEl.closest('tbody');
-                            const rows = Array.from(tbody.querySelectorAll('tr[data-id]'));
-                            const nuevoOrden = rows.map(row => row.dataset.id);
-                            const maquinaId = maquinaOrigin;
-                            const scenarioId = new URLSearchParams(window.location.search).get('scenario_id');
                             
-                            console.log('IDs ordenados obtenidos:', nuevoOrden);
-                            console.log('DEBUG JS: ORDEN MANUAL - maquinaId:', maquinaId);
-                            console.log('DEBUG JS: ORDEN MANUAL - scenarioId:', scenarioId);
-
-                            try {
-                                const response = await fetch('/api/guardar_orden_manual/', {
-                                    method: 'POST',
-                                    headers: {
-                                        'Content-Type': 'application/json',
-                                        'X-CSRFToken': '{{ csrf_token }}'
-                                    },
-                                    body: JSON.stringify({
-                                        maquina_id: maquinaId,
-                                        orden_ids: nuevoOrden,
-                                        scenario_id: scenarioId
-                                    })
-                                });
-
-                                console.log('Respuesta del servidor (Status):', response.status);
-
-                                if (response.ok) {
-                                    const data = await response.json();
-                                    console.log('Datos devueltos por Django:', data);
-                                    if (data.status !== 'success' && data.status !== 'ok') {
-                                        alert('Error en el backend: ' + JSON.stringify(data));
-                                    }
-                                    if (data.ordenes) {
-                                        rows.forEach((row, idx) => {
-                                            const ordenInfo = data.ordenes.find(o => o.id_orden == row.dataset.id);
-                                            if (ordenInfo) {
-                                                row.dataset.priority = ordenInfo.prioridad;
-                                            }
-                                        });
-                                    }
-                                } else {
-                                    const data = await response.json();
-                                    console.log('Datos devueltos por Django:', data);
-                                    alert('Error en el backend: ' + JSON.stringify(data));
-                                }
-                            } catch (error) {
-                                console.error('Error en la petición Fetch:', error);
-                                alert('Fallo crítico en la red/petición Fetch.');
-                            }
+                            // Visual order updated locally. No backend request.
                         }
                     });
                     sortableInstances.push(sortable);
