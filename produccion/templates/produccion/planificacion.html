@@ -3206,6 +3206,95 @@
         .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        /* CSS para el Resizer de Columnas */
+        .table-col-resizer {
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 5px;
+            cursor: col-resize;
+            user-select: none;
+            height: 100%;
+            background-color: transparent;
+            z-index: 10;
+        }
+        .table-col-resizer:hover, .table-col-resizer.resizing {
+            background-color: rgba(0, 0, 0, 0.2);
+        }
     </style>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Inicializar redimensionamiento de columnas para todas las tablas
+            const tables = document.querySelectorAll('table');
+            
+            tables.forEach((table) => {
+                const cols = table.querySelectorAll('thead th');
+                
+                cols.forEach((col, index) => {
+                    // Asegurar que el <th> sea position relative para ubicar el resizer de forma absoluta
+                    if (window.getComputedStyle(col).position === 'static') {
+                        col.style.position = 'relative';
+                    }
+                    
+                    // Crear clave única usando el texto del header (para compartir anchos entre tablas idénticas de diferentes máquinas)
+                    let headerText = col.innerText.trim().replace(/[^a-zA-Z0-9]/g, '_');
+                    if (!headerText) headerText = 'col';
+                    const colKey = `table_col_width_${headerText}_${index}`;
+                    
+                    // Cargar ancho guardado del LocalStorage
+                    const savedWidth = localStorage.getItem(colKey);
+                    if (savedWidth) {
+                        col.style.width = `${savedWidth}px`;
+                        col.style.minWidth = `${savedWidth}px`;
+                        col.style.maxWidth = `${savedWidth}px`;
+                    }
+                    
+                    // Crear elemento resizer (el manejador invisible)
+                    const resizer = document.createElement('div');
+                    resizer.classList.add('table-col-resizer');
+                    col.appendChild(resizer);
+                    
+                    let x = 0;
+                    let w = 0;
+                    
+                    const mouseDownHandler = function(e) {
+                        // Evitar que el click se propague e interfiera con otras funcionalidades (Sortable)
+                        e.stopPropagation(); 
+                        
+                        x = e.clientX;
+                        const styles = window.getComputedStyle(col);
+                        w = parseInt(styles.width, 10);
+                        
+                        document.addEventListener('mousemove', mouseMoveHandler);
+                        document.addEventListener('mouseup', mouseUpHandler);
+                        
+                        resizer.classList.add('resizing');
+                    };
+                    
+                    const mouseMoveHandler = function(e) {
+                        const dx = e.clientX - x;
+                        const newWidth = Math.max(30, w + dx); // Ancho mínimo 30px
+                        col.style.width = `${newWidth}px`;
+                        col.style.minWidth = `${newWidth}px`;
+                        col.style.maxWidth = `${newWidth}px`;
+                    };
+                    
+                    const mouseUpHandler = function() {
+                        resizer.classList.remove('resizing');
+                        document.removeEventListener('mousemove', mouseMoveHandler);
+                        document.removeEventListener('mouseup', mouseUpHandler);
+                        
+                        // Guardar en LocalStorage (Solo Frontend, protege al Backend)
+                        const currentWidth = parseInt(col.style.width, 10);
+                        localStorage.setItem(colKey, currentWidth);
+                    };
+                    
+                    resizer.addEventListener('mousedown', mouseDownHandler);
+                });
+            });
+        });
+    </script>
 </body>
 </html>
