@@ -1081,9 +1081,10 @@ def move_priority(request, id_orden, direction):
     try:
         body = json.loads(request.body)
         maquina_raw = body.get('maquina')
-        current_priority = float(body.get('priority', 0)) 
+        # SANITIZE: replace comma decimal separator before float conversion
+        current_priority = float(str(body.get('priority', 0)).replace(',', '.'))
         neighbor_id = body.get('neighbor_id')
-        neighbor_priority = body.get('neighbor_priority') 
+        neighbor_priority = float(str(body.get('neighbor_priority', 0)).replace(',', '.'))
         active_scenario = get_active_scenario(request)
         
         if neighbor_id is None:
@@ -1134,7 +1135,7 @@ def move_task(request):
              print(f"--- MOVE_TASK RECHAZADO: id_orden={id_orden}, target_machine_raw={target_machine_raw}, new_priority={new_priority} ---")
              return JsonResponse({"error": f"Missing parameters: id_orden={id_orden}, target_machine_id={target_machine_raw}, new_priority={new_priority}"}, status=400)
              
-        new_priority = float(new_priority)
+        new_priority = float(str(new_priority).replace(',', '.'))
         
         # Harmonize machine: look up by id_maquina first (what the tab sends now),
         # then by nombre, then fall back to raw value as-is.
@@ -1208,7 +1209,7 @@ def set_priority(request, id_orden):
              return JsonResponse({'error': 'Missing new_priority or manual_start'}, status=400)
              
         if new_priority is not None:
-            new_priority = float(new_priority)
+            new_priority = float(str(new_priority).replace(',', '.'))
             
         manual_start_dt = None
         if manual_start_str:
@@ -3221,7 +3222,16 @@ def create_scenario(request):
         return JsonResponse({'error': 'Method not allowed'}, status=405)
         
     try:
+        import json
+        
+        # INYECCIÓN DE DEBUGGING: Rastrear payload crudo recibido
+        print("====== DEBUGGING GUARDAR ORDEN MANUAL ======")
+        print("PAYLOAD RECIBIDO RAW:", request.body.decode('utf-8'))
+        
         data = json.loads(request.body)
+        print("PAYLOAD JSON PARSEADO:", data)
+        print("============================================")
+        
         nombre = data.get('nombre')
         descripcion = data.get('descripcion', '')
         es_principal = data.get('es_principal', False)
@@ -3364,9 +3374,11 @@ def create_scenario(request):
                                 'orden_secuencia': orden_secuencia,
                                 'prioridad': prioridad_val
                             }
-                            # Solo pisamos el nivel_manual en la BD si vino un valor válido en el POST
+                            # Solo pisamos el nivel_manual y la prioridad en la BD si vino un valor válido en el POST
                             if nivel_final is not None:
                                 defaults_dict['nivel_manual'] = nivel_final
+                                # SE AGREGA: Actualizar también 'prioridad' basándose en el payload de guardado manual
+                                defaults_dict['prioridad'] = float(str(nivel_final).replace(',', '.'))
                             if cantidad_producida_manual is not None:
                                 defaults_dict['cantidad_producida_manual'] = cantidad_producida_manual
                             if tiempo_manual is not None:
@@ -3492,9 +3504,11 @@ def create_scenario(request):
                             defaults_dict = {
                                 'orden_secuencia': orden_secuencia
                             }
-                            # Solo pisamos el nivel_manual en la BD si vino un valor válido en el POST
+                            # Solo pisamos el nivel_manual y la prioridad en la BD si vino un valor válido en el POST
                             if nivel_final is not None:
                                 defaults_dict['nivel_manual'] = nivel_final
+                                # SE AGREGA: Actualizar también 'prioridad' basándose en el payload de guardado manual
+                                defaults_dict['prioridad'] = float(str(nivel_final).replace(',', '.'))
                             if cantidad_producida_manual is not None:
                                 defaults_dict['cantidad_producida_manual'] = cantidad_producida_manual
                             if tiempo_manual is not None:
@@ -4313,6 +4327,19 @@ def api_confirm_selected_tasks(request):
                 active_scenario.proyectos = ",".join(p_list)
                 active_scenario.save(using='default')
                 print(f"DEBUG SELECTOR: Proyecto {project_code} registrado en escenario {active_scenario.id}")
+                
+            # PROTECCIÓN DE ESTADO: Asignar max_prioridad + 1 solo si es un proyecto nuevo
+            from django.db.models import Max
+            from .models import ProyectoPrioridad
+            max_prio_proj = ProyectoPrioridad.objects.using('default').filter(
+                scenario=active_scenario
+            ).aggregate(Max('prioridad'))['prioridad__max'] or 0
+            
+            ProyectoPrioridad.objects.using('default').get_or_create(
+                proyecto=project_code,
+                scenario=active_scenario,
+                defaults={'prioridad': max_prio_proj + 1}
+            )
 
         # -- PASO 2: Obtener máquinas del ERP para los id_ordens --
         from django.db import connections
@@ -4343,13 +4370,19 @@ def api_confirm_selected_tasks(request):
                     defaults={'proyecto_code': project_code}
                 )
 
-                PrioridadManual.objects.using('default').update_or_create(
+                from django.db.models import Max
+                max_art_prio = PrioridadManual.objects.using('default').filter(
+                    scenario=active_scenario, maquina=maquina
+                ).aggregate(Max('prioridad'))['prioridad__max'] or 0.0
+
+                # PROTECCIÓN DE ESTADO: Usar get_or_create para no pisar prioridades manuales existentes
+                PrioridadManual.objects.using('default').get_or_create(
                     id_orden=oid,
                     scenario=active_scenario,
                     maquina=maquina,
                     defaults={
                         'nivel_manual': 1,
-                        'prioridad': 1.0,
+                        'prioridad': max_art_prio + 100.0,
                         'orden_secuencia': 0,
                     }
                 )
@@ -4392,6 +4425,8 @@ def api_confirm_selected_tasks(request):
                     for oid_str in ops:
                         try:
                             maquina = op_maquina_map.get(oid_str, 'SIN ASIGNAR')
+                            
+                            # PROTECCIÓN DE ESTADO: Usar update_or_create para permitir re-ordenamiento manual
                             PrioridadManual.objects.using('default').update_or_create(
                                 id_orden=oid_str,
                                 scenario=active_scenario,

@@ -1037,9 +1037,10 @@ def move_priority(request, id_orden, direction):
     try:
         body = json.loads(request.body)
         maquina_raw = body.get('maquina')
-        current_priority = float(body.get('priority', 0)) 
+        # SANITIZE: replace comma decimal separator before float conversion
+        current_priority = float(str(body.get('priority', 0)).replace(',', '.'))
         neighbor_id = body.get('neighbor_id')
-        neighbor_priority = body.get('neighbor_priority') 
+        neighbor_priority = float(str(body.get('neighbor_priority', 0)).replace(',', '.'))
         active_scenario = get_active_scenario(request)
         
         if neighbor_id is None:
@@ -1090,7 +1091,7 @@ def move_task(request):
              print(f"--- MOVE_TASK RECHAZADO: id_orden={id_orden}, target_machine_raw={target_machine_raw}, new_priority={new_priority} ---")
              return JsonResponse({"error": f"Missing parameters: id_orden={id_orden}, target_machine_id={target_machine_raw}, new_priority={new_priority}"}, status=400)
              
-        new_priority = float(new_priority)
+        new_priority = float(str(new_priority).replace(',', '.'))
         
         # Harmonize machine: look up by id_maquina first (what the tab sends now),
         # then by nombre, then fall back to raw value as-is.
@@ -1162,7 +1163,7 @@ def set_priority(request, id_orden):
              return JsonResponse({'error': 'Missing new_priority or manual_start'}, status=400)
              
         if new_priority is not None:
-            new_priority = float(new_priority)
+            new_priority = float(str(new_priority).replace(',', '.'))
             
         manual_start_dt = None
         if manual_start_str:
@@ -3105,6 +3106,18 @@ def export_planificacion_excel(request):
 def create_scenario(request):
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
+
+    # ── SANITIZACIÓN GLOBAL ──────────────────────────────────────────────────
+    def sanitize_number(val, default=0.0):
+        """Convierte cualquier número llegado del frontend a float, manejando
+        comas decimales localizadas (ej. '2000,0' → 2000.0) y None/vacíos."""
+        if val is None or str(val).strip() == '':
+            return default
+        try:
+            return float(str(val).replace(',', '.'))
+        except (ValueError, TypeError):
+            return default
+    # ────────────────────────────────────────────────────────────────────────
         
     try:
         data = json.loads(request.body)
@@ -3204,34 +3217,23 @@ def create_scenario(request):
                     for seq in secuencias:
                         id_orden = seq.get('id_orden')
                         maquina = seq.get('maquina')
-                        # Extracción segura de nivel de planificación
-                        orden_secuencia = seq.get('orden_secuencia', 0)
+                        if not id_orden or not maquina:
+                            continue
+                        orden_secuencia = sanitize_number(seq.get('orden_secuencia', 0))
                         raw_nivel = seq.get('nivel_planificacion')
                         if raw_nivel is None:
                             raw_nivel = seq.get('prioridad_manual')
-                            
-                        # Si encontramos un valor para el nivel en el POST, lo parseamos
-                        nivel_final = None
-                        if raw_nivel is not None and str(raw_nivel).strip() != '':
-                            try:
-                                nivel_final = int(raw_nivel)
-                            except ValueError:
-                                pass
-                        
-                        if id_orden and maquina:
-                            defaults_dict = {
-                                'orden_secuencia': orden_secuencia
-                            }
-                            # Solo pisamos el nivel_manual en la BD si vino un valor válido en el POST
-                            if nivel_final is not None:
-                                defaults_dict['nivel_manual'] = nivel_final
-                                
-                            PrioridadManual.objects.using('default').update_or_create(
-                                scenario=scenario,
-                                id_orden=id_orden,
-                                maquina=maquina,
-                                defaults=defaults_dict
-                            )
+                        nivel_final = sanitize_number(raw_nivel) if (raw_nivel is not None and str(raw_nivel).strip() != '') else None
+                        defaults_dict = {'orden_secuencia': orden_secuencia}
+                        if nivel_final is not None:
+                            defaults_dict['nivel_manual'] = nivel_final
+                            defaults_dict['prioridad'] = nivel_final
+                        PrioridadManual.objects.using('default').update_or_create(
+                            scenario=scenario,
+                            id_orden=id_orden,
+                            maquina=maquina,
+                            defaults=defaults_dict
+                        )
 
                 return JsonResponse({'status': 'ok', 'scenario': {'id': scenario.id, 'nombre': scenario.nombre}})
                 
@@ -3307,34 +3309,23 @@ def create_scenario(request):
                     for seq in secuencias:
                         id_orden = seq.get('id_orden')
                         maquina = seq.get('maquina')
-                        # Extracción segura de nivel de planificación
-                        orden_secuencia = seq.get('orden_secuencia', 0)
+                        if not id_orden or not maquina:
+                            continue
+                        orden_secuencia = sanitize_number(seq.get('orden_secuencia', 0))
                         raw_nivel = seq.get('nivel_planificacion')
                         if raw_nivel is None:
                             raw_nivel = seq.get('prioridad_manual')
-                            
-                        # Si encontramos un valor para el nivel en el POST, lo parseamos
-                        nivel_final = None
-                        if raw_nivel is not None and str(raw_nivel).strip() != '':
-                            try:
-                                nivel_final = int(raw_nivel)
-                            except ValueError:
-                                pass
-                        
-                        if id_orden and maquina:
-                            defaults_dict = {
-                                'orden_secuencia': orden_secuencia
-                            }
-                            # Solo pisamos el nivel_manual en la BD si vino un valor válido en el POST
-                            if nivel_final is not None:
-                                defaults_dict['nivel_manual'] = nivel_final
-                                
-                            PrioridadManual.objects.using('default').update_or_create(
-                                scenario=new_scenario,
-                                id_orden=id_orden,
-                                maquina=maquina,
-                                defaults=defaults_dict
-                            )
+                        nivel_final = sanitize_number(raw_nivel) if (raw_nivel is not None and str(raw_nivel).strip() != '') else None
+                        defaults_dict = {'orden_secuencia': orden_secuencia}
+                        if nivel_final is not None:
+                            defaults_dict['nivel_manual'] = nivel_final
+                            defaults_dict['prioridad'] = nivel_final
+                        PrioridadManual.objects.using('default').update_or_create(
+                            scenario=new_scenario,
+                            id_orden=id_orden,
+                            maquina=maquina,
+                            defaults=defaults_dict
+                        )
 
                 return JsonResponse({
                     'status': 'ok',
@@ -4362,11 +4353,13 @@ def api_confirm_selected_tasks(request):
                             maquina = op_machines.get(oid_str, 'SIN ASIGNAR')
                             next_seq = get_next_seq(maquina)
                             print(f"DEBUG BACKEND POST - Articulo: {macro_pk}, OP: {oid_str}, Prioridad Recibida: {prio_val}, Seq: {next_seq}")
+                            
+                            # PROTECCIÓN DE ESTADO: Usar update_or_create para permitir re-ordenamiento manual
                             PrioridadManual.objects.using('default').update_or_create(
                                 id_orden=oid_str,
                                 scenario=active_scenario,
                                 maquina=maquina,
-                                defaults={'prioridad': int(prio_val), 'orden_secuencia': next_seq}
+                                defaults={'prioridad': int(prio_val), 'nivel_manual': int(prio_val), 'orden_secuencia': next_seq}
                             )
 
             # --- SYNC: Actualizamos el campo 'proyectos' del escenario para persistencia ---
@@ -4377,6 +4370,19 @@ def api_confirm_selected_tasks(request):
                     p_list.append(project_code)
                     active_scenario.proyectos = ",".join(p_list)
                     active_scenario.save(using='default')
+                
+                # PROTECCIÓN DE ESTADO: Asignar max_prioridad + 1 solo si es un proyecto nuevo
+                from django.db.models import Max
+                from .models import ProyectoPrioridad
+                max_prio_proj = ProyectoPrioridad.objects.using('default').filter(
+                    scenario=active_scenario
+                ).aggregate(Max('prioridad'))['prioridad__max'] or 0
+                
+                ProyectoPrioridad.objects.using('default').get_or_create(
+                    proyecto=project_code,
+                    scenario=active_scenario,
+                    defaults={'prioridad': max_prio_proj + 1}
+                )
                 
         return JsonResponse({'status': 'ok', 'count': len(id_ordens), 'scenario_id': str(active_scenario.id)})
     except Exception as e:

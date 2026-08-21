@@ -13,6 +13,11 @@
     <link rel="stylesheet" href="{% static 'css/styles.css' %}?v=5">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
+        /* ── Drag & Drop: bloqueo absoluto de seleccion de texto ── */
+        .sortable-ghost, .sortable-chosen, .sortable-drag { cursor: grabbing !important; }
+        tbody tr { user-select: none !important; -webkit-user-select: none !important; cursor: grab; }
+        tbody tr td[contenteditable="true"] { cursor: text; user-select: text !important; -webkit-user-select: text !important; }
+        /* ──────────────────────────────────────────────────── */
         /* Modern SweetAlert2 Custom Styles */
         .swal2-popup.premium-swal {
             background-color: var(--card-bg) !important;
@@ -583,10 +588,10 @@
                                  data-unit-time="{{ item.Tiempo|unlocalize }}"
                                  data-total-qty="{{ item.Cantidad|unlocalize }}"
                                 data-maquina="{{ item.MAQUINA_ID }}" 
-                                data-priority="{{ item.OrdenVisual }}" 
+                                data-priority="{{ item.OrdenVisual|unlocalize }}" 
                                 data-proyecto="{{ item.ProyectoCode|default:'' }}"
                                 class="{% if item.is_hidden %}hidden-row{% endif %}"
-                                style="cursor: grab;">
+                                style="cursor: grab; user-select: none;">
                                 <td class="text-center actions-column" style="white-space: nowrap;">
                                     <!-- Audit Mode Switchable Buttons -->
                                     <button class="btn btn-sm btn-outline-success btn-reactivate btn-audit-action d-inline-flex align-items-center justify-content-center" style="width: 28px; height: 28px; padding: 0;" title="Recuperar OP">
@@ -1674,7 +1679,8 @@
                 const row = btn.closest('tr');
                 const idOrden = row.dataset.id;
                 const maquina = row.dataset.maquina;
-                const priority = row.dataset.priority;
+                // SANITIZE: parse as number to remove any locale comma formatting
+                const priority = parseFloat(String(row.dataset.priority).replace(',', '.')) || 0;
                 
                 let neighbor = null;
                 if (direction === 'up') {
@@ -1689,7 +1695,7 @@
                 }
 
                 const neighborId = neighbor.dataset.id;
-                const neighborPriority = neighbor.dataset.priority;
+                const neighborPriority = parseFloat(String(neighbor.dataset.priority).replace(',', '.')) || 0;
 
                 // Call API
                 try {
@@ -1711,8 +1717,8 @@
                     if (response.ok) {
                         // Optimistic Update (No Reload)
                         // 1. Swap Priorities in Dataset
-                        row.dataset.priority = neighborPriority;
-                        neighbor.dataset.priority = priority;
+                        row.dataset.priority = neighborPriority.toString();
+                        neighbor.dataset.priority = priority.toString();
 
                         // 2. Swap DOM Elements
                         if (direction === 'up') {
@@ -1984,9 +1990,13 @@
             tobodies.forEach(tbody => {
                 new Sortable(tbody, {
                     animation: 150,
-                    handle: 'tr', // Drag by whole row
-                    ghostClass: 'table-active', // Class for the placeholder
-                    forceFallback: true, // Crucial: Ensures we can get consistent coordinates
+                    forceFallback: true,
+                    fallbackOnBody: true,
+                    preventOnFilter: false,
+                    delay: 100,
+                    delayOnTouchOnly: true,
+                    ghostClass: 'sortable-ghost',
+                    chosenClass: 'sortable-chosen',
                     onEnd: async function (evt) {
                         const itemEl = evt.item; 
                         const idOrden = itemEl.dataset.id;
