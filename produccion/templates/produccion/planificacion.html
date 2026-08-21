@@ -2815,7 +2815,8 @@
                         const projects = selectedOption.dataset.proyectos || '';
                         
                         loadScenarioModal.hide();
-                        window.location.href = `?scenario_id=${selectedId}&proyectos=${encodeURIComponent(projects)}`;
+                        const cacheBuster = new Date().getTime();
+                        window.location.href = `/planificacion/?scenario_id=${selectedId}&proyectos=${encodeURIComponent(projects)}&t=${cacheBuster}`;
                     });
                 }
             }
