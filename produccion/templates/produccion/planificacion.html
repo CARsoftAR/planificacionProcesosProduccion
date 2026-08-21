@@ -2614,7 +2614,8 @@
                                 let cantidadProducida = cantidadCell ? parseFloat(cantidadCell.textContent.replace(',', '.')) : null;
                                 
                                 let tiempoCell = row.querySelector('.editable-time');
-                                let tiempoManual = tiempoCell ? parseFloat(tiempoCell.textContent.replace(',', '.')) : null;
+                                // Leemos el innerText actual (el valor visual que acaba de recalcularse)
+                                let tiempoManual = tiempoCell ? parseFloat(tiempoCell.innerText.trim().replace(/\./g, '').replace(',', '.')) : null;
                                 
                                 console.log(`[GUARDAR] OP ${idOrden} | rawTexto='${rawTexto}' | textoNivel='${textoNivel}' | prioridadManual=${prioridadManual} | cant=${cantidadProducida} | tiempo=${tiempoManual}`);
                                 

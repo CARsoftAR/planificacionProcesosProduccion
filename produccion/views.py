@@ -3361,8 +3361,16 @@ def create_scenario(request):
                                 pass
                         
                         # Extraer cantidad_producida y tiempo_proceso del payload
+                        def sanitize_number(val):
+                            if val is None or str(val).strip() == '': return None
+                            try:
+                                return float(str(val).replace('.', '').replace(',', '.'))
+                            except ValueError:
+                                return None
+
                         cantidad_producida_manual = seq.get('cantidad_producida_manual')
-                        tiempo_manual = seq.get('tiempo_manual')
+                        raw_tiempo_proceso = seq.get('tiempo_manual')
+                        tiempo_manual = sanitize_number(raw_tiempo_proceso)
                         
                         print(f"[GUARDANDO] OP: {id_orden} | Maquina: {maquina} | plan_mode: {plan_mode_payload} | raw_nivel: {repr(raw_nivel)} | nivel_final: {nivel_final} | seq_keys: {list(seq.keys())}")
                         
@@ -3497,8 +3505,16 @@ def create_scenario(request):
                                 pass
                         
                         # Extraer cantidad_producida y tiempo_proceso del payload
+                        def sanitize_number(val):
+                            if val is None or str(val).strip() == '': return None
+                            try:
+                                return float(str(val).replace('.', '').replace(',', '.'))
+                            except ValueError:
+                                return None
+
                         cantidad_producida_manual = seq.get('cantidad_producida_manual')
-                        tiempo_manual = seq.get('tiempo_manual')
+                        raw_tiempo_proceso = seq.get('tiempo_manual')
+                        tiempo_manual = sanitize_number(raw_tiempo_proceso)
                         
                         if id_orden and maquina:
                             defaults_dict = {
