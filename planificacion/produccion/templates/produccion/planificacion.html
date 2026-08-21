@@ -2371,7 +2371,7 @@
                             });
                         }
 
-                        const activeScenarioId = '{{ active_scenario_id|default:'' }}';
+                        const activeScenarioId = '{{ active_scenario_id|default:"" }}';
                         const activeScenarioName = '{{ active_scenario.nombre|escapejs }}';
                         const proyectosInput = document.getElementById('proyectos');
                         const proyectosList = proyectosInput ? proyectosInput.value.trim() : '';

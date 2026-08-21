@@ -1,784 +1,4 @@
-{% load static %}
-{% load l10n %}
-{% load produccion_extras %}
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Planificación de Procesos</title>
-    <!-- Use CDN for Bootstrap 5 for easy tabs and styling -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="{% static 'css/styles.css' %}?v=5">
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-    <style>
-        /* ── Drag & Drop: bloqueo absoluto de seleccion de texto ── */
-        .sortable-ghost, .sortable-chosen, .sortable-drag { cursor: grabbing !important; }
-        tbody tr { user-select: none !important; -webkit-user-select: none !important; cursor: grab; }
-        tbody tr td[contenteditable="true"] { cursor: text; user-select: text !important; -webkit-user-select: text !important; }
-        /* ──────────────────────────────────────────────────── */
-        /* Modern SweetAlert2 Custom Styles */
-        .swal2-popup.premium-swal {
-            background-color: var(--card-bg) !important;
-            border-radius: 20px;
-            padding: 2.5rem;
-            font-family: 'Inter', sans-serif;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
-            border: 1px solid var(--border-color);
-        }
-        .swal2-title {
-            font-weight: 800;
-            color: var(--text-main) !important;
-            font-size: 1.6rem;
-            margin-bottom: 1rem;
-        }
-        .swal2-html-container {
-            color: var(--text-muted) !important;
-            font-size: 1.05rem;
-            line-height: 1.6;
-        }
-        .swal2-confirm.premium-confirm {
-            border-radius: 50px !important;
-            padding: 12px 35px !important;
-            font-weight: 600 !important;
-            font-size: 0.95rem !important;
-            box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3) !important;
-        }
-        .swal2-cancel.premium-cancel {
-            border-radius: 50px !important;
-            padding: 12px 35px !important;
-            font-weight: 600 !important;
-            font-size: 0.95rem !important;
-            background: var(--header-bg) !important;
-            color: var(--text-muted) !important;
-            border: 1px solid var(--border-color) !important;
-        }
-        .swal2-icon {
-            border: none !important;
-            width: 5em !important;
-            height: 5em !important;
-            margin: 1.25em auto 1.875em !important;
-            border-radius: 50% !important;
-            background: var(--background-color) !important;
-            transition: all 0.3s ease;
-            box-sizing: content-box;
-        }
-        /* Soften the inner marks */
-        .swal2-icon .swal2-icon-content {
-            font-size: 2rem !important;
-        }
-        .swal2-x-mark, .swal2-success-fix, .swal2-success-ring {
-            /* Scale down SWAL internal SVG/elements slightly for a cleaner look */
-            transform: scale(0.75);
-        }
-        .swal2-icon.swal2-warning {
-            background: rgba(245, 158, 11, 0.1) !important;
-            color: #f59e0b !important;
-        }
-        .swal2-icon.swal2-error {
-            background: rgba(239, 68, 68, 0.1) !important;
-            color: #ef4444 !important;
-        }
-        .swal2-icon.swal2-success {
-            background: rgba(16, 185, 129, 0.1) !important;
-            color: #10b981 !important;
-        }
-        .swal2-icon.swal2-question {
-            background: rgba(59, 130, 246, 0.1) !important;
-            color: #3b82f6 !important;
-        }
-        .swal2-icon.swal2-info {
-            background: rgba(59, 130, 246, 0.1) !important;
-            color: #3b82f6 !important;
-        }
 
-        /* Audit Mode Styles */
-        .hidden-row {
-            opacity: 0.5;
-            background-color: #f8fafc !important;
-        }
-        .hidden-row:hover {
-            opacity: 0.8;
-        }
-        .btn-audit-active {
-            background-color: #f59e0b !important; /* Orange */
-            color: white !important;
-            border-color: #d97706 !important;
-            box-shadow: 0 0 12px rgba(245, 158, 11, 0.4);
-        }
-
-        /* Toggle buttons based on row state */
-        .hidden-row .btn-normal-action { display: none !important; }
-        tr:not(.hidden-row) .btn-audit-action { display: none !important; }
-
-        .dropdown-item-premium.active {
-            background-color: #eff6ff !important;
-            color: #2563eb !important;
-            font-weight: 700;
-        }
-
-        /* Machine Selection Modal Styling */
-        .btn-select-machine-modal {
-            transition: all 0.2s ease;
-            border: 1px solid #e2e8f0;
-            background: #f8fafc;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            min-height: 80px;
-        }
-        .btn-select-machine-modal:hover {
-            border-color: #3b82f6 !important;
-            background: #eff6ff !important;
-            color: #2563eb !important;
-            transform: translateY(-3px);
-            box-shadow: 0 10px 15px -3px rgba(59, 130, 246, 0.2) !important;
-        }
-        .machine-item.hidden {
-            display: none !important;
-        }
-        .open-machine-modal {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            width: 100%;
-            height: 100%;
-            padding: 8px 12px;
-            text-decoration: none !important;
-            color: #1e293b;
-            font-weight: 700;
-            font-size: 0.78rem;
-            transition: all 0.2s ease;
-            background: transparent;
-            border: none;
-        }
-        .open-machine-modal:hover {
-            background-color: #f1f5f9;
-            color: #2563eb;
-        }
-
-
-        /* 🛠️ NAVIGATION SCROLLBAR REFINEMENT */
-        .nav-tabs {
-            padding-bottom: 12px; /* Separación para que el scroll no pise las etiquetas */
-            overflow-x: auto;
-            flex-wrap: nowrap;
-        }
-        .nav-tabs::-webkit-scrollbar {
-            height: 20px;
-        }
-        .nav-tabs::-webkit-scrollbar-track { 
-            background: #edf2f7;
-            border-radius: 10px;
-        }
-        .nav-tabs::-webkit-scrollbar-thumb {
-            background-color: #2b6cb0;
-            border-radius: 10px;
-        }
-        .nav-tabs::-webkit-scrollbar-thumb:hover { 
-            background-color: #1a365d; 
-        }
-
-        /* 🛠️ TABS VISUAL IMPROVEMENTS */
-        /* Pestañas con carga (Inactivas) */
-        .nav-tabs .nav-link.con-carga {
-            background-color: #f0f7ff !important; /* Azul pastel muy sutil */
-            color: #1e40af !important; /* Azul oscuro y definido */
-            font-weight: 700 !important;
-            border-color: #cbd5e0 !important;
-        }
-        .nav-tabs .nav-link.con-carga .badge {
-            background-color: #2563eb !important; /* Azul vibrante */
-            color: #ffffff !important;
-        }
-
-        /* Pestañas seleccionadas (Active) - Sobrescribe con carga */
-        .nav-tabs .nav-link.active {
-            background-color: #ffffff !important;
-            border-top: 4px solid #1d4ed8 !important; /* Borde superior azul intenso */
-            border-left: 1px solid #dee2e6 !important;
-            border-right: 1px solid #dee2e6 !important;
-            border-bottom: 1px solid transparent !important;
-            color: #0f172a !important;
-            font-weight: 800 !important;
-            box-shadow: 0 -4px 12px rgba(59, 130, 246, 0.05);
-        }
-        .nav-tabs .nav-link.active.con-carga .badge {
-            background-color: #1d4ed8 !important; /* Azul más oscuro e intenso */
-            color: #ffffff !important;
-        }
-
-        /* Pestañas vacías (0 procesos) - Estética actual/por defecto */
-        .nav-tabs .nav-link:not(.con-carga):not(.active) {
-            background-color: #f8fafc !important; /* Grisáceo muy tenue */
-            color: #64748b !important; /* Gris apagado */
-            font-weight: normal !important;
-            border-color: #e2e8f0 !important;
-        }
-        .nav-tabs .nav-link:not(.con-carga) .badge {
-            background-color: #94a3b8 !important; /* Gris apagado constante, incluso si está activa */
-            color: #ffffff !important;
-        }
-        .nav-tabs .nav-link.active:not(.con-carga) .badge {
-            background-color: #94a3b8 !important; /* Forzar gris neutro cuando está seleccionada pero vacía */
-            color: #ffffff !important;
-        }
-
-        /* 💎 PREMIUM MODAL SCALING (Forzado Global 1600px) */
-        #selectorProduccionModal .modal-dialog {
-            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-            max-width: 1600px !important;
-            width: 95% !important;
-            margin-left: auto;
-            margin-right: auto;
-        }
-
-        /* Optimización de Tablas: No-Wrap y Espaciado Contenido (Global para Selector) */
-        #selectorProduccionModal table th, 
-        #selectorProduccionModal table td {
-            white-space: nowrap !important;
-            padding-left: 0.8rem !important;
-            padding-right: 0.8rem !important;
-        }
-
-        /* Inputs de Prioridad */
-        .article-priority-input {
-            width: 80px;
-            text-align: center;
-            font-weight: bold;
-            color: #0d6efd;
-            border-radius: 50px;
-            border: 1px solid #e2e8f0;
-            padding: 0.25rem 0.5rem;
-            transition: all 0.2s ease;
-            margin: 0 auto;
-        }
-        .article-priority-input:focus {
-            box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.15);
-            border-color: #3b82f6;
-            outline: none;
-        }
-    </style>
-</head>
-<body>
-    {% include "produccion/global_navbar.html" %}
-
-    <div class="container-fluid">
-
-        <!-- Toolbar de Planificación (Tabla) -->
-        <div class="px-4 py-2 mb-4 border rounded-4 bg-white shadow-sm d-flex align-items-center justify-content-between">
-            <form method="GET" id="plan-filter-form" class="d-flex align-items-center gap-3 flex-grow-1">
-                <div class="d-flex align-items-center gap-2">
-                    <label for="proyectos" class="smaller fw-bold text-muted mb-0"><i class="fas fa-search"></i> Proyectos:</label>
-                    <input type="text" name="proyectos" id="proyectos" class="form-control form-control-sm rounded-pill" style="width: 250px;" value="" placeholder="Ej: 26-027">
-                    <button type="submit" class="btn btn-sm btn-primary rounded-pill px-3">Filtrar</button>
-                    {% if request.GET.proyectos %}
-                    <a href="{% url 'planificacion_view' %}?plan_mode={{ request.GET.plan_mode|default:'manual' }}" class="btn btn-sm btn-outline-secondary rounded-pill px-2" title="Limpiar Filtros">
-                        <i class="fas fa-times"></i>
-                    </a>
-                    {% endif %}
-                </div>
-
-                <div class="vr bg-secondary opacity-25" style="height: 25px;"></div>
-
-                <!-- Botones de modo de ordenamiento -->
-                <div class="d-flex align-items-center gap-2">
-                    <span class="smaller fw-bold text-muted mb-0"><i class="fas fa-sort-amount-down"></i> Modo:</span>
-                    
-                    <!-- Botón Orden Manual -->
-                    <a href="?scenario_id={{ active_scenario.id }}&plan_mode=manual" 
-                    id="btnModoManual" 
-                    data-mode="manual"
-                    class="btn btn-sm btn-outline-secondary rounded-pill px-3 fw-bold d-inline-flex align-items-center gap-1">
-                        <i class="fas fa-hand-pointer"></i> Orden Manual
-                    </a>
-                    
-                    <!-- Botón Optimización Automática -->
-                    <!-- <a href="?scenario_id={{ active_scenario.id }}&plan_mode=automatico" 
-                    id="btnModoAutomatico" 
-                    data-mode="automatico"
-                    class="btn btn-sm btn-outline-secondary rounded-pill px-3 fw-bold d-inline-flex align-items-center gap-1">
-                        <i class="fas fa-magic"></i> Optimización Automática
-                    </a> -->
-                    
-                    <!-- Indicador de estado dinámico -->
-                    <span id="modoIndicador" class="badge bg-secondary rounded-pill px-3 py-1">
-                        Modo: <span id="modoIndicadorTexto">Manual</span>
-                    </span>
-                </div>
-
-                <div class="vr bg-secondary opacity-25" style="height: 25px;"></div>
-
-                <!-- <div class="d-flex align-items-center gap-2">
-                    <label for="plan_mode" class="smaller fw-bold text-muted mb-0"><i class="fas fa-cog"></i> Modo:</label>
-                    <select name="plan_mode" id="plan-mode-selector" class="form-select form-select-sm rounded-pill border-secondary border-opacity-25" style="width: 160px; font-size: 0.8rem;">
-                        <option value="manual" {% if request.GET.plan_mode != 'original' %}selected{% endif %}>Optimizado (Manual)</option>
-                        <option value="original" {% if request.GET.plan_mode == 'original' %}selected{% endif %}>Original (ERP)</option>
-                    </select>
-                </div> -->
-
-                <input type="hidden" name="scenario_id" id="active-scenario-id-input" value="{{ active_scenario_id|default:'' }}">
-                <div class="d-flex align-items-center gap-3 ms-2">
-                    <!-- <div class="d-flex align-items-center gap-2">
-                        <span class="smaller fw-bold text-muted mb-0"><i class="fas fa-file-alt"></i> Plan Activo:</span>
-                        <span class="fw-bold text-dark bg-light px-3 py-1 rounded-pill border border-secondary border-opacity-25" style="font-size: 0.8rem;">
-                            {{ active_scenario.nombre|default:"Nuevo Plan" }}
-                        </span>
-                    </div> -->
-
-                    <div class="d-flex gap-1">
-                        <!-- Botón Mostrar Ocultos (Audit Mode) -->
-                        <button type="button" id="btnToggleAudit" class="btn btn-sm {% if request.GET.audit_mode == '1' %}btn-warning{% else %}btn-outline-warning{% endif %} rounded-pill px-3 fw-bold d-inline-flex align-items-center gap-1" title="Mostrar Procesos Ocultos/Borrados">
-                            <i class="fas {% if request.GET.audit_mode == '1' %}fa-eye-slash{% else %}fa-eye{% endif %}"></i>
-                            {% if request.GET.audit_mode == '1' %}Ocultar Restaurables{% else %}Mostrar Ocultos{% endif %}
-                        </button>
-                        <div class="vr bg-secondary opacity-25 mx-1" style="height: 28px;"></div>
-                        <!-- Botón Proyectos Activos -->
-                        <button type="button" id="btnActiveProjectsToggle" class="btn btn-sm btn-outline-danger rounded-pill px-3 fw-bold d-inline-flex align-items-center gap-1" data-bs-toggle="offcanvas" data-bs-target="#activeProjectsOffcanvas" aria-controls="activeProjectsOffcanvas" title="Ver proyectos actualmente en plan">
-                            <i class="fas fa-project-diagram"></i> Proyectos: <span id="activeProjectsCountBadge" class="badge bg-primary ms-1">0</span>
-                        </button>
-                        <!-- Botón NUEVO -->
-                        <button type="button" id="btnNewScenario" class="btn btn-sm btn-outline-primary rounded-pill px-3 fw-bold d-inline-flex align-items-center gap-1" title="Empezar un escenario en blanco (Nuevo Plan)">
-                            <i class="fas fa-file"></i> NUEVO
-                        </button>
-                        <!-- Botón GUARDAR -->
-                        <button type="button" id="btnSaveScenario" class="btn btn-sm btn-outline-success rounded-pill px-3 fw-bold d-inline-flex align-items-center gap-1" title="Guardar escenario actual">
-                            <i class="fas fa-save"></i> GUARDAR
-                        </button>
-                        <!-- Botón CARGAR -->
-                        <button type="button" id="btnLoadScenario" class="btn btn-sm btn-outline-info rounded-pill px-3 fw-bold d-inline-flex align-items-center gap-1" title="Cargar escenario guardado">
-                            <i class="fas fa-folder-open"></i> CARGAR
-                        </button>
-                        <!-- Botón BORRAR -->
-                        <button type="button" id="btnDeleteScenario" class="btn btn-sm btn-outline-danger rounded-pill px-3 fw-bold d-inline-flex align-items-center gap-1" title="Borrar planificación guardada para este proyecto">
-                            <i class="fas fa-trash-alt"></i> BORRAR
-                        </button>
-                    </div>
-                </div>
-
-                <!-- <div class="ms-auto d-flex align-items-center gap-2">
-                    <button type="button" id="btnToggleAudit" class="btn btn-sm btn-outline-secondary rounded-pill px-3 fw-bold {% if audit_mode %}btn-audit-active{% endif %}" title="Ver u ocultar procesos eliminados visualmente">
-                        <i class="fas {% if audit_mode %}fa-eye-slash{% else %}fa-eye{% endif %} me-1"></i> 
-                        {% if audit_mode %}Ocultar Modificados{% else %}Ver Ocultos{% endif %}
-                    </button>
-                    <button type="button" id="btnResetToERP" class="btn btn-sm btn-warning rounded-pill px-3 fw-bold shadow-sm" style="background: #fbbf24; border: none; color: #78350f;" title="Restablecer al Plan Original del ERP">
-                        <i class="fas fa-history me-1"></i> Reset ERP
-                    </button>
-                    <button type="button" id="btnClearPlanning" class="btn btn-sm btn-danger rounded-pill px-3 fw-bold shadow-sm" style="background: #dc2626; border: none;" title="Vaciar todas las tablas de planificación">
-                        <i class="fas fa-trash-alt me-1"></i> Vaciar Tablas
-                    </button>
-                </div> -->
-
-                <input type="hidden" name="run" value="1">
-            </form>
-        </div>
-
-        <!-- Modal Guardar Escenario -->
-        <div class="modal fade" id="saveScenarioModal" tabindex="-1" aria-labelledby="saveScenarioModalLabel" aria-hidden="true">
-            <div class="modal-dialog modal-dialog-centered">
-                <div class="modal-content border-0 shadow" style="border-radius: 12px; overflow: hidden;">
-                    <div class="modal-header bg-success text-white border-0 py-3 px-4">
-                        <h5 class="modal-title fw-bold" id="saveScenarioModalLabel">
-                            <i class="fas fa-save me-2"></i>Guardar Escenario
-                        </h5>
-                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-                    </div>
-                    <div class="modal-body p-4 bg-light">
-                        <div class="mb-3">
-                            <label for="newScenarioName" class="form-label fw-bold text-muted small uppercase">Nombre del plan:</label>
-                            <input type="text" class="form-control rounded-pill border-secondary border-opacity-25" id="newScenarioName" placeholder="Ej: Planificación de Mayo" style="padding: 0.6rem 1.2rem;" value="{% if active_scenario and active_scenario.nombre != 'Nuevo Plan' %}{{ active_scenario.nombre }}{% endif %}">
-                        </div>
-                    </div>
-                    <div class="modal-footer border-0 bg-white px-4 pb-4 pt-0">
-                        <button type="button" class="btn btn-light rounded-pill px-4 fw-bold" data-bs-dismiss="modal">Cancelar</button>
-                        <button type="button" class="btn btn-success rounded-pill px-4 fw-bold shadow-sm" id="btnConfirmSave">
-                            <i class="fas fa-check me-2"></i>Confirmar Guardado
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Modal Cargar Escenario -->
-        <div class="modal fade" id="loadScenarioModal" tabindex="-1" aria-labelledby="loadScenarioModalLabel" aria-hidden="true">
-            <div class="modal-dialog modal-dialog-centered">
-                <div class="modal-content border-0 shadow" style="border-radius: 12px; overflow: hidden;">
-                    <div class="modal-header bg-primary text-white border-0 py-3 px-4">
-                        <h5 class="modal-title fw-bold" id="loadScenarioModalLabel">
-                            <i class="fas fa-folder-open me-2"></i>Cargar Escenario
-                        </h5>
-                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-                    </div>
-                    <div class="modal-body p-4 bg-light">
-                        <div class="mb-3">
-                            <label for="loadScenarioSelect" class="form-label fw-bold text-muted small uppercase">Seleccionar plan guardado:</label>
-                            <select class="form-select rounded-pill border-secondary border-opacity-25" id="loadScenarioSelect" style="padding: 0.6rem 1.2rem;">
-                                <option value="">-- Seleccionar un Plan --</option>
-                                {% for scenario in all_scenarios %}
-                                    <option value="{{ scenario.id }}" data-proyectos="{{ scenario.proyectos|default:'' }}">
-                                        {{ scenario.nombre }}
-                                    </option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                    </div>
-                    <div class="modal-footer border-0 bg-white px-4 pb-4 pt-0">
-                        <button type="button" class="btn btn-light rounded-pill px-4 fw-bold" data-bs-dismiss="modal">Cancelar</button>
-                        <button type="button" class="btn btn-primary rounded-pill px-4 fw-bold shadow-sm" id="btnConfirmLoad">
-                            <i class="fas fa-check me-2"></i>Aceptar
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Modal Borrar Escenarios Guardados -->
-        <div class="modal fade" id="deleteProjectModal" tabindex="-1" aria-labelledby="deleteProjectModalLabel" aria-hidden="true">
-            <div class="modal-dialog modal-dialog-centered">
-                <div class="modal-content border-0 shadow" style="border-radius: 12px; overflow: hidden;">
-                    <div class="modal-header bg-danger text-white border-0 py-3 px-4">
-                        <h5 class="modal-title fw-bold" id="deleteProjectModalLabel">
-                            <i class="fas fa-trash-alt me-2"></i>Borrar Escenarios Guardados
-                        </h5>
-                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-                    </div>
-                    <div class="modal-body p-4 bg-light">
-                        <div class="mb-1">
-                            <label class="form-label fw-bold text-muted small uppercase mb-3"><i class="fas fa-list me-1"></i>Planes/Escenarios guardados en la base de datos:</label>
-                            <div id="deleteProjectListContainer" class="list-group rounded-3 overflow-hidden border shadow-sm" style="max-height: 350px; overflow-y: auto;">
-                                <!-- Dynamically populated list of scenarios -->
-                                <div class="text-center py-4 text-muted">
-                                    <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span> Cargando escenarios...
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="modal-footer border-0 bg-white px-4 pb-4 pt-0">
-                        <button type="button" class="btn btn-light rounded-pill px-4 fw-bold" data-bs-dismiss="modal">Cerrar</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- NEW: Selector de Producción Modal -->
-        <div class="modal fade" id="selectorProduccionModal" tabindex="-1" aria-hidden="true">
-            <div class="modal-dialog modal-dialog-scrollable" id="selectorDialog" style="margin-top: 80px; height: 75vh; max-height: 75vh; width: 95% !important; max-width: 1600px !important;">
-                <div class="modal-content border-0 shadow-lg" style="border-radius: 20px; overflow: hidden; height: 100%;">
-                    <div class="modal-header border-0 bg-primary text-white p-4">
-                        <div class="d-flex align-items-center">
-                            <i class="fas fa-tasks fa-lg me-3"></i>
-                            <div>
-                                <h5 class="modal-title fw-bold m-0" id="selectorTitle">Selector de Producción</h5>
-                                <p class="small opacity-75 m-0" id="selectorSub">Proyecto: -</p>
-                            </div>
-                        </div>
-                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close" onclick="event.stopPropagation();"></button>
-                    </div>
-                    <div class="modal-body p-4 bg-light">
-                        <!-- Level 1: Articles Table -->
-                        <div id="level1-articles">
-                            <h6 class="text-muted fw-bold mb-3 uppercase smaller"><i class="fas fa-layer-group me-1"></i> NIVEL 1: ARTÍCULOS DEL PROYECTO</h6>
-                            <div class="table-responsive rounded-4 bg-white shadow-sm border overflow-hidden">
-                                <table class="table table-hover align-middle mb-0" id="tableArticles">
-                                    <thead class="bg-light">
-                                        <tr>
-                                            <th class="ps-4 text-center" style="white-space: normal;">Planificar</th>
-                                            <th class="text-center" style="white-space: normal;">OP</th>
-                                            <th class="text-center" style="white-space: normal;">Artículo</th>
-                                            <th class="text-center" style="white-space: normal;">Denominación</th>
-                                            <th class="text-center" style="white-space: normal;">Solicitado</th>
-                                            <th class="text-center" style="white-space: normal;">Finalizado</th>
-                                            <th class="text-center" style="white-space: normal;">Seleccionados</th>
-                                            <th class="text-center" style="white-space: normal; width: 100px;">Prioridad Pieza</th>
-                                            <th class="pe-4 text-center" style="white-space: normal;">Acción</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="tbodyArticles">
-                                        <!-- Dynamic content -->
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-
-                        <!-- Level 2: Processes Table (Hidden by default) -->
-                        <div id="level2-processes" class="mt-4" style="display: none;">
-                            <div class="d-flex justify-content-between align-items-center mb-3">
-                                <h6 class="text-muted fw-bold m-0 uppercase smaller"><i class="fas fa-cogs me-1"></i> NIVEL 2: PROCESOS / OPERACIONES</h6>
-                                <button class="btn btn-sm btn-danger px-3" onclick="backToArticles()">
-                                    <i class="fas fa-arrow-left me-1"></i> Volver a Artículos
-                                </button>
-                            </div>
-                            <div class="bg-white rounded-4 shadow-sm border p-4 mb-3">
-                                <div class="d-flex align-items-center mb-0">
-                                    <div class="bg-info bg-opacity-10 p-2 rounded-3 me-3 text-info">
-                                        <i class="fas fa-info-circle fa-lg"></i>
-                                    </div>
-                                    <div>
-                                        <div class="fw-bold" id="detailArtName">-</div>
-                                        <div class="small text-muted" id="detailArtCode">-</div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="table-responsive rounded-4 bg-white shadow-sm border overflow-hidden">
-                                <table class="table table-hover align-middle mb-0" id="tableProcesses">
-                                    <thead class="bg-light">
-                                        <tr>
-                                            <th class="ps-4 text-center" style="width: 80px;">Planificar</th>
-                                            <th class="text-center" style="width: 100px;">Nivel Planif.</th>
-                                            <th class="text-center">Descripción del Proceso</th>
-                                            <th class="text-center">Máquina</th>
-                                            <th class="text-center">Cant. Lote</th>
-                                            <th class="pe-4 text-center">Cant. Pendiente</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="tbodyProcesses">
-                                        <!-- Dynamic content -->
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="modal-footer border-0 p-4 bg-white">
-                        <button type="button" class="btn btn-light rounded-pill px-4 fw-bold" data-bs-dismiss="modal" onclick="event.stopPropagation();">Cancelar</button>
-                        <button type="button" class="btn btn-success rounded-pill px-4 fw-bold shadow-sm" id="btnAcceptSelector" onclick="backToArticles()" style="display: none;">
-                            <i class="fas fa-check me-2"></i>Aceptar
-                        </button>
-                        <button type="button" class="btn btn-primary rounded-pill px-4 fw-bold shadow-sm" id="btnConfirmSelect" onclick="confirmSelection();">
-                            <i class="fas fa-check-double me-2"></i>Confirmar y Cargar Planificación
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Tabs Navigation -->
-        <ul class="nav nav-tabs" id="myTab" role="tablist">
-            {% for machine in machines %}
-            {% with count=grouped_data|get_item:machine.nombre|length %}
-            <li class="nav-item" role="presentation">
-                <button class="nav-link {% if forloop.first %}active{% endif %} {% if count > 0 %}con-carga{% endif %}" 
-                        id="{{ machine.nombre|slugify }}-tab" 
-                        data-bs-toggle="tab" 
-                        data-bs-target="#{{ machine.nombre|slugify }}" 
-                        data-machine="{{ machine.id_maquina }}"
-                        type="button" 
-                        role="tab" 
-                        aria-selected="{% if forloop.first %}true{% else %}false{% endif %}">
-                    {{ machine.nombre }}
-                    <span class="badge ms-1">{{ count }}</span>
-                </button>
-            </li>
-            {% endwith %}
-            {% endfor %}
-        </ul>
-
-        <!-- Tabs Content -->
-        <div class="tab-content" id="myTabContent">
-            {% for machine in machines %}
-            <div class="tab-pane fade {% if forloop.first %}show active{% endif %}" 
-                 id="{{ machine.nombre|slugify }}" 
-                 role="tabpanel" 
-                 aria-labelledby="{{ machine.nombre|slugify }}-tab">
-                
-                <div class="machine-header bg-primary text-white p-2 mb-0">
-                    <h5 class="m-0 text-center">{{ machine.nombre }}</h5>
-                </div>
-
-                <div class="table-responsive">
-                    <table class="table table-bordered table-hover table-sm align-middle">
-                        <thead class="table-info text-center sticky-top">
-                            <tr>
-                                <th style="white-space: normal;">Acciones</th>
-                                <th style="white-space: normal;">Proyecto</th>
-                                <th style="white-space: normal;">Denominación</th>
-                                <th style="white-space: normal;">N° de OP</th>
-                                <th style="white-space: normal;">Descripción</th>
-                                <th style="white-space: normal;">Prioridad Proyecto</th>
-                                <th style="white-space: normal;">Prioridad Artículos</th>
-                                <th style="white-space: normal;">Nivel Planificación</th>
-                                <th style="white-space: normal;">Máquina</th>
-                                <th class="bg-warning-subtle" style="white-space: normal;">Tiempo</th>
-                                <th class="bg-warning-subtle" style="white-space: normal;">Tiempo Logrado</th>
-                                <th class="bg-success-subtle text-dark" style="white-space: normal;">Eficiencia (KPI)</th>
-                                <th style="white-space: normal;">Cantidad</th>
-                                <th style="white-space: normal;">Cantidad Producida</th>
-                                <th class="bg-warning-subtle" style="white-space: normal;">Cantidades Pendientes</th>
-                                <th class="bg-info-subtle" style="white-space: normal;">% Solapamiento</th>
-                                <th style="white-space: normal;">Tiempo Proceso</th>
-                             </tr>
-                        </thead>
-                        <tbody>
-                            <!-- Retrieve list for this machine from the dictionary -->
-                             {% for item in grouped_data|get_item:machine.nombre %}
-                            <tr data-id="{{ item.Idorden }}" 
-                                 data-unit-time="{{ item.Tiempo|unlocalize }}"
-                                 data-total-qty="{{ item.Cantidad|unlocalize }}"
-                                data-maquina="{{ item.MAQUINA_ID }}" 
-                                data-priority="{{ item.OrdenVisual|unlocalize }}" 
-                                data-proyecto="{{ item.ProyectoCode|default:'' }}"
-                                class="{% if item.is_hidden %}hidden-row{% endif %}"
-                                style="cursor: grab; user-select: none;">
-                                <td class="text-center actions-column" style="white-space: nowrap;">
-                                    <!-- Audit Mode Switchable Buttons -->
-                                    <button class="btn btn-sm btn-outline-success btn-reactivate btn-audit-action d-inline-flex align-items-center justify-content-center" style="width: 28px; height: 28px; padding: 0;" title="Recuperar OP">
-                                        <i class="fas fa-undo"></i>
-                                    </button>
-                                    
-                                    <div class="btn-normal-action d-inline-flex">
-                                        <button class="btn btn-sm btn-outline-primary btn-up d-inline-flex align-items-center justify-content-center" style="width: 28px; height: 28px; padding: 0; margin-right: 4px;" title="Subir">
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-chevron-up" viewBox="0 0 16 16">
-                                              <path fill-rule="evenodd" d="M7.646 4.646a.5.5 0 0 1 .708 0l6 6a.5.5 0 0 1-.708.708L8 5.707l-5.646 5.647a.5.5 0 0 1-.708-.708l6-6z"/>
-                                            </svg>
-                                        </button>
-                                        <button class="btn btn-sm btn-outline-secondary btn-down d-inline-flex align-items-center justify-content-center" style="width: 28px; height: 28px; padding: 0;" title="Bajar">
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-chevron-down" viewBox="0 0 16 16">
-                                              <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z"/>
-                                            </svg>
-                                        </button>
-                                        <button class="btn btn-sm btn-outline-danger btn-delete d-inline-flex align-items-center justify-content-center" style="width: 28px; height: 28px; padding: 0; margin-left: 4px;" title="Borrar OP (Solo de este escenario)">
-                                            <i class="fas fa-trash-alt"></i>
-                                        </button>
-                                    </div>
-                                </td>
-      </td>
-                                <td>{{ item.ProyectoCode|default:"-" }}</td>
-                                 <td style="min-width: 150px; white-space: normal;" title="{{ item.Denominacion }}">{{ item.Denominacion }}</td>
-                                <td>{{ item.Idorden }}</td>
-                                 <td style="min-width: 250px; white-space: normal;" title="{{ item.Descri }}">{{ item.Descri }}</td>
-                                <td class="text-center">{{ item.prioridad_del_proyecto|default:"—" }}</td>
-                                <td class="text-center row-priority-cell">{{ item.prioridad_pieza }}</td>
-                                <td class="text-end fw-bold editable-nivel" 
-                                    contenteditable="true"
-                                    title="Click para editar Nivel Planificación"
-                                    style="cursor: text; text-align: center; {% if item.NivelManualFlag %}background-color: #ffeeba;{% endif %}"
-                                >{{ item.nivel_planificacion|default:item.Nivel_Planificacion|default:"0" }}</td>
-                                <td class="machine-cell-interactive p-0 align-middle" style="min-width: 160px;">
-                                    <button type="button" class="open-machine-modal w-100" 
-                                            data-op="{{ item.Idorden }}" 
-                                            data-current-machine-id="{{ item.MAQUINA_ID }}">
-                                        <span>{{ item.MAQUINAD }}</span>
-                                        <i class="fas fa-exchange-alt opacity-50 small"></i>
-                                    </button>
-                                </td>
-                                <td class="text-end bg-warning-lighter">{{ item.Tiempo|floatformat:3 }}</td>
-                                <td class="text-end bg-warning-lighter" title="Raw Logged: {{ item.Total_Horas_Fichadas|floatformat:2 }} hrs">{{ item.Tiempo_Logrado|floatformat:2 }}</td>
-                                <td class="text-center align-middle">
-                                    {% if item.KPI_Eficiencia == 'green' %}
-                                        <span class="badge bg-success" title="Desvío: {{ item.Desvio_Porcentaje|floatformat:1 }}% (Dentro de lo previsto)">
-                                            <i class="fas fa-check-circle"></i> Óptimo
-                                        </span>
-                                    {% elif item.KPI_Eficiencia == 'yellow' %}
-                                        <span class="badge bg-warning text-dark" title="Desvío: {{ item.Desvio_Porcentaje|floatformat:1 }}% (Retraso leve)">
-                                            <i class="fas fa-exclamation-triangle"></i> Normal
-                                        </span>
-                                    {% elif item.KPI_Eficiencia == 'orange' %}
-                                        <span class="badge bg-orange text-white" style="background-color: #fd7e14;" title="Desvío: {{ item.Desvio_Porcentaje|floatformat:1 }}% (Retraso moderado)">
-                                            <i class="fas fa-exclamation-circle"></i> Alerta
-                                        </span>
-                                    {% elif item.KPI_Eficiencia == 'red' %}
-                                        <span class="badge bg-danger" title="Desvío: {{ item.Desvio_Porcentaje|floatformat:1 }}% (Retraso grave)">
-                                            <i class="fas fa-times-circle"></i> Crítico
-                                        </span>
-                                    {% else %}
-                                        <span class="badge bg-secondary opacity-50" title="Sin datos suficientes">S/D</span>
-                                    {% endif %}
-                                </td>
-                                <td class="text-end">{{ item.Cantidad|floatformat }}</td>
-                                <td class="text-end fw-bold editable-cantidad" 
-                                    contenteditable="true"
-                                    title="Click para editar Cantidad Producida"
-                                    style="cursor: text; text-align: right; {% if item.CantidadManualFlag %}background-color: #ffeeba;{% endif %}"
-                                    data-total="{{ item.Cantidad }}"
-                                >{{ item.Cantidadpp|floatformat }}</td>
-                                <td class="text-end bg-warning-lighter fw-bold cant-pendientes">
-                                    {{ item.CantidadesPendientes|floatformat }}
-                                </td>
-                                                           <td class="text-center align-middle" style="white-space: nowrap; width: 150px;" onclick="event.stopPropagation();" onmousedown="event.stopPropagation();">
-                                                                <div class="d-flex align-items-center gap-1 justify-content-center">
-                                                                    <button type="button" class="btn btn-sm solapamiento-modo-toggle {% if item.modo_solapamiento == 'automatico' or not item.modo_solapamiento %}btn-success{% else %}btn-warning{% endif %}" 
-                                                                            onclick="event.stopPropagation(); toggleOverlapMode(this);"
-                                                                            style="font-size: 0.72rem; padding: 0.15rem 0.4rem; border-radius: 4px; min-width: 55px;">
-                                                                        {% if item.modo_solapamiento == 'automatico' or not item.modo_solapamiento %}Auto{% else %}Manual{% endif %}
-                                                                    </button>
-                                                                    <input type="number" class="form-control form-control-sm text-end solapamiento-porcentaje-input" 
-                                                                           onclick="event.stopPropagation();" onmousedown="event.stopPropagation();"
-                                                                           style="width: 55px; padding: 0.15rem 0.2rem; font-size: 0.75rem; border-radius: 4px; {% if item.modo_solapamiento == 'automatico' or not item.modo_solapamiento %}background-color: #e9ecef; color: #6c757d;{% else %}background-color: #ffeeba;{% endif %}"
-                                                                           value="{{ item.porcentaje_solapamiento|default:'0' }}"
-                                                                           min="0" max="100" step="5"
-                                                                           {% if item.modo_solapamiento == 'automatico' or not item.modo_solapamiento %}disabled{% endif %}>
-                                                                    <span class="small text-muted">%</span>
-                                                                </div>
-                                                            </td>
-                                 <td class="text-end fw-bold editable-time" 
-                                     contenteditable="true" 
-                                     title="Click para editar tiempo manual"
-                                     style="cursor: text; {% if item.CalculadoManual %}background-color: #ffeeba;{% endif %}"
-                                 >{{ item.Tiempo_Proceso|floatformat:2 }}</td> 
-                            </tr>
-                            {% empty %}
-                            <tr>
-                                <td colspan="15" class="text-center">No hay datos para esta máquina.</td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-            {% endfor %}
-        </div>
-        
-        {% if error %}
-        <div class="alert alert-danger mt-4">
-            <strong>Error:</strong> {{ error }}
-        </div>
-        {% endif %}
-        
-        {% if not search_active %}
-        <div class="text-center py-5">
-            <div class="mb-4">
-                <i class="fas fa-search fa-4x text-muted opacity-50"></i>
-            </div>
-            <h3 class="text-secondary">Bienvenido al Planificador</h3>
-            <p class="lead text-muted">Ingrese un proyecto o filtro arriba para cargar los datos.</p>
-        </div>
-        {% elif not machines and not error %}
-        <div class="alert alert-info mt-4">
-            No se encontraron registros de planificación para los filtros seleccionados.
-        </div>
-        {% endif %}
-
-
-
-    </div>
-
-        <!-- Offcanvas para Proyectos Activos -->
-        <div class="offcanvas offcanvas-end shadow" tabindex="-1" id="activeProjectsOffcanvas" aria-labelledby="activeProjectsOffcanvasLabel" style="width: 380px; border-left: none;">
-            <div class="offcanvas-header bg-light border-bottom py-3 px-4">
-                <h5 class="offcanvas-title fw-bold text-dark d-flex align-items-center gap-2" id="activeProjectsOffcanvasLabel">
-                    <i class="fas fa-project-diagram text-primary"></i> Proyectos Activos
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
-            </div>
-            <div class="offcanvas-body p-0 bg-white">
-                <div class="p-3 bg-light border-bottom text-muted small">
-                    <i class="fas fa-info-circle me-1"></i> Lista de proyectos con operaciones presentes en las máquinas.
-                </div>
-                <div id="activeProjectsList" class="list-group list-group-flush">
-                    <!-- Dinámico por JS -->
-                    <div class="text-center py-4 text-muted small">
-                        Calculando proyectos...
-                    </div>
-                </div>
-            </div>
-        </div>
-
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <!-- SortableJS for Drag and Drop -->
-    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
-    
-    <script>
         function openGantt(btn) {
             // UI Feedback
             btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i> Procesando...';
@@ -932,43 +152,6 @@
         let currentLevel2MacroPk = ""; // Tracker for the active article in detail view
 
         document.addEventListener('DOMContentLoaded', function() {
-            // ─── SINCRONIZACIÓN VISUAL DEL MODO (plan_mode) ───────────────────────────
-            // Lee el parámetro 'plan_mode' directamente desde la URL para garantizar
-            // que el botón activo siempre coincida con el modo real, independientemente
-            // de la sesión o el valor renderizado por Django.
-            (function syncPlanModeButtons() {
-                const params = new URLSearchParams(window.location.search);
-                // Si no viene en la URL, el backend asume 'manual' por defecto
-                const currentMode = params.get('plan_mode') || 'manual';
-
-                const btnManual    = document.getElementById('btnModoManual');
-                const btnAutomAtico = document.getElementById('btnModoAutomatico');
-                const indicador    = document.getElementById('modoIndicador');
-                const indicadorTxt = document.getElementById('modoIndicadorTexto');
-
-                if (btnManual && btnAutomAtico) {
-                    // Limpiar ambos primero
-                    btnManual.classList.remove('btn-primary', 'btn-outline-secondary');
-                    btnAutomAtico.classList.remove('btn-primary', 'btn-outline-secondary');
-
-                    if (currentMode === 'automatico') {
-                        btnAutomAtico.classList.add('btn-primary');
-                        btnManual.classList.add('btn-outline-secondary');
-                        if (indicador) indicador.className = 'badge bg-success rounded-pill px-3 py-1';
-                        if (indicadorTxt) indicadorTxt.textContent = 'Automático';
-                    } else {
-                        // 'manual' o cualquier otro valor → Modo Manual activo
-                        btnManual.classList.add('btn-primary');
-                        btnAutomAtico.classList.add('btn-outline-secondary');
-                        if (indicador) indicador.className = 'badge bg-primary rounded-pill px-3 py-1';
-                        if (indicadorTxt) indicadorTxt.textContent = 'Manual';
-                    }
-                }
-            })();
-            // ─────────────────────────────────────────────────────────────────────────
-
-            // Las prioridades de pieza vienen del backend (item.prioridad_pieza),
-            // NO se renumeran en cliente.
             // Activar panel de proyectos inicialmente y observar cambios
             updateActiveProjectsPanel();
             const tabContent = document.getElementById('myTabContent');
@@ -983,73 +166,46 @@
              const planForm = document.getElementById('plan-filter-form');
             if (planForm) {
                 planForm.addEventListener('submit', async function(e) {
-                    // SIEMPRE prevenir el envío nativo del formulario para
-                    // que el navegador no navegue a ninguna URL por defecto
-                    e.preventDefault();
-                    e.stopPropagation();
-
                     const projectsInput = document.getElementById('proyectos');
                     const projValue = projectsInput ? projectsInput.value.trim() : "";
                     
-                    if (!projValue) {
-                        // Vacío: recargar sin filtro de proyectos (limpia la vista)
-                        const params = new URLSearchParams(window.location.search);
-                        params.delete('proyectos');
-                        params.set('run', '1');
-                        window.location.href = window.location.pathname + "?" + params.toString();
-                        return;
-                    }
+                    if (!projValue) return; // Si está vacío, sigue el flujo normal (limpiar filtros)
 
                      if (!projValue.includes(',')) {
                          // SINGLE PROJECT FLOW
+                         e.preventDefault();
+                         e.stopPropagation();
+                         
                          const urlParams = new URLSearchParams(window.location.search);
                          const scenarioId = urlParams.get('scenario_id') || "";
                          
-                         try {
-                             const checkResp = await fetch(`/api/check_project_planning/?proyecto=${encodeURIComponent(projValue)}&scenario_id=${scenarioId}`);
-                             const checkData = await checkResp.json();
-                             
+                          try {
+                              const checkResp = await fetch(`/api/check_project_planning/?proyecto=${encodeURIComponent(projValue)}&scenario_id=${scenarioId}`);
+                              const checkData = await checkResp.json();
+                              
                               if (checkData.exists && checkData.action === 'show') {
                                   // Proyecto ya planificado: comportamiento permisivo.
-                                  // Si ya está visible en la URL actual, solo enfocamos sin recargar.
-                                  const currentProjs = new URLSearchParams(window.location.search).get('proyectos') || '';
-                                  const currentList = currentProjs.split(',').map(p => p.trim()).filter(p => p);
-                                  if (currentList.includes(projValue)) {
-                                      // Ya visible en grilla — scroll al proyecto sin recargar
-                                      projectsInput.value = "";
-                                      projectsInput.blur();
-                                      const projRow = document.querySelector(`[data-proyecto="${projValue}"]`);
-                                      if (projRow) {
-                                          projRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                                          projRow.style.outline = '3px solid #0d6efd';
-                                          setTimeout(() => { projRow.style.outline = ''; }, 2000);
-                                      }
-                                      // Actualizar piezas trayendo lo último del ERP (refresh silencioso)
-                                      openProductionSelector(projValue);
-                                      return;
-                                  }
-                                  // Redirigimos a la grilla (misma página) con el proyecto cargado.
-                                  // Usamos window.location.pathname (NUNCA request.path del API)
+                                  // Redirigimos a la grilla para mostrar el proyecto sin bloqueo.
                                   const params = new URLSearchParams(window.location.search);
                                   params.set('proyectos', projValue);
                                   params.set('run', '1');
-                                  window.location.href = window.location.pathname + "?" + params.toString();
                                   projectsInput.value = "";
+                                  window.location.href = window.location.pathname + "?" + params.toString();
                                   return;
                               }
                               
-                              // Proyecto no existe aún en planificación → abrir selector
                               openProductionSelector(projValue);
                               projectsInput.value = ""; 
                               projectsInput.focus();
-                         } catch (err) {
-                             console.error("Error checking planning state:", err);
-                             openProductionSelector(projValue); 
-                             projectsInput.value = "";
-                             projectsInput.focus();
-                         }
+                          } catch (err) {
+                              console.error("Error checking planning state:", err);
+                              openProductionSelector(projValue); 
+                              projectsInput.value = "";
+                              projectsInput.focus();
+                          }
                     } else {
                         // MULTI PROJECT FLOW (Comma separated)
+                        e.preventDefault();
                         const params = new URLSearchParams(window.location.search);
                         params.set('proyectos', projValue);
                         params.set('run', '1');
@@ -1718,76 +874,32 @@
                 });
             });
 
-            // --- Mixed Overlap Edit Logic ---
-            window.toggleOverlapMode = async function(btn) {
-                const row = btn.closest('tr');
-                const idOrden = row.dataset.id;
-                const maquina = row.dataset.maquina;
-                const scenarioId = new URLSearchParams(window.location.search).get('scenario_id');
-                const input = row.querySelector('.solapamiento-porcentaje-input');
-                
-                let modo = 'automatico';
-                if (btn.classList.contains('btn-success')) {
-                    // Switch to Manual
-                    btn.classList.remove('btn-success');
-                    btn.classList.add('btn-warning');
-                    btn.textContent = 'Manual';
-                    modo = 'manual';
-                    input.disabled = false;
-                    input.style.backgroundColor = '#ffeeba';
-                    input.style.color = '';
-                } else {
-                    // Switch to Auto
-                    btn.classList.remove('btn-warning');
-                    btn.classList.add('btn-success');
-                    btn.textContent = 'Auto';
-                    modo = 'automatico';
-                    input.disabled = true;
-                    input.style.backgroundColor = '#e9ecef';
-                    input.style.color = '#6c757d';
-                }
-                
-                try {
-                    const response = await fetch('/api/update_overlap_percentage/', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-CSRFToken': '{{ csrf_token }}'
-                        },
-                        body: JSON.stringify({
-                            id_orden: idOrden,
-                            modo_solapamiento: modo,
-                            porcentaje_solapamiento: parseFloat(input.value) || 0,
-                            maquina: maquina,
-                            scenario_id: scenarioId
-                        })
-                    });
-                    if (!response.ok) {
-                        const data = await response.json();
-                        alert("Error al guardar: " + (data.error || "Desconocido"));
+            // --- Manual Overlap Edit Logic ---
+            const editableSolapamientoCells = document.querySelectorAll('.editable-solapamiento');
+            editableSolapamientoCells.forEach(cell => {
+                cell.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        this.blur();
                     }
-                } catch (e) {
-                    console.error(e);
-                    alert("Error de conexión al guardar.");
-                }
-            };
+                });
 
-            document.querySelectorAll('.solapamiento-porcentaje-input').forEach(input => {
-                input.addEventListener('change', async function() {
+                cell.addEventListener('blur', async function() {
                     const row = this.closest('tr');
                     const idOrden = row.dataset.id;
-                    const maquina = row.dataset.maquina;
+                    const rawValue = this.innerText.replace('%', '').trim();
+                    const maquina = row.dataset.maquina; 
                     const scenarioId = new URLSearchParams(window.location.search).get('scenario_id');
-                    const btn = row.querySelector('.solapamiento-modo-toggle');
-                    const modo = btn.classList.contains('btn-success') ? 'automatico' : 'manual';
-                    const numVal = parseFloat(this.value);
                     
+                    const numVal = parseFloat(rawValue);
                     if (isNaN(numVal) || numVal < 0 || numVal > 100) {
                         alert("Por favor ingrese un porcentaje válido (0 a 100).");
-                        this.value = "0";
+                        this.innerText = "0%"; 
                         return;
                     }
-                    
+
+                    this.style.backgroundColor = '#e2e6ea'; 
+
                     try {
                         const response = await fetch('/api/update_overlap_percentage/', {
                             method: 'POST',
@@ -1797,19 +909,24 @@
                             },
                             body: JSON.stringify({
                                 id_orden: idOrden,
-                                modo_solapamiento: modo,
                                 porcentaje_solapamiento: numVal,
                                 maquina: maquina,
                                 scenario_id: scenarioId
                             })
                         });
-                        if (!response.ok) {
+
+                        if (response.ok) {
+                            this.style.backgroundColor = numVal > 0 ? '#ffeeba' : 'transparent'; 
+                            this.innerText = numVal + '%';
+                        } else {
                             const data = await response.json();
-                            alert("Error al guardar: " + (data.error || "Desconocido"));
+                            alert("Error al guardar solapamiento: " + (data.error || "Desconocido"));
+                            this.style.backgroundColor = '#f8d7da'; 
                         }
                     } catch (e) {
                         console.error(e);
                         alert("Error de conexión al guardar.");
+                        this.style.backgroundColor = '#f8d7da';
                     }
                 });
             });
@@ -1924,7 +1041,6 @@
                         });
                         
                         if (response.ok) {
-                            const parent = row.parentNode;
                             row.remove();
                         } else {
                             const data = await response.json();
@@ -2023,59 +1139,53 @@
 
 
             // --- Machine Change via Modal Logic ---
-            let machineModal = null;
+            const machineModal = new bootstrap.Modal(document.getElementById('machineSelectorModal'));
             let currentEditingOp = null;
             let currentOriginMachine = null;
 
-            // Initialize machine modal only if element exists
-            const machineModalEl = document.getElementById('machineSelectorModal');
-            if (machineModalEl) {
-                machineModal = new bootstrap.Modal(machineModalEl);
-            }
-
-            // Event delegation for opening machine selector modal
-            document.addEventListener('click', function(e) {
-                const openBtn = e.target.closest('.open-machine-modal');
-                if (openBtn) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    currentEditingOp = openBtn.dataset.op;
-                    currentOriginMachine = openBtn.dataset.currentMachineId;
+            document.querySelectorAll('.open-machine-modal').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    currentEditingOp = this.dataset.op;
+                    currentOriginMachine = this.dataset.currentMachineId;
                     
-                    const modalTitleEl = document.getElementById('modal-op-title');
-                    if (modalTitleEl) {
-                        modalTitleEl.innerText = `OP: ${currentEditingOp}`;
-                    }
+                    document.getElementById('modal-op-title').innerText = `OP: ${currentEditingOp}`;
                     
                     // Reset search
                     const filterInput = document.getElementById('machineFilterInput');
-                    if (filterInput) {
-                        filterInput.value = '';
-                    }
+                    filterInput.value = '';
                     document.querySelectorAll('.machine-item').forEach(item => item.classList.remove('hidden'));
                     
-                    if (machineModal) {
-                        machineModal.show();
-                    }
-                }
+                    machineModal.show();
+                });
+            });
 
-                // Event delegation for selecting machine in modal
-                const selectBtn = e.target.closest('.btn-select-machine-modal');
-                if (selectBtn) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const targetMachineId = selectBtn.dataset.targetId;
-                    const targetMachineName = selectBtn.dataset.targetName;
+            // Machine Search Filtering
+            document.getElementById('machineFilterInput').addEventListener('input', function() {
+                const term = this.value.toLowerCase();
+                document.querySelectorAll('.machine-item').forEach(item => {
+                    const name = item.querySelector('.fw-bold').innerText.toLowerCase();
+                    if (name.includes(term)) {
+                        item.classList.remove('hidden');
+                    } else {
+                        item.classList.add('hidden');
+                    }
+                });
+            });
+
+            document.querySelectorAll('.btn-select-machine-modal').forEach(btn => {
+                btn.addEventListener('click', async function() {
+                    const targetMachineId = this.dataset.targetId;
+                    const targetMachineName = this.dataset.targetName;
                     const scenarioId = new URLSearchParams(window.location.search).get('scenario_id');
 
                     if (currentOriginMachine === targetMachineId) {
-                        if (machineModal) machineModal.hide();
+                        machineModal.hide();
                         return;
                     }
 
-                    if (machineModal) machineModal.hide();
+                    machineModal.hide();
 
-                    Swal.fire({
+                    const result = await Swal.fire({
                         title: '¿Cambiar de Máquina?',
                         html: `¿Desea mover la <b>OP ${currentEditingOp}</b> a la máquina <b>${targetMachineName}</b>?`,
                         icon: 'question',
@@ -2087,362 +1197,241 @@
                             confirmButton: 'premium-confirm',
                             cancelButton: 'premium-cancel'
                         }
-                    }).then(async (result) => {
-                        if (!result.isConfirmed) return;
+                    });
 
-                        Swal.fire({
-                            title: 'Procesando...',
-                            text: 'Recalculando tiempos y prioridades...',
-                            allowOutsideClick: false,
-                            didOpen: () => {
-                                Swal.showLoading();
+                    if (!result.isConfirmed) return;
+
+                    Swal.fire({
+                        title: 'Procesando...',
+                        text: 'Recalculando tiempos y prioridades...',
+                        allowOutsideClick: false,
+                        didOpen: () => {
+                            Swal.showLoading();
+                        },
+                        customClass: { popup: 'premium-swal' }
+                    });
+
+                    try {
+                        const response = await fetch('/api/move_task/', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-CSRFToken': '{{ csrf_token }}'
                             },
-                            customClass: { popup: 'premium-swal' }
+                            body: JSON.stringify({
+                                id_orden: currentEditingOp,
+                                target_machine_id: targetMachineId,
+                                new_priority: 99999, 
+                                modo_solapamiento: 'manual',
+                                scenario_id: scenarioId
+                            })
                         });
 
-                        try {
-                            const response = await fetch('/api/move_task/', {
-                                method: 'POST',
-                                headers: {
-                                    'Content-Type': 'application/json',
-                                    'X-CSRFToken': '{{ csrf_token }}'
-                                },
-                                body: JSON.stringify({
-                                    id_orden: currentEditingOp,
-                                    target_machine_id: targetMachineId,
-                                    new_priority: 99999, 
-                                    modo_solapamiento: 'manual',
-                                    scenario_id: scenarioId
-                                })
-                            });
-
-                            if (response.ok) {
-                                window.location.reload();
-                            } else {
-                                const data = await response.json();
-                                Swal.fire({ title: 'Error', text: data.error || 'No se pudo mover la tarea.', icon: 'error' });
-                            }
-                        } catch (err) {
-                            console.error(err);
-                            Swal.fire({ title: 'Error de Red', text: 'Desconexión con el servidor.', icon: 'error' });
+                        if (response.ok) {
+                            window.location.reload();
+                        } else {
+                            const data = await response.json();
+                            Swal.fire({ title: 'Error', text: data.error || 'No se pudo mover la tarea.', icon: 'error' });
                         }
-                    });
-                }
-            });
-
-            // Event delegation for machine search input
-            document.addEventListener('input', function(e) {
-                if (e.target.id === 'machineFilterInput') {
-                    const term = e.target.value.toLowerCase();
-                    document.querySelectorAll('.machine-item').forEach(item => {
-                        const nameEl = item.querySelector('.fw-bold');
-                        if (nameEl) {
-                            const name = nameEl.innerText.toLowerCase();
-                            if (name.includes(term)) {
-                                item.classList.remove('hidden');
-                            } else {
-                                item.classList.add('hidden');
-                            }
-                        }
-                    });
-                }
+                    } catch (err) {
+                        console.error(err);
+                        Swal.fire({ title: 'Error de Red', text: 'Desconexión con el servidor.', icon: 'error' });
+                    }
+                });
             });
             
-            // --- Sistema de Modos de Ordenamiento ---
-            let ordenamientoMode = 'manual'; // 'manual' or 'automatico'
-            const sortableInstances = [];
-
-            // Inicializar SortableJS para todos los tbody (pero inicialmente en modo manual, activo)
-            const inicializarSortables = () => {
-                const tobodies = document.querySelectorAll('tbody');
-                sortableInstances.length = 0; // Limpiar instancias anteriores
-                tobodies.forEach(tbody => {
-                    const sortable = new Sortable(tbody, {
-                        animation: 150,
-                        disabled: ordenamientoMode !== 'manual',
-                        filter: 'button, input, .open-machine-modal, .btn-up, .btn-down, .btn-delete, .btn-reactivate, .solapamiento-modo-toggle, .solapamiento-porcentaje-input',
-                        preventOnFilter: false,
-                        forceFallback: true,
-                        fallbackOnBody: true,
-                        delay: 100,
-                        delayOnTouchOnly: true,
-                        ghostClass: 'sortable-ghost',
-                        chosenClass: 'sortable-chosen',
-                        onEnd: async function (evt) {
-                            if (ordenamientoMode !== 'manual') return;
-
-                            const itemEl = evt.item; 
-                            const idOrden = itemEl.dataset.id;
-                            const maquinaOrigin = itemEl.dataset.maquina;
+            // --- Drag and Drop Logic (SortableJS for EVERYTHING) ---
+            // We use SortableJS to handle the drag. On drop (onEnd), we check if the mouse 
+            // is over a Tab Header using elementFromPoint. If so, we treat it as a Move.
+            // Otherwise, we treat it as a Reorder.
+            
+            const tobodies = document.querySelectorAll('tbody');
+            tobodies.forEach(tbody => {
+                new Sortable(tbody, {
+                    animation: 150,
+                    forceFallback: true,
+                    fallbackOnBody: true,
+                    preventOnFilter: false,
+                    delay: 100,
+                    delayOnTouchOnly: true,
+                    ghostClass: 'sortable-ghost',
+                    chosenClass: 'sortable-chosen',
+                    onEnd: async function (evt) {
+                        const itemEl = evt.item; 
+                        const idOrden = itemEl.dataset.id;
+                        const maquinaOrigin = itemEl.dataset.maquina; // The machine it came from
+                        
+                        // 1. CHECK FOR DROP ON TAB (Move to Machine)
+                        // We need mouse coordinates. Sortable provides a touch/mouse event in originalEvent.
+                        const touch = evt.originalEvent.changedTouches ? evt.originalEvent.changedTouches[0] : evt.originalEvent;
+                        const x = touch.clientX;
+                        const y = touch.clientY;
+                        
+                        // Hide the helper momentarily so we can see what's under it
+                        itemEl.style.display = 'none'; 
+                        const elemBelow = document.elementFromPoint(x, y);
+                        itemEl.style.display = ''; // Restore
+                        
+                        const targetTab = elemBelow ? elemBelow.closest('.nav-link') : null;
+                        
+                        if (targetTab && targetTab.getAttribute('role') === 'tab') {
+                            const targetMachine = targetTab.dataset.machine;
                             
-                            // 1. CHECK FOR DROP ON TAB (Move to Machine)
-                            const touch = evt.originalEvent.changedTouches ? evt.originalEvent.changedTouches[0] : evt.originalEvent;
-                            const x = touch.clientX;
-                            const y = touch.clientY;
-                            
-                            itemEl.style.display = 'none'; 
-                            const elemBelow = document.elementFromPoint(x, y);
-                            itemEl.style.display = ''; 
-                            
-                            const targetTab = elemBelow ? elemBelow.closest('.nav-link') : null;
-                            
-                            if (targetTab && targetTab.getAttribute('role') === 'tab') {
-                                const targetMachine = targetTab.dataset.machine;
-                                
-                                if (targetMachine === maquinaOrigin) return;
-
-                                const result = await Swal.fire({
-                                    title: '¿Mover Tarea?',
-                                    html: `¿Confirma que desea mover la <b>OP ${idOrden}</b> a la máquina <b>${targetMachine}</b>?`,
-                                    icon: 'question',
-                                    showCancelButton: true,
-                                    confirmButtonText: 'Sí, mover',
-                                    cancelButtonText: 'Cancelar',
-                                    customClass: {
-                                        popup: 'premium-swal',
-                                        confirmButton: 'premium-confirm',
-                                        cancelButton: 'premium-cancel'
-                                    }
-                                });
-
-                                if (!result.isConfirmed) {
-                                    window.location.reload();
-                                    return;
-                                }
-                                
-                                const contentSelector = targetTab.getAttribute('data-bs-target');
-                                const contentDiv = document.querySelector(contentSelector);
-                                let newPriority = 1000;
-                                
-                                if (contentDiv) {
-                                    const rows = contentDiv.querySelectorAll('tbody tr[data-priority]');
-                                    if (rows.length > 0) {
-                                        const lastRow = rows[rows.length - 1];
-                                        const lastPrio = parseFloat(lastRow.dataset.priority) || 0;
-                                        newPriority = lastPrio + 1000;
-                                    }
-                                }
-                                
-                                 const rowToggleBtn = itemEl.querySelector('.solapamiento-modo-toggle');
-                                 if (rowToggleBtn) {
-                                     rowToggleBtn.classList.remove('btn-success');
-                                     rowToggleBtn.classList.add('btn-warning');
-                                     rowToggleBtn.textContent = 'Manual';
-                                     const rowPctInput = itemEl.querySelector('.solapamiento-porcentaje-input');
-                                     if (rowPctInput) {
-                                         rowPctInput.disabled = false;
-                                         rowPctInput.style.backgroundColor = '#ffeeba';
-                                         rowPctInput.style.color = '';
-                                     }
-                                 }
-
-                                 try {
-                                    const response = await fetch('/api/move_task/', {
-                                        method: 'POST',
-                                        headers: {
-                                            'Content-Type': 'application/json',
-                                            'X-CSRFToken': '{{ csrf_token }}'
-                                        },
-                                        body: JSON.stringify({
-                                            id_orden: idOrden,
-                                            target_machine_id: targetMachine,
-                                            new_priority: newPriority,
-                                            modo_solapamiento: 'manual',
-                                            scenario_id: new URLSearchParams(window.location.search).get('scenario_id')
-                                        })
-                                    });
-                                    
-                                    if (response.ok) window.location.reload();
-                                    else {
-                                        const data = await response.json();
-                                        Swal.fire({ title: 'Error', text: data.error, icon: 'error' });
-                                        window.location.reload();
-                                    }
-                                } catch (err) {
-                                    Swal.fire({ title: 'Error de Red', icon: 'error' });
-                                    window.location.reload();
-                                }
-                                return;
+                            // Prevent moving to self (tab names match)
+                            // The tab text is the machine name.
+                            if (targetMachine === maquinaOrigin) {
+                                return; // Dropped on self, treat as reorder if index changed, but safer to ignore cross-logic
                             }
 
-                            // 2. NORMAL REORDER (Same Machine) - Guardar orden manual
-                            if (evt.oldIndex === evt.newIndex) return;
+                            const result = await Swal.fire({
+                                title: '¿Mover Tarea?',
+                                html: `¿Confirma que desea mover la <b>OP ${idOrden}</b> a la máquina <b>${targetMachine}</b>?`,
+                                icon: 'question',
+                                showCancelButton: true,
+                                confirmButtonText: 'Sí, mover',
+                                cancelButtonText: 'Cancelar',
+                                customClass: {
+                                    popup: 'premium-swal',
+                                    confirmButton: 'premium-confirm',
+                                    cancelButton: 'premium-cancel'
+                                }
+                            });
 
-                            // Obtener el orden de IDs de toda la tabla de esta máquina
-                            const tbody = itemEl.closest('tbody');
-                            const rows = Array.from(tbody.querySelectorAll('tr[data-id]'));
-                            const nuevoOrden = rows.map(row => row.dataset.id);
-                            const maquinaId = maquinaOrigin;
-                            const scenarioId = new URLSearchParams(window.location.search).get('scenario_id');
+                            if (!result.isConfirmed) {
+                                window.location.reload(); // Revert visual drag
+                                return;
+                            }
                             
-                            console.log('IDs ordenados obtenidos:', nuevoOrden);
-                            console.log('DEBUG JS: ORDEN MANUAL - maquinaId:', maquinaId);
-                            console.log('DEBUG JS: ORDEN MANUAL - scenarioId:', scenarioId);
+                            // Calculate Priority: End of Target Queue
+                            // Find target tab content
+                            const contentSelector = targetTab.getAttribute('data-bs-target');
+                            const contentDiv = document.querySelector(contentSelector);
+                            let newPriority = 1000;
+                            
+                            if (contentDiv) {
+                                const rows = contentDiv.querySelectorAll('tbody tr[data-priority]');
+                                if (rows.length > 0) {
+                                    const lastRow = rows[rows.length - 1];
+                                    const lastPrio = parseFloat(lastRow.dataset.priority) || 0;
+                                    newPriority = lastPrio + 1000;
+                                }
+                            }
+                                          // Visual toggle update (Manual) and enable input
+                             const rowToggleBtn = itemEl.querySelector('.solapamiento-modo-toggle');
+                             if (rowToggleBtn) {
+                                 rowToggleBtn.classList.remove('btn-success');
+                                 rowToggleBtn.classList.add('btn-warning');
+                                 rowToggleBtn.textContent = 'Manual';
+                                 const rowPctInput = itemEl.querySelector('.solapamiento-porcentaje-input');
+                                 if (rowPctInput) {
+                                     rowPctInput.disabled = false;
+                                     rowPctInput.style.backgroundColor = '#ffeeba';
+                                     rowPctInput.style.color = '';
+                                 }
+                             }
 
-                            try {
-                                const response = await fetch('/api/guardar_orden_manual/', {
+                             try {
+                                console.log('--- DRAG MOVE_TASK ---', {id_orden: idOrden, target_machine_id: targetMachine, new_priority: newPriority});
+                                const response = await fetch('/api/move_task/', {
                                     method: 'POST',
                                     headers: {
                                         'Content-Type': 'application/json',
                                         'X-CSRFToken': '{{ csrf_token }}'
                                     },
                                     body: JSON.stringify({
-                                        maquina_id: maquinaId,
-                                        orden_ids: nuevoOrden,
-                                        scenario_id: scenarioId
+                                        id_orden: idOrden,
+                                        target_machine_id: targetMachine,
+                                        new_priority: newPriority,
+                                        modo_solapamiento: 'manual',
+                                        scenario_id: new URLSearchParams(window.location.search).get('scenario_id')
                                     })
                                 });
-
-                                console.log('Respuesta del servidor (Status):', response.status);
-
+                                
                                 if (response.ok) {
-                                    const data = await response.json();
-                                    console.log('Datos devueltos por Django:', data);
-                                    if (data.status !== 'success' && data.status !== 'ok') {
-                                        alert('Error en el backend: ' + JSON.stringify(data));
-                                    }
-                                    if (data.ordenes) {
-                                        rows.forEach((row, idx) => {
-                                            const ordenInfo = data.ordenes.find(o => o.id_orden == row.dataset.id);
-                                            if (ordenInfo) {
-                                                row.dataset.priority = ordenInfo.prioridad;
-                                            }
-                                        });
-                                    }
+                                    window.location.reload();
                                 } else {
                                     const data = await response.json();
-                                    console.log('Datos devueltos por Django:', data);
-                                    alert('Error en el backend: ' + JSON.stringify(data));
+                                    alert('Error: ' + data.error);
+                                    window.location.reload();
                                 }
-                            } catch (error) {
-                                console.error('Error en la petición Fetch:', error);
-                                alert('Fallo crítico en la red/petición Fetch.');
+                            } catch (err) {
+                                alert('Error de red');
+                                window.location.reload();
                             }
+                            return; // STOP HERE, DO NOT DO REORDER LOGIC
                         }
-                    });
-                    sortableInstances.push(sortable);
-                });
-            };
 
-            // Función para cambiar el modo de ordenamiento
-            const cambiarModo = (nuevoModo) => {
-                if (ordenamientoMode === nuevoModo) return;
-                
-                ordenamientoMode = nuevoModo;
-                
-                // Actualizar botones y indicador
-                const btnManual = document.getElementById('btnModoManual');
-                const btnAutomatico = document.getElementById('btnModoAutomatico');
-                const indicador = document.getElementById('modoIndicador');
+                        // 2. NORMAL REORDER LOGIC (Same Machine)
+                        // Check if order actually changed
+                        if (evt.oldIndex === evt.newIndex) return;
 
-                if (nuevoModo === 'manual') {
-                    btnManual.classList.remove('btn-outline-secondary');
-                    btnManual.classList.add('btn-primary');
-                    btnAutomatico.classList.remove('btn-primary');
-                    btnAutomatico.classList.add('btn-outline-secondary');
-                    indicador.textContent = 'Modo: Manual';
-                    indicador.classList.remove('bg-secondary');
-                    indicador.classList.add('bg-primary');
-                } else {
-                    btnAutomatico.classList.remove('btn-outline-secondary');
-                    btnAutomatico.classList.add('btn-primary');
-                    btnManual.classList.remove('btn-primary');
-                    btnManual.classList.add('btn-outline-secondary');
-                    indicador.textContent = 'Modo: Automático';
-                    indicador.classList.remove('bg-primary');
-                    indicador.classList.add('bg-secondary');
-                }
+                        // Find neighbors
+                        const prev = itemEl.previousElementSibling;
+                        const next = itemEl.nextElementSibling;
+                        
+                        let newPriority = 0;
+                        
+                        if (prev && next) {
+                            const p1 = parseFloat(prev.dataset.priority) || 0;
+                            const p2 = parseFloat(next.dataset.priority) || 0;
+                            newPriority = (p1 + p2) / 2; 
+                        } else if (prev) {
+                            const p = parseFloat(prev.dataset.priority) || 0;
+                            newPriority = p + 1000;
+                        } else if (next) {
+                            const p = parseFloat(next.dataset.priority) || 0;
+                            newPriority = p / 2; 
+                            if (newPriority <= 0) newPriority = 100;
+                        } else {
+                            return;
+                        }
 
-                // Habilitar/deshabilitar Sortable
-                sortableInstances.forEach(sortable => {
-                    sortable.option('disabled', nuevoModo !== 'manual');
-                });
+                        console.log(`Reordering ${idOrden} to Priority ${newPriority}`);
 
-                // Acciones específicas según el modo
-                if (nuevoModo === 'automatico') {
-                    ejecutarOrdenAutomatico();
-                } else if (nuevoModo === 'manual') {
-                    // Para restaurar el orden manual desde la base de datos sin alterar la sesión
-                    const scenarioId = new URLSearchParams(window.location.search).get('scenario_id') || '';
-                    const proyectos = new URLSearchParams(window.location.search).get('proyectos') || '';
-                    window.location.href = `/planificacion/?scenario_id=${scenarioId}&proyectos=${encodeURIComponent(proyectos)}&plan_mode=manual`;
-                }
-            };
+                        // Call API to set new priority
+                        try {
+                            const response = await fetch(`/api/set_priority/${idOrden}/`, {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'X-CSRFToken': '{{ csrf_token }}'
+                                },
+                                body: JSON.stringify({
+                                    maquina: maquinaOrigin,
+                                    new_priority: newPriority,
+                                    scenario_id: new URLSearchParams(window.location.search).get('scenario_id')
+                                })
+                            });
 
-            // Función para ejecutar ordenamiento automático
-            const ejecutarOrdenAutomatico = async () => {
-                const scenarioId = new URLSearchParams(window.location.search).get('scenario_id');
-                
-                Swal.fire({
-                    title: 'Optimizando...',
-                    text: 'Calculando el orden óptimo...',
-                    allowOutsideClick: false,
-                    didOpen: () => Swal.showLoading(),
-                    customClass: { popup: 'premium-swal' }
-                });
-
-                try {
-                    const response = await fetch('/api/ordenar_automatico/', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'X-CSRFToken': '{{ csrf_token }}'
-                        },
-                        body: JSON.stringify({ scenario_id: scenarioId })
-                    });
-
-                    if (response.ok) {
-                        const data = await response.json();
-                        // Aplicar el nuevo orden a cada máquina
-                        if (data.orden_por_maquina) {
-                            Object.keys(data.orden_por_maquina).forEach(maquinaId => {
-                                const ordenIds = data.orden_por_maquina[maquinaId];
-                                // Encontrar el tab de esta máquina
-                                const tabBtn = document.querySelector(`.nav-link[data-machine="${maquinaId}"]`);
-                                if (tabBtn) {
-                                    const tabId = tabBtn.getAttribute('data-bs-target');
-                                    const tabContent = document.querySelector(tabId);
-                                    if (tabContent) {
-                                        const tbody = tabContent.querySelector('tbody');
-                                        if (tbody) {
-                                            // Reordenar las filas
-                                            const rowsMap = {};
-                                            tbody.querySelectorAll('tr[data-id]').forEach(row => {
-                                                rowsMap[row.dataset.id] = row;
-                                            });
-                                            // Vaciar y volver a agregar en el nuevo orden
-                                            ordenIds.forEach(id => {
-                                                if (rowsMap[id]) tbody.appendChild(rowsMap[id]);
-                                            });
-                                        }
-                                    }
-                                }
+                            if (response.ok) {
+                                // Optimistic Update
+                                itemEl.dataset.priority = newPriority;
+                            } else {
+                                const data = await response.json();
+                                Swal.fire({
+                                    title: 'Error',
+                                    text: "Error al guardar la nueva posición: " + (data.error || response.statusText),
+                                    icon: 'error',
+                                    confirmButtonText: 'Cerrar',
+                                    customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                                }).then(() => {
+                                    window.location.reload();
+                                });                            }
+                        } catch (e) {
+                            console.error(e);
+                            Swal.fire({
+                                title: 'Error de Conexión',
+                                text: "No se pudo guardar la posición: " + e.message,
+                                icon: 'error',
+                                confirmButtonText: 'Cerrar',
+                                customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
+                            }).then(() => {
+                                window.location.reload();
                             });
                         }
-                        Swal.fire({
-                            title: '¡Listo!',
-                            text: 'Ordenamiento automático completado',
-                            icon: 'success',
-                            timer: 1500,
-                            showConfirmButton: false,
-                            customClass: { popup: 'premium-swal' }
-                        });
-                    } else {
-                        const data = await response.json();
-                        Swal.fire({ title: 'Error', text: data.error, icon: 'error' });
                     }
-                } catch (err) {
-                    console.error(err);
-                    Swal.fire({ title: 'Error de Red', icon: 'error' });
-                }
-            };
-
-            // Event listeners para los botones
-            document.getElementById('btnModoManual')?.addEventListener('click', () => cambiarModo('manual'));
-            document.getElementById('btnModoAutomatico')?.addEventListener('click', () => cambiarModo('automatico'));
-
-            // Inicializar Sortables al cargar la página
-            inicializarSortables();
+                });
+            });
 
             // Logic for mode selector - decouple scenario when moving to manual
             const planModeSelector = document.getElementById('plan-mode-selector');
@@ -2564,32 +1553,17 @@
             const btnNewScenario = document.getElementById('btnNewScenario');
             if (btnNewScenario) {
                 btnNewScenario.addEventListener('click', async function() {
-                    const todayStr = new Date().toISOString().split('T')[0];
                     const result = await Swal.fire({
                         title: '¿Empezar Plan Nuevo?',
-                        html: `
-                            <p class="mb-3">Se iniciará un escenario de planificación vacío. Los planes existentes guardados no se modificarán.</p>
-                            <div class="text-start">
-                                <label for="swal-fecha-inicio" class="form-label fw-bold">Fecha de inicio de planificación:</label>
-                                <input type="date" id="swal-fecha-inicio" class="form-control" value="${todayStr}">
-                            </div>
-                        `,
+                        text: 'Se iniciará un escenario de planificación vacío. Los planes existentes guardados no se modificarán.',
                         icon: 'question',
                         showCancelButton: true,
                         confirmButtonText: 'Sí, empezar nuevo',
                         cancelButtonText: 'Cancelar',
-                        preConfirm: () => {
-                            const dateStr = document.getElementById('swal-fecha-inicio').value;
-                            if (!dateStr) {
-                                Swal.showValidationMessage('Debe seleccionar una fecha de inicio.');
-                            }
-                            return dateStr;
-                        },
                         customClass: { popup: 'premium-swal', confirmButton: 'premium-confirm' }
                     });
                     
                     if (result.isConfirmed) {
-                        const fechaInicio = result.value;
                         try {
                             const response = await fetch('/api/scenarios/create/', {
                                 method: 'POST',
@@ -2599,8 +1573,7 @@
                                 },
                                 body: JSON.stringify({
                                     nombre: 'Nuevo Plan',
-                                    proyectos: '',
-                                    fecha_inicio: fechaInicio
+                                    proyectos: ''
                                 })
                             });
                             
@@ -2657,7 +1630,7 @@
                             });
                         }
 
-                        const activeScenarioId = '{{ active_scenario_id|default:'' }}';
+                        const activeScenarioId = '{{ active_scenario_id|default:"" }}';
                         const activeScenarioName = '{{ active_scenario.nombre|escapejs }}';
                         const proyectosInput = document.getElementById('proyectos');
                         const proyectosList = proyectosInput ? proyectosInput.value.trim() : '';
@@ -2681,14 +1654,7 @@
                                 let textoNivel = rawTexto.replace(/\s+/g, '').replace(/[^\d-]/g, '');
                                 let prioridadManual = textoNivel !== '' ? parseInt(textoNivel, 10) : null;
                                 
-                                // Extraer Cantidad Producida y Tiempo de las celdas
-                                let cantidadCell = row.querySelector('.editable-cantidad');
-                                let cantidadProducida = cantidadCell ? parseFloat(cantidadCell.textContent.replace(',', '.')) : null;
-                                
-                                let tiempoCell = row.querySelector('.editable-time');
-                                let tiempoManual = tiempoCell ? parseFloat(tiempoCell.textContent.replace(',', '.')) : null;
-                                
-                                console.log(`[GUARDAR] OP ${idOrden} | rawTexto='${rawTexto}' | textoNivel='${textoNivel}' | prioridadManual=${prioridadManual} | cant=${cantidadProducida} | tiempo=${tiempoManual}`);
+                                console.log(`[GUARDAR] OP ${idOrden} | rawTexto='${rawTexto}' | textoNivel='${textoNivel}' | prioridadManual=${prioridadManual}`);
                                 
                                 if (idOrden) {
                                     let seq = {
@@ -2696,17 +1662,10 @@
                                         maquina: maquina,
                                         orden_secuencia: index
                                     };
-                                    // En modo manual preservamos exclusivamente la secuencia arrastrada.
-                                    // El backend no debe reinterpretar estos valores como una prioridad automática.
-                                    if (ordenamientoMode !== 'manual' && prioridadManual !== null && !isNaN(prioridadManual)) {
+                                    // Solo incluir nivel si es un número válido (incluso 0 es válido si el usuario lo puso)
+                                    if (prioridadManual !== null && !isNaN(prioridadManual)) {
                                         seq.nivel_planificacion = prioridadManual;
                                         seq.prioridad_manual = prioridadManual;
-                                    }
-                                    if (cantidadProducida !== null && !isNaN(cantidadProducida)) {
-                                        seq.cantidad_producida_manual = cantidadProducida;
-                                    }
-                                    if (tiempoManual !== null && !isNaN(tiempoManual)) {
-                                        seq.tiempo_manual = tiempoManual;
                                     }
                                     secuencias.push(seq);
                                 }
@@ -2716,8 +1675,7 @@
                         let payload = {
                             nombre: name,
                             proyectos: proyectosList,
-                            secuencias: secuencias,
-                            plan_mode: ordenamientoMode
+                            secuencias: secuencias
                         };
 
                         // Word/Excel style flow:
@@ -3205,59 +2163,4 @@
                 projInput.setAttribute('autocomplete', 'off');
             }
         });
-    </script>
-
-    <!-- Modal para Selección de Máquina -->
-    <div class="modal fade" id="machineSelectorModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered modal-lg">
-            <div class="modal-content border-0 shadow-lg rounded-4 overflow-hidden">
-                <div class="modal-header bg-primary text-white border-0 py-3">
-                    <h5 class="modal-title fw-bold">
-                        <i class="fas fa-random me-2"></i>REASIGNAR MÁQUINA
-                    </h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body p-4">
-                    <div class="d-flex align-items-center mb-4 bg-light p-3 rounded-3 border">
-                        <div class="bg-primary bg-opacity-10 p-2 rounded-2 me-3">
-                            <i class="fas fa-file-invoice text-primary"></i>
-                        </div>
-                        <div>
-                            <p class="mb-0 text-muted smaller text-uppercase fw-bold">Orden de Producción</p>
-                            <h5 class="mb-0 fw-bold" id="modal-op-title">OP: -</h5>
-                        </div>
-                    </div>
-                    
-                    <div class="mb-3 position-relative">
-                        <i class="fas fa-search position-absolute top-50 start-0 translate-middle-y ms-3 text-muted"></i>
-                        <input type="text" id="machineFilterInput" class="form-control rounded-pill ps-5 py-2 border-light-subtle shadow-sm" placeholder="Escribí el nombre de la máquina para filtrar...">
-                    </div>
-
-                    <div class="row g-2 overflow-auto custom-scrollbar" style="max-height: 400px; padding: 5px;" id="machineGrid">
-                        {% for m_opt in machines %}
-                        <div class="col-6 col-md-4 machine-item">
-                            <button class="btn btn-select-machine-modal w-100 h-100 p-3 rounded-3 shadow-sm"
-                                    data-target-id="{{ m_opt.id }}"
-                                    data-target-name="{{ m_opt.nombre }}">
-                                <div class="fw-bold fs-6 mb-1 text-center">{{ m_opt.nombre }}</div>
-                                <span class="smaller opacity-25 fw-mono text-uppercase">ID: {{ m_opt.id }}</span>
-                            </button>
-                        </div>
-                        {% endfor %}
-                    </div>
-                </div>
-                <div class="modal-footer bg-light border-0">
-                    <button type="button" class="btn btn-secondary px-4 rounded-pill fw-bold" data-bs-dismiss="modal">Cerrar</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <style>
-        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-    </style>
-</body>
-</html>
+    
