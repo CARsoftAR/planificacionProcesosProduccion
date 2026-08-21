@@ -1381,9 +1381,19 @@ def planificacion_visual_OLD(request):
     else:
         start_simulation = datetime.now()
     
-    # IMPORTANT: Start from beginning of workday (7:00 AM), not current time
-    # This ensures tasks are scheduled from the start of the day
-    start_simulation = start_simulation.replace(hour=7, minute=0, second=0, microsecond=0)
+    # IMPORTANT: Start from beginning of workday (7:00 AM), not current time.
+    # EXCEPTION: If planning TODAY, use MAX(hora_actual, 07:00) so tasks don't
+    # get scheduled in the past. For future dates, always start at 07:00.
+    workday_start = start_simulation.replace(hour=7, minute=0, second=0, microsecond=0)
+    from datetime import date as _date
+    if start_simulation.date() == _date.today():
+        # Hoy: tomar la hora actual redondeada al próximo cuarto de hora, mínimo 07:00
+        now_local = datetime.now()
+        now_rounded = now_local.replace(second=0, microsecond=0)
+        start_simulation = max(workday_start, now_rounded)
+    else:
+        # Día futuro: siempre arrancar a las 07:00
+        start_simulation = workday_start
 
     # --------------------------------------------------------------------------
     # FILTER: Determine active projects EXCLUSIVELY from URL parameters.

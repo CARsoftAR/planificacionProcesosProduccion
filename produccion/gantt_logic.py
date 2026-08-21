@@ -316,8 +316,15 @@ def get_gantt_data(request, force_run=False):
     else:
         start_simulation = timezone.now()
     
-    # Start from 7:00 AM
-    start_simulation = start_simulation.replace(hour=7, minute=0, second=0, microsecond=0)
+    # Hora base: 07:00 para días futuros, MAX(hora_actual, 07:00) para HOY.
+    workday_start = start_simulation.replace(hour=7, minute=0, second=0, microsecond=0)
+    from datetime import date as _date_cls
+    if start_simulation.date() == _date_cls.today():
+        now_local = timezone.localtime(timezone.now())
+        now_rounded = now_local.replace(second=0, microsecond=0)
+        start_simulation = max(workday_start, now_rounded)
+    else:
+        start_simulation = workday_start
     
     timeline_data = []
 
@@ -1014,174 +1021,82 @@ def get_gantt_data(request, force_run=False):
             ))
         machine_tasks_map[machine_id] = {'maquina': maquina, 'tasks': tasks}
         
-        calculated_tasks = calculate_timeline(maquina, tasks, start_date=start_simulation, 
-                                            task_min_start_times=None, task_force_start_times=force_start_times_pass1,
-                                            non_working_days=non_working_days, half_day_holidays=half_day_holidays,
-                                            plan_mode=plan_mode)
+    # REFACTOR: BUCLE GLOBAL DE SCHEDULING (Reemplaza los pases por máquina)
+    # 1. Obtener TODAS las tareas a planificar
+    all_global_tasks = []
+    for mid, mdata in machine_tasks_map.items():
+        for t in mdata['tasks']:
+            # Guardamos la referencia a la máquina en la propia tarea
+            t['_maq'] = mdata['maquina']
+            t['_mid'] = mid
+            all_global_tasks.append(t)
+            
+    # 2. ORDENARLAS globalmente (ESTRICTAMENTE por la jerarquía solicitada)
+    # 1° PRIORIDAD PROYECTO
+    # 2° PRIORIDAD ARTICULO
+    # 3° NIVEL PLANIFICACION (Descendente)
+    all_global_tasks.sort(key=lambda x: (
+        int(x.get('prioridad_proyecto') if x.get('prioridad_proyecto') is not None else 999),
+        int(x.get('prioridad_pieza') if x.get('prioridad_pieza') is not None else 9999),
+        -int(get_nivel(x)),
+        # Desempates de seguridad nativos para garantizar continuidad si coinciden los 3 niveles
+        x.get('ProyectoCode', ''),
+        x.get('secuencia_proceso', 999)
+    ))
         
-        for ct in calculated_tasks:
-             tid = str(ct.get('Idorden'))
-             cend = ct.get('end_date')
-             if tid and cend:
-                 if tid not in global_task_end_dates or (cend.tzinfo and global_task_end_dates[tid].tzinfo and cend > global_task_end_dates[tid]) or (not cend.tzinfo and not global_task_end_dates[tid].tzinfo and cend > global_task_end_dates[tid]):
-                     global_task_end_dates[tid] = cend
-
-    # SECOND PASS (Multi-Pass with Overlap Calculation)
-    from .overlap_calculator import calcular_inicio_optimo_sucesor
+    # 3. Implementar diccionarios de rastreo global
+    disponibilidad_maquina = {}
+    disponibilidad_op = {}
+    
     final_timeline_map = {}
-    for pass_idx in range(5):
-        task_info_map = {} 
-        sorted_machine_items = sorted(machine_tasks_map.items(), key=lambda x: x[0])
-        for machine_id, machine_data in sorted_machine_items:
-            maquina = machine_data['maquina']
-            tasks = machine_data['tasks']
-            min_start_times = {}
-            force_start_times = {}
+    for mid, mdata in machine_tasks_map.items():
+        final_timeline_map[mid] = {'machine': mdata['maquina'], 'tasks': []}
+        
+    # 4. Iterar sobre la lista global de tareas ORDENADAS
+    for tarea in all_global_tasks:
+        maq_id = tarea['_mid']
+        op_id = tarea.get('ProyectoCode')
+        maquina = tarea['_maq']
+        
+        # Busca los tiempos disponibles (o usa la hora base)
+        t_maq = disponibilidad_maquina.get(maq_id, start_simulation)
+        t_op = disponibilidad_op.get(op_id, start_simulation)
+        
+        # El inicio es el momento en que AMBOS (máquina y pieza) están libres
+        start_time = max(t_maq, t_op)
+        
+        # Pasamos ESTA ÚNICA tarea a calculate_timeline para que respete horarios, feriados, etc.
+        force_starts = {}
+        t_id = str(tarea.get('Idorden'))
+        if t_id in virtual_overrides and virtual_overrides[t_id].get('manual_start'):
+            force_starts[t_id] = virtual_overrides[t_id]['manual_start']
             
-            # Build set of task IDs on THIS machine to skip same-machine predecessors.
-            # Same-machine chaining is handled by current_time propagation in calculate_timeline.
-            # Using stale global_task_end_dates for same-machine preds creates artificial gaps.
-            current_machine_task_ids = {str(t.get('Idorden')) for t in tasks}
+        ct_result = calculate_timeline(maquina, [tarea], start_date=start_time, 
+                                     task_min_start_times=None, task_force_start_times=force_starts,
+                                     non_working_days=non_working_days, half_day_holidays=half_day_holidays,
+                                     plan_mode=plan_mode)
+                                     
+        if ct_result:
+            # Recuperamos el finish_time real
+            finish_time = ct_result[-1]['end_date']
             
-            for t in tasks:
-                t_id = str(t.get('Idorden'))
-                if t_id in virtual_overrides and virtual_overrides[t_id].get('manual_start'):
-                    force_start_times[t_id] = virtual_overrides[t_id]['manual_start']
-
-                if t_id in dependency_map:
-                    preds = dependency_map[t_id]
-                    ov = virtual_overrides.get(t_id, {})
-                    modo_solap = ov.get('modo_solapamiento', 'automatico')
-                    overlap_pct = ov.get('porcentaje_solapamiento', 0.0)
-                    
-                    # Check if rigid relation (A -> B -> C where C needs the material ready of B)
-                    is_rigid = any(t_id in succ_preds for succ_preds in dependency_map.values())
-                    
-                    if is_rigid:
-                        # Rule A: rigid relation, no overlap allowed
-                        max_e = None
-                        for pid in preds:
-                            if pid in task_info_map:
-                                pinfo = task_info_map[pid]
-                                if max_e is None or pinfo['end_date'] > max_e:
-                                    max_e = pinfo['end_date']
-                            elif pid in global_task_end_dates:
-                                if max_e is None or global_task_end_dates[pid] > max_e:
-                                    max_e = global_task_end_dates[pid]
-                        if max_e:
-                            min_start_times[t_id] = max_e
-                    elif modo_solap == 'automatico':
-                        # Rule B: balance by speed
-                        calculated_start_times = []
-                        for pid in preds:
-                            if pid in task_info_map:
-                                pinfo = task_info_map[pid]
-                                tasa_pred = pinfo['duration'] / pinfo['cantidad'] if pinfo['cantidad'] > 0 else 0
-                                t_duration = float(t.get('Tiempo_Proceso', 0) or 0)
-                                t_qty = float(t.get('Cantidad', 1) or 1)
-                                tasa_succ = t_duration / t_qty if t_qty > 0 else 0
-                                
-                                if tasa_pred > tasa_succ:
-                                    # Proceso A más lento que B
-                                    opt_start = pinfo['end_date'] - timedelta(hours=t_duration)
-                                    if opt_start < pinfo['start_date']:
-                                        opt_start = pinfo['start_date']
-                                    calculated_start_times.append(opt_start)
-                                else:
-                                    # Proceso A más rápido que B
-                                    opt_start = pinfo['start_date'] + timedelta(hours=tasa_pred)
-                                    calculated_start_times.append(opt_start)
-                            elif pid in global_task_end_dates:
-                                calculated_start_times.append(global_task_end_dates[pid])
-                        if calculated_start_times:
-                            min_start_times[t_id] = max(calculated_start_times)
-                    else:  # manual
-                        if overlap_pct > 0 and pass_idx > 0:
-                            calculated_start_times = []
-                            for pid in preds:
-                                if pid in task_info_map:
-                                    pinfo = task_info_map[pid]
-                                    try:
-                                        opt, _ = calcular_inicio_optimo_sucesor(
-                                            pinfo['start_date'], pinfo['duration'], pinfo['cantidad'],
-                                            t.get('Tiempo_Proceso', 0), t.get('Cantidad', 1), overlap_pct
-                                        )
-                                        calculated_start_times.append(opt if opt > pinfo['start_date'] else pinfo['end_date'])
-                                    except: calculated_start_times.append(pinfo['end_date'])
-                            if calculated_start_times: min_start_times[t_id] = max(calculated_start_times)
-                        else:
-                            max_e = None
-                            for pid in preds:
-                                if pid in global_task_end_dates:
-                                    if max_e is None or global_task_end_dates[pid] > max_e: max_e = global_task_end_dates[pid]
-                            if max_e: min_start_times[t_id] = max_e
-
-            def get_sort_key(t):
-                 tid = str(t.get('Idorden'))
-                 ms = min_start_times.get(tid, start_simulation)
-                 target_start = ms
-                 is_pinned = 0
-                 if tid in force_start_times:
-                     target_start = force_start_times[tid]
-                     is_pinned = 1
-                 proj_code = t.get('ProyectoCode') or ''
-                 proj_prio = proj_priorities.get(proj_code, 999)
-                 pieza_prio = int(t.get('prioridad_pieza') if t.get('prioridad_pieza') is not None else 9999)
-                 if plan_mode != 'original':
-                     # Manual mode: OrdenSecuencia y OrdenVisual primero
-                     return (t.get('OrdenSecuencia', 999999), t.get('OrdenVisual', 999999), proj_prio, pieza_prio, -int(get_nivel(t)), get_op_num(t))
-                 return (proj_prio, pieza_prio, -int(get_nivel(t)), get_op_num(t), t.get('OrdenVisual', 999999))
+            # Asignar solapamiento (como no hay overlap real en este enfoque simplificado, es 0)
+            for seg in ct_result:
+                ov_cfg = virtual_overrides.get(t_id, {})
+                modo_solap = ov_cfg.get('modo_solapamiento', 'automatico')
+                seg['modo_solapamiento'] = modo_solap
+                if modo_solap == 'manual':
+                    seg['porcentaje_solapamiento'] = ov_cfg.get('porcentaje_solapamiento', 0.0)
+                else:
+                    seg['porcentaje_solapamiento'] = 0.0
             
-            tasks.sort(key=get_sort_key)
-            recalc = calculate_timeline(maquina, tasks, start_date=start_simulation, 
-                                      task_min_start_times=min_start_times, task_force_start_times=force_start_times,
-                                      non_working_days=non_working_days, half_day_holidays=half_day_holidays,
-                                      plan_mode=plan_mode)
-            
-            if machine_id == 'MAC06' and pass_idx == 4:
-                 print(f"DEBUG: Final pass for MAC06: {len(recalc)} segments calculated.")
-
-            final_timeline_map[machine_id] = {'machine': maquina, 'tasks': recalc}
-            for ct in recalc:
-                 tid = str(ct.get('Idorden'))
-                 
-                 # Inject modo_solapamiento and porcentaje_solapamiento into the calculated tasks for UI
-                 ov = virtual_overrides.get(tid, {})
-                 modo_solap = ov.get('modo_solapamiento', 'automatico')
-                 ct['modo_solapamiento'] = modo_solap
-                 
-                 if modo_solap == 'automatico':
-                     preds = dependency_map.get(tid, [])
-                     is_rigid = any(tid in succ_preds for succ_preds in dependency_map.values())
-                     if is_rigid:
-                         ct['porcentaje_solapamiento'] = 0.0
-                     elif preds:
-                         calculated_p_pcts = []
-                         for pid in preds:
-                             if pid in task_info_map:
-                                 try:
-                                     pinfo = task_info_map[pid]
-                                     p_dur = float(pinfo.get('duration', 0) or 0)
-                                     if p_dur > 0 and pinfo.get('end_date') and ct.get('start_date'):
-                                         overlap_h = (pinfo['end_date'] - ct['start_date']).total_seconds() / 3600.0
-                                         if overlap_h > 0:
-                                             calculated_p_pcts.append(round(min(100.0, (overlap_h / p_dur) * 100.0), 1))
-                                 except Exception as e:
-                                     print(f"Error calculating automatic overlap percent: {e}")
-                         if calculated_p_pcts:
-                             ct['porcentaje_solapamiento'] = max(calculated_p_pcts)
-                         else:
-                             ct['porcentaje_solapamiento'] = 0.0
-                     else:
-                         ct['porcentaje_solapamiento'] = 0.0
-                 else:
-                     ct['porcentaje_solapamiento'] = ov.get('porcentaje_solapamiento', 0.0)
-
-                 if tid not in task_info_map:
-                     task_info_map[tid] = {'start_date': ct.get('start_date'), 'end_date': ct.get('end_date'), 'duration': float(ct.get('Tiempo_Proceso', 0) or 0), 'cantidad': float(ct.get('Cantidad', 1) or 1)}
-                 else:
-                     task_info_map[tid]['end_date'] = ct['end_date']
-                 global_task_end_dates[tid] = ct['end_date']
+            # Actualiza los rastreadores
+            disponibilidad_maquina[maq_id] = finish_time
+            if op_id:
+                disponibilidad_op[op_id] = finish_time
+                
+            final_timeline_map[maq_id]['tasks'].extend(ct_result)
+            global_task_end_dates[t_id] = finish_time
 
     from .planning_service import get_active_maintenances
     for mid in machine_tasks_map.keys():

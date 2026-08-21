@@ -249,7 +249,7 @@ def calculate_timeline(maquina, tasks, start_date=None, task_min_start_times=Non
              # El inicio forzado (Pin) es respetado, pero ya no forzamos secuencialidad artificial.
              current_time = forced_time
 
-        # No constraints, current_time remains as is (or machine availability)
+         # No constraints, current_time remains as is (or machine availability)
 
         # ONLY IF NOT FORCED (Manual override wins over Physics)
         found_min_start = None
