@@ -452,7 +452,14 @@ def update_overlap_percentage(request):
         )
         
         if porcentaje_solapamiento is not None:
-            porcentaje_val = float(porcentaje_solapamiento)
+            raw_solapamiento = str(porcentaje_solapamiento).strip()
+            if raw_solapamiento == '':
+                porcentaje_val = 0.0
+            else:
+                try:
+                    porcentaje_val = float(raw_solapamiento.replace(',', '.'))
+                except ValueError:
+                    porcentaje_val = 0.0
             if porcentaje_val < 0 or porcentaje_val > 100:
                 return JsonResponse({'error': 'Percentage must be between 0 and 100'}, status=400)
             obj.porcentaje_solapamiento = porcentaje_val
@@ -886,7 +893,7 @@ def planificacion_list(request):
                     except (ValueError, TypeError):
                         n_plan_val = 999999
 
-                return (p_proy_val, p_art_val, -n_plan_val, op.get('OrdenSecuencia', 999999), op.get('Idorden', 9999999))
+                return (int(p_proy_val or 0), int(p_art_val or 0), -int(n_plan_val or 0), op.get('OrdenSecuencia', 999999), op.get('Idorden', 9999999))
 
             # 2. Jerarquía estricta: Prioridad Proyecto (ASC) → Prioridad Pieza (ASC) → Nivel Planif. (DESC) → OrdenSecuencia (ASC) → IdOrden (ASC)
             # Solo si el usuario NO tiene un orden visual previo guardado en BD, aplicamos el local.
@@ -1021,7 +1028,7 @@ def planificacion_list(request):
                 except (ValueError, TypeError):
                     n_plan_val = 999999
 
-            return (2, p_proy_val, p_art_val, -n_plan_val, op.get('OrdenSecuencia', 999999), id_orden)
+            return (2, int(p_proy_val or 0), int(p_art_val or 0), -int(n_plan_val or 0), op.get('OrdenSecuencia', 999999), id_orden)
 
         # Forzar ordenamiento en cualquier variante estructural de grouped_data
         if isinstance(grouped_data, dict):
@@ -1051,6 +1058,22 @@ def planificacion_list(request):
             print("DEBUG CONTEXTO TEMPLATE: orden final por máquina enviado a planificacion.html")
             for maquina, lista_ops in grouped_data.items():
                 print(f"  Máquina {maquina}: {[op.get('Idorden') for op in lista_ops]}")
+
+        # INYECCIÓN DE FUERZA BRUTA ANTES DEL RENDER
+        if isinstance(grouped_data, dict):
+            for maquina, lista_tareas in grouped_data.items():
+                if current_plan_mode == 'manual':
+                    lista_tareas.sort(key=lambda x: (
+                        float(x.get('OrdenVisual', 1000.0) if isinstance(x, dict) else getattr(x, 'OrdenVisual', 1000.0) or 1000.0),
+                        x.get('Idorden', 0)
+                    ))
+                else:
+                    lista_tareas.sort(key=lambda x: (
+                        int(x.get('prioridad_proyecto', x.get('ProyectoCode', 0)) if isinstance(x, dict) else getattr(x, 'prioridad_proyecto', 0) or 0),
+                        int(x.get('prioridad_articulo', x.get('prioridad_pieza', 0)) if isinstance(x, dict) else getattr(x, 'prioridad_articulos', getattr(x, 'prioridad_pieza', 0)) or 0),
+                        -int(x.get('nivel_planificacion', x.get('Nivel_Planificacion', 0)) if isinstance(x, dict) else getattr(x, 'nivel_planificacion', getattr(x, 'Nivel_Planificacion', 0)) or 0)
+                    ))
+
 
         return render(request, 'produccion/planificacion.html', {
             'grouped_data': grouped_data, 
@@ -3218,6 +3241,7 @@ def export_planificacion_excel(request):
 
 @csrf_exempt
 def create_scenario(request):
+    print(">>> INICIANDO GUARDADO - endpoint create_scenario hit")
     if request.method != 'POST':
         return JsonResponse({'error': 'Method not allowed'}, status=405)
         
@@ -3378,9 +3402,14 @@ def create_scenario(request):
                             except ValueError:
                                 return None
 
-                        cantidad_producida_manual = seq.get('cantidad_producida_manual')
+                        cantidad_producida_manual = sanitize_number(seq.get('cantidad_producida_manual'))
                         raw_tiempo_proceso = seq.get('tiempo_manual')
                         tiempo_manual = sanitize_number(raw_tiempo_proceso)
+                        
+                        # Limpieza segura para nuevos campos que pueden venir vacíos
+                        porcentaje_solapamiento = sanitize_number(seq.get('porcentaje_solapamiento'))
+                        modo_solapamiento = seq.get('modo_solapamiento')
+                        prioridad_frontend = sanitize_number(seq.get('prioridad'))
                         
                         print(f"[GUARDANDO] OP: {id_orden} | Maquina: {maquina} | plan_mode: {plan_mode_payload} | raw_nivel: {repr(raw_nivel)} | nivel_final: {nivel_final} | seq_keys: {list(seq.keys())}")
                         
@@ -3390,7 +3419,7 @@ def create_scenario(request):
                             
                             defaults_dict = {
                                 'orden_secuencia': orden_secuencia,
-                                'prioridad': prioridad_val
+                                'prioridad': prioridad_frontend if prioridad_frontend is not None else prioridad_val
                             }
                             # Solo pisamos el nivel_manual y la prioridad en la BD si vino un valor válido en el POST
                             if nivel_final is not None:
@@ -3401,7 +3430,12 @@ def create_scenario(request):
                                 defaults_dict['cantidad_producida_manual'] = cantidad_producida_manual
                             if tiempo_manual is not None:
                                 defaults_dict['tiempo_manual'] = tiempo_manual
+                            if porcentaje_solapamiento is not None:
+                                defaults_dict['porcentaje_solapamiento'] = porcentaje_solapamiento
+                            if modo_solapamiento in ['manual', 'automatico']:
+                                defaults_dict['modo_solapamiento'] = modo_solapamiento
                             
+                            print(f">>> DATOS A GUARDAR (Existing Scenario) para OP {id_orden} en maq {maquina}: {defaults_dict}")
                             print(f"[DEBUG BD] Escribiendo en BD para OP {id_orden}: {defaults_dict}")
                                 
                             PrioridadManual.objects.using('default').update_or_create(
@@ -3532,23 +3566,39 @@ def create_scenario(request):
                             except ValueError:
                                 return None
 
-                        cantidad_producida_manual = seq.get('cantidad_producida_manual')
+                        cantidad_producida_manual = sanitize_number(seq.get('cantidad_producida_manual'))
                         raw_tiempo_proceso = seq.get('tiempo_manual')
                         tiempo_manual = sanitize_number(raw_tiempo_proceso)
                         
+                        # Limpieza segura para nuevos campos que pueden venir vacíos
+                        porcentaje_solapamiento = sanitize_number(seq.get('porcentaje_solapamiento'))
+                        modo_solapamiento = seq.get('modo_solapamiento')
+                        prioridad_frontend = sanitize_number(seq.get('prioridad'))
+                        
                         if id_orden and maquina:
+                            # Calculamos la prioridad por defecto multiplicando por 1000
+                            prioridad_val = (orden_secuencia + 1) * 1000.0
+                            
                             defaults_dict = {
-                                'orden_secuencia': orden_secuencia
+                                'orden_secuencia': orden_secuencia,
+                                'prioridad': prioridad_frontend if prioridad_frontend is not None else prioridad_val
                             }
-                            # Solo pisamos el nivel_manual y la prioridad en la BD si vino un valor válido en el POST
+                            # Solo pisamos el nivel_manual y la prioridad en la BD si vino un valor válido
                             if nivel_final is not None:
                                 defaults_dict['nivel_manual'] = nivel_final
-                                # SE AGREGA: Actualizar también 'prioridad' basándose en el payload de guardado manual
                                 defaults_dict['prioridad'] = float(str(nivel_final).replace(',', '.'))
+                                
                             if cantidad_producida_manual is not None:
                                 defaults_dict['cantidad_producida_manual'] = cantidad_producida_manual
                             if tiempo_manual is not None:
                                 defaults_dict['tiempo_manual'] = tiempo_manual
+                                
+                            if porcentaje_solapamiento is not None:
+                                defaults_dict['porcentaje_solapamiento'] = porcentaje_solapamiento
+                            if modo_solapamiento in ['manual', 'automatico']:
+                                defaults_dict['modo_solapamiento'] = modo_solapamiento
+                                
+                            print(f">>> DATOS A GUARDAR (New Scenario) para OP {id_orden} en maq {maquina}: {defaults_dict}")
                                 
                             PrioridadManual.objects.using('default').update_or_create(
                                 scenario=new_scenario,
@@ -3562,6 +3612,9 @@ def create_scenario(request):
                     'scenario': {'id': new_scenario.id, 'nombre': new_scenario.nombre}
                 })
     except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f">>> ERROR FATAL EN GUARDADO: {e}")
         return JsonResponse({'error': str(e)}, status=500)
 
 @csrf_exempt
@@ -4851,11 +4904,29 @@ def api_ordenar_automatico(request):
                     # Project priority (lower number = higher priority, default to 999 if not set)
                     proyecto = task.get('ProyectoCode', '')
                     proj_prio = proyecto_prioridad_map.get(proyecto, 999)
+                    
+                    # Article priority (lower number = higher priority, default to 9999 if not set)
+                    p_art = task.get('prioridad_articulo') if isinstance(task, dict) else getattr(task, 'prioridad_articulo', None)
+                    if p_art is None or str(p_art).strip() in ['—', '', 'None']:
+                        p_art_val = 999999
+                    else:
+                        try:
+                            p_art_val = int(str(p_art).strip())
+                        except (ValueError, TypeError):
+                            p_art_val = 999999
+
                     # Nivel Planificación (lower number = higher priority, default to 999)
                     nivel = task.get('nivel_planificacion', task.get('Nivel_Planificacion', 999))
+                    try:
+                        n_plan_val = int(str(nivel).strip())
+                    except (ValueError, TypeError):
+                        n_plan_val = 999999
+
                     # Original order as tiebreaker
                     orden_visual = task.get('OrdenVisual', 0)
-                    return (proj_prio, nivel, orden_visual)
+                    
+                    # Tercer nivel invertido (DESC) para coincidir con la lógica del Gantt
+                    return (int(proj_prio or 0), int(p_art_val or 0), -int(n_plan_val or 0), orden_visual)
                 
                 tasks_sorted = sorted(tasks, key=get_sort_key)
                 

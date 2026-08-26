@@ -288,25 +288,25 @@
                     <span class="smaller fw-bold text-muted mb-0"><i class="fas fa-sort-amount-down"></i> Modo:</span>
                     
                     <!-- Botón Orden Manual -->
-                    <a href="?scenario_id={{ active_scenario.id }}&plan_mode=manual" 
+                    <!-- <a href="?scenario_id={{ active_scenario.id }}&plan_mode=manual" 
                     id="btnModoManual" 
                     data-mode="manual"
                     class="btn btn-sm btn-outline-secondary rounded-pill px-3 fw-bold d-inline-flex align-items-center gap-1">
                         <i class="fas fa-hand-pointer"></i> Orden Manual
                     </a>
-                    
+                     -->
                     <!-- Botón Optimización Automática -->
                     <!-- <a href="?scenario_id={{ active_scenario.id }}&plan_mode=automatico" 
                     id="btnModoAutomatico" 
                     data-mode="automatico"
                     class="btn btn-sm btn-outline-secondary rounded-pill px-3 fw-bold d-inline-flex align-items-center gap-1">
                         <i class="fas fa-magic"></i> Optimización Automática
-                    </a> -->
-                    
+                    </a>
+                     -->
                     <!-- Indicador de estado dinámico -->
-                    <span id="modoIndicador" class="badge bg-secondary rounded-pill px-3 py-1">
+                    <!-- <span id="modoIndicador" class="badge bg-secondary rounded-pill px-3 py-1">
                         Modo: <span id="modoIndicadorTexto">Manual</span>
-                    </span>
+                    </span> -->
                 </div>
 
                 <div class="vr bg-secondary opacity-25" style="height: 25px;"></div>
@@ -702,11 +702,10 @@
                                                                             style="font-size: 0.72rem; padding: 0.15rem 0.4rem; border-radius: 4px; min-width: 55px;">
                                                                         {% if item.modo_solapamiento == 'automatico' or not item.modo_solapamiento %}Auto{% else %}Manual{% endif %}
                                                                     </button>
-                                                                    <input type="number" class="form-control form-control-sm text-end solapamiento-porcentaje-input" 
+                                                                    <input type="text" inputmode="decimal" class="form-control form-control-sm text-end solapamiento-porcentaje-input" 
                                                                            onclick="event.stopPropagation();" onmousedown="event.stopPropagation();"
                                                                            style="width: 55px; padding: 0.15rem 0.2rem; font-size: 0.75rem; border-radius: 4px; {% if item.modo_solapamiento == 'automatico' or not item.modo_solapamiento %}background-color: #e9ecef; color: #6c757d;{% else %}background-color: #ffeeba;{% endif %}"
                                                                            value="{{ item.porcentaje_solapamiento|default:'0' }}"
-                                                                           min="0" max="100" step="5"
                                                                            {% if item.modo_solapamiento == 'automatico' or not item.modo_solapamiento %}disabled{% endif %}>
                                                                     <span class="small text-muted">%</span>
                                                                 </div>
@@ -2366,8 +2365,8 @@
             };
 
             // Event listeners para los botones
-            document.getElementById('btnModoManual')?.addEventListener('click', () => cambiarModo('manual'));
-            document.getElementById('btnModoAutomatico')?.addEventListener('click', () => cambiarModo('automatico'));
+            document.getElementById('btnModoManual')?.addEventListener('click', (e) => { e.preventDefault(); cambiarModo('manual'); });
+            document.getElementById('btnModoAutomatico')?.addEventListener('click', (e) => { e.preventDefault(); cambiarModo('automatico'); });
 
             // Inicializar Sortables al cargar la página
             inicializarSortables();
@@ -2599,8 +2598,13 @@
                             let rows = tbody.querySelectorAll('tr:not(.hidden-row)');
                             rows.forEach((row, index) => {
                                 let idOrden = row.getAttribute('data-id');
+                                // Guard clause: ignorar filas sin OP válida (cabeceras, filas vacías, etc.)
+                                if (!idOrden || idOrden === 'null' || idOrden === 'undefined' || idOrden.trim() === '') {
+                                    return;
+                                }
                                 // Si la fila se movió a otra tab, toma la ID de la máquina de esa tab
                                 let maquina = currentTabMachineId || row.getAttribute('data-maquina');
+                                if (!maquina || maquina === 'null') return;
                                 
                                 let nivelCell = row.querySelector('.editable-nivel');
                                 // Leer el texto real editado por el usuario de forma limpia
@@ -2635,13 +2639,28 @@
                                     }
                                 }
                                 
-                                console.log(`[GUARDAR] OP ${idOrden} | rawTexto='${rawTexto}' | textoNivel='${textoNivel}' | prioridadManual=${prioridadManual} | cant=${cantidadProducida} | tiempo=${tiempoManual}`);
+                                // Leer % Solapamiento y su modo desde el input/botón de la fila
+                                let solapInput = row.querySelector('.solapamiento-porcentaje-input');
+                                let solapBtn   = row.querySelector('.solapamiento-modo-toggle');
+                                let porcentajeSolapamiento = null;
+                                let modoSolapamiento = null;
+                                if (solapInput) {
+                                    let rawSolap = solapInput.value.trim().replace(',', '.');
+                                    let parsedSolap = parseFloat(rawSolap);
+                                    if (!isNaN(parsedSolap)) porcentajeSolapamiento = parsedSolap;
+                                }
+                                if (solapBtn) {
+                                    modoSolapamiento = solapBtn.classList.contains('btn-success') ? 'automatico' : 'manual';
+                                }
+
+                                console.log(`[GUARDAR] OP ${idOrden} | rawTexto='${rawTexto}' | textoNivel='${textoNivel}' | prioridadManual=${prioridadManual} | cant=${cantidadProducida} | tiempo=${tiempoManual} | solap=${porcentajeSolapamiento} | modoSolap=${modoSolapamiento}`);
                                 
                                 if (idOrden) {
                                     let seq = {
                                         id_orden: idOrden,
                                         maquina: maquina,
-                                        orden_secuencia: index
+                                        orden_secuencia: index,
+                                        prioridad: (index + 1) * 1000
                                     };
                                     // En modo manual preservamos exclusivamente la secuencia arrastrada.
                                     // El backend no debe reinterpretar estos valores como una prioridad automática.
@@ -2654,6 +2673,12 @@
                                     }
                                     if (tiempoManual !== null && !isNaN(tiempoManual)) {
                                         seq.tiempo_manual = tiempoManual;
+                                    }
+                                    if (porcentajeSolapamiento !== null) {
+                                        seq.porcentaje_solapamiento = porcentajeSolapamiento;
+                                    }
+                                    if (modoSolapamiento) {
+                                        seq.modo_solapamiento = modoSolapamiento;
                                     }
                                     secuencias.push(seq);
                                 }
