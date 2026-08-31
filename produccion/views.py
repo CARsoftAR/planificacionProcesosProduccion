@@ -1069,16 +1069,19 @@ def planificacion_list(request):
             for maquina, lista_tareas in grouped_data.items():
                 if current_plan_mode == 'manual':
                     lista_tareas.sort(key=lambda x: (
-                        float(x.get('OrdenVisual', 1000.0) if isinstance(x, dict) else getattr(x, 'OrdenVisual', 1000.0) or 1000.0),
+                        float(x.get('OrdenVisual') or 1000.0 if isinstance(x, dict) else getattr(x, 'OrdenVisual', 1000.0) or 1000.0),
+                        int(x.get('prioridad_proyecto', x.get('ProyectoCode', 0)) if isinstance(x, dict) else getattr(x, 'prioridad_proyecto', 0) or 0),
+                        int(x.get('prioridad_articulo', x.get('prioridad_pieza', 0)) if isinstance(x, dict) else getattr(x, 'prioridad_articulos', getattr(x, 'prioridad_pieza', 0)) or 0),
+                        -int(x.get('nivel_planificacion', x.get('Nivel_Planificacion', 0)) if isinstance(x, dict) else getattr(x, 'nivel_planificacion', getattr(x, 'Nivel_Planificacion', 0)) or 0),
                         x.get('Idorden', 0)
                     ))
                 else:
                     lista_tareas.sort(key=lambda x: (
                         int(x.get('prioridad_proyecto', x.get('ProyectoCode', 0)) if isinstance(x, dict) else getattr(x, 'prioridad_proyecto', 0) or 0),
                         int(x.get('prioridad_articulo', x.get('prioridad_pieza', 0)) if isinstance(x, dict) else getattr(x, 'prioridad_articulos', getattr(x, 'prioridad_pieza', 0)) or 0),
-                        -int(x.get('nivel_planificacion', x.get('Nivel_Planificacion', 0)) if isinstance(x, dict) else getattr(x, 'nivel_planificacion', getattr(x, 'Nivel_Planificacion', 0)) or 0)
+                        -int(x.get('nivel_planificacion', x.get('Nivel_Planificacion', 0)) if isinstance(x, dict) else getattr(x, 'nivel_planificacion', getattr(x, 'Nivel_Planificacion', 0)) or 0),
+                        x.get('Idorden', 0)
                     ))
-
 
         return render(request, 'produccion/planificacion.html', {
             'grouped_data': grouped_data, 

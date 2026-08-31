@@ -263,8 +263,8 @@ def get_planificacion_data(filtros=None, exclude_completed=True):
     # Unir todo
     final_sql = base_sql + "".join(where_clauses)
     
-    # Ordenamiento (Jerarquía solicitada: Maquina, Nivel Planificacion ASC)
-    final_sql += " ORDER BY MAC.MAQUINAD, Nivel_Planificacion, T.Idorden desc"
+    # Ordenamiento (Jerarquía solicitada: Maquina, Nivel Planificacion DESC)
+    final_sql += " ORDER BY MAC.MAQUINAD, Nivel_Planificacion DESC, T.Idorden desc"
 
     with connections['production'].cursor() as cursor:
         cursor.execute(final_sql, params)

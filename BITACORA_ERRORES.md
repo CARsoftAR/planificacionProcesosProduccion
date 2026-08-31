@@ -141,3 +141,36 @@ Conflicto de re-utilización de campos en base de datos.
      item['orden_manual_index'] = float(pieza_priority_val) if pieza_priority_val is not None else 0
      ```
    - De esta forma, las matemáticas del orden quedan estrictamente enjauladas en `orden_manual_index` para el motor del Gantt, mientras que la tabla visual solo renderiza las prioridades legítimas.
+---
+
+## CASO 5: Sobreescritura del Orden Descendente de Nivel de Planificación por Modo Manual
+
+**Síntoma:**
+A pesar de modificar la consulta SQL nativa (`ORDER BY Nivel_Planificacion DESC`), la tabla en pantalla continuaba ordenándose de menor a mayor en esa columna (ej. 4, 5, 11, 12, 14), ignorando el ordenamiento descendente solicitado.
+
+**Causa Raíz:**
+Reordenamiento secundario (downstream) ciego en Python para tareas no arrastradas.
+1. Al usar el modo "manual" (ej. después de guardar un Drag-and-Drop), el frontend enviaba `plan_mode=manual`.
+2. En `produccion/views.py` (`planificacion_list`), la "inyección de fuerza bruta" del orden forzaba un `.sort()` sobre todas las tareas usando la variable `OrdenVisual`.
+3. Las tareas que *no* habían sido movidas manualmente poseían el valor por defecto `OrdenVisual = 1000.0`. Al empatar todas en este valor, el desempate natural de la función `.sort()` en Python recaía **exclusivamente** sobre el `Idorden` (`x.get('Idorden', 0)`).
+4. Como las órdenes se insertan de forma secuencial en el ERP, su `Idorden` creciente correlacionaba exactamente con su `Nivel_Planificacion` ascendente. Esto produjo la ilusión óptica de que la columna se estaba forzando de menor a mayor.
+
+**RECETA DE SOLUCIÓN:**
+Se reparó el bloque de ordenamiento del modo "manual" en `produccion/views.py` para inyectar explícitamente toda la jerarquía de desempate en lugar de confiar solo en el `Idorden`.
+
+```python
+# ANTES: El empate en modo manual recaía en Idorden (ASC)
+lista_tareas.sort(key=lambda x: (
+    float(x.get('OrdenVisual') ...),
+    x.get('Idorden', 0)
+))
+
+# DESPUÉS: Fallback estructurado garantizando la jerarquía oficial
+lista_tareas.sort(key=lambda x: (
+    float(x.get('OrdenVisual') ...),
+    int(x.get('prioridad_proyecto', x.get('ProyectoCode', 0)) ...),
+    int(x.get('prioridad_articulo', x.get('prioridad_pieza', 0)) ...),
+    -int(x.get('nivel_planificacion', x.get('Nivel_Planificacion', 0)) ...),
+    x.get('Idorden', 0)
+))
+```
