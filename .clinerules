@@ -1,0 +1,8 @@
+Reglas para Antigravity: 
+
+1. PREVENCIÓN DE REGRESIONES (NUEVO): Antes de proponer o escribir cualquier código, es obligatorio que leas el archivo `BITACORA_ERRORES.md` en el directorio raíz. Debes verificar si el componente que vas a tocar tiene una solución histórica documentada para no romperla.
+2. AISLAMIENTO: Antes de cambiar algo, analiza dependencias. No alteres funciones globales, estados compartidos o rutas de otros módulos (ej. Clientes) sin avisar. 
+3. PRIORIDAD: Estabilidad total. 
+4. VERIFICACIÓN: Realiza una simulación lógica del flujo completo antes de entregar código para evitar regresiones. 
+5. COMPONENTE DE MODAL: Usa siempre esta estructura de React con bordes de 24px, icono centrado en círculo tenue y descripción centrada. Botón Cancelar: Solo texto, sin fondo ni recuadro. Botón Acción: Fondo azul (con ✓) para éxito o rojo para eliminar. 
+Código Base: const s = { overlay: {position:'fixed', inset:0, display:'flex', alignItems:'center', justifyContent:'center', backgroundColor:'rgba(0,0,0,0.5)'}, card: {backgroundColor:'white', padding:'32px', borderRadius:'24px', textAlign:'center'}, iconCircle: {margin:'0 auto 20px', borderRadius:'50%', width:'64px', height:'64px'}, cancelBtn: {backgroundColor:'transparent', border:'none', fontWeight:'bold'}, confirmBtn: {borderRadius:'16px', padding:'12px', color:'white', fontWeight:'bold'} };

@@ -720,10 +720,8 @@ def planificacion_list(request):
 
             if override_node:
                 target_machine_id = str(override_node['maquina']).strip()
-                # CRÍTICO: La "Prioridad Pieza" (1, 2, 3...) se lee del campo 'nivel_manual'
-                # del registro PrioridadManual. NO usar 'prioridad' (FloatField con default 0.0
-                # usado únicamente para OrdenVisual). Esta convención la confirma services.py:280.
-                pieza_priority_val = override_node.get('nivel_manual')
+                # Corrección del cruce de cables: Prioridad Pieza viene de 'prioridad'
+                pieza_priority_val = override_node.get('prioridad')
 
                 current_machine_id = target_machine_id
                 current_machine_name = id_to_name.get(target_machine_id, target_machine_id)
@@ -732,11 +730,14 @@ def planificacion_list(request):
                 item['OrdenSecuencia'] = float(override_node.get('orden_secuencia', 999999))
                 item['ManualPriorityFlag'] = True
 
-                # nivel_planificacion: SIEMPRE el valor nativo del ERP (columna NIVEL de TMAN002).
-                # NUNCA sobrescribir con nivel_manual. Eso es prioridad_articulo.
-                item['NivelManualFlag'] = bool(override_node.get('nivel_manual') is not None)
+                # Corrección del cruce de cables: nivel_planificacion SÍ debe sobreescribirse con nivel_manual
+                if override_node.get('nivel_manual') is not None:
+                    item['nivel_planificacion'] = int(float(override_node['nivel_manual']))
+                    item['NivelManualFlag'] = True
+                else:
+                    item['NivelManualFlag'] = False
 
-                # Asignación de la Prioridad de la pieza (1, 2, 3...) — desde nivel_manual, NO desde prioridad
+                # Asignación de la Prioridad de la pieza (1, 2, 3...) — desde prioridad
                 if pieza_priority_val is not None:
                     item['prioridad_pieza'] = int(float(pieza_priority_val))
                 else:
@@ -770,9 +771,10 @@ def planificacion_list(request):
                 item['prioridad_pieza'] = item.get('prioridad_pieza', 999)
                 item['modo_solapamiento'] = 'automatico'
 
-            # nivel_planificacion: SIEMPRE el nativo del ERP (TMAN002), nunca el override manual.
-            erp_nivel = item.get('Nivel_Planificacion')
-            item['nivel_planificacion'] = int(erp_nivel) if erp_nivel is not None else 0
+            # nivel_planificacion: usar el nativo del ERP solo si no hubo override manual
+            if not item.get('NivelManualFlag'):
+                erp_nivel = item.get('Nivel_Planificacion')
+                item['nivel_planificacion'] = int(erp_nivel) if erp_nivel is not None else 0
 
             p_code_clean = str(item.get('ProyectoCode') or '').strip()
             # BUG FIX: Distinguimos "registro explícito en ProyectoPrioridad" de "proyecto
@@ -1446,7 +1448,9 @@ def planificacion_visual_OLD(request):
             'prioridad': entry.prioridad,
             'tiempo_manual': entry.tiempo_manual,
             'nivel_manual': entry.nivel_manual,
-            'manual_start': entry.fecha_inicio_manual
+            'manual_start': entry.fecha_inicio_manual,
+            'porcentaje_solapamiento': getattr(entry, 'porcentaje_solapamiento', 0.0),
+            'modo_solapamiento': getattr(entry, 'modo_solapamiento', 'automatico')
         }
 
     # Create a set of IDs that are moved TO a machine locally
@@ -1571,11 +1575,11 @@ def planificacion_visual_OLD(request):
                      ov_data = virtual_overrides[p_id_int]
              except: pass
         
-        if ov_data and ov_data.get('nivel_manual') is not None:
-             task['prioridad_pieza'] = ov_data['nivel_manual']
-             # Debug: Show when manual nivel is applied
+        if ov_data and ov_data.get('prioridad') is not None:
+             task['prioridad_pieza'] = ov_data['prioridad']
+             # Debug: Show when manual prioridad is applied
              if p_id in [46543, 46542]:
-                 print(f"DEBUG OVERRIDE: Applied nivel_manual={ov_data['nivel_manual']} to task {p_id}")
+                 print(f"DEBUG OVERRIDE: Applied prioridad={ov_data['prioridad']} to task {p_id}")
              
     # Debug: Check Sample
     # print(f"DEBUG: Checking Mstnmbr/Nivel for deps. Count: {len(all_tasks_for_deps)}") 
@@ -3383,6 +3387,14 @@ def create_scenario(request):
                                 nivel_final = int(raw_nivel)
                             except ValueError:
                                 pass
+                                
+                        raw_prioridad_articulos = seq.get('prioridad_articulos')
+                        prioridad_articulos_final = None
+                        if raw_prioridad_articulos is not None and str(raw_prioridad_articulos).strip() != '':
+                            try:
+                                prioridad_articulos_final = float(str(raw_prioridad_articulos).replace(',', '.'))
+                            except ValueError:
+                                pass
                         
                         # Extraer cantidad_producida y tiempo_proceso del payload
                         def sanitize_number(val):
@@ -3424,8 +3436,13 @@ def create_scenario(request):
                             # Solo pisamos el nivel_manual y la prioridad en la BD si vino un valor válido en el POST
                             if nivel_final is not None:
                                 defaults_dict['nivel_manual'] = nivel_final
-                                # SE AGREGA: Actualizar también 'prioridad' basándose en el payload de guardado manual
-                                defaults_dict['prioridad'] = float(str(nivel_final).replace(',', '.'))
+                            
+                            # Aislamiento Estricto: Si el frontend envía un orden manual explícito, ignoramos el ordenamiento automático
+                            if plan_mode_payload == 'manual':
+                                pass # Preservamos defaults_dict['prioridad'] que ya tiene el orden manual (prioridad_val)
+                            else:
+                                if prioridad_articulos_final is not None:
+                                    defaults_dict['prioridad'] = prioridad_articulos_final
                             if cantidad_producida_manual is not None:
                                 defaults_dict['cantidad_producida_manual'] = cantidad_producida_manual
                             if tiempo_manual is not None:
@@ -3547,6 +3564,14 @@ def create_scenario(request):
                                 nivel_final = int(raw_nivel)
                             except ValueError:
                                 pass
+                                
+                        raw_prioridad_articulos = seq.get('prioridad_articulos')
+                        prioridad_articulos_final = None
+                        if raw_prioridad_articulos is not None and str(raw_prioridad_articulos).strip() != '':
+                            try:
+                                prioridad_articulos_final = float(str(raw_prioridad_articulos).replace(',', '.'))
+                            except ValueError:
+                                pass
                         
                         # Extraer cantidad_producida y tiempo_proceso del payload
                         def sanitize_number(val):
@@ -3586,7 +3611,13 @@ def create_scenario(request):
                             # Solo pisamos el nivel_manual y la prioridad en la BD si vino un valor válido
                             if nivel_final is not None:
                                 defaults_dict['nivel_manual'] = nivel_final
-                                defaults_dict['prioridad'] = float(str(nivel_final).replace(',', '.'))
+                            
+                            # Aislamiento Estricto: Si el frontend envía un orden manual explícito, ignoramos el ordenamiento automático
+                            if plan_mode_payload == 'manual':
+                                pass # Preservamos defaults_dict['prioridad'] que ya tiene el orden manual (prioridad_val)
+                            else:
+                                if prioridad_articulos_final is not None:
+                                    defaults_dict['prioridad'] = prioridad_articulos_final
                                 
                             if cantidad_producida_manual is not None:
                                 defaults_dict['cantidad_producida_manual'] = cantidad_producida_manual
@@ -4332,9 +4363,10 @@ def api_get_article_processes(request):
             p_manual_db = PrioridadManual.objects.using('default').filter(
                 scenario=active_scenario,
                 id_orden__in=op_ids
-            ).values('id_orden', 'nivel_manual')
+            ).values('id_orden', 'nivel_manual', 'prioridad')
             
             op_to_nivel = {p['id_orden']: p['nivel_manual'] for p in p_manual_db if p['nivel_manual'] is not None}
+            op_to_prio = {p['id_orden']: p['prioridad'] for p in p_manual_db if p['prioridad'] is not None}
             
             # Agrupamos por MSTNMBR (pieza/artículo madre) para auto-secuenciar las operaciones del proceso
             from collections import defaultdict
@@ -4354,8 +4386,8 @@ def api_get_article_processes(request):
                     r['Nivel_Planificacion'] = int(float(erp_val)) if erp_val is not None and str(erp_val).strip() not in ('', '0') else 0
 
                     # prioridad_articulo: independiente, desde override manual si existe
-                    if oid in op_to_nivel:
-                        r['prioridad_articulo'] = int(op_to_nivel[oid])
+                    if oid in op_to_prio:
+                        r['prioridad_articulo'] = int(op_to_prio[oid])
                     else:
                         r['prioridad_articulo'] = None
 

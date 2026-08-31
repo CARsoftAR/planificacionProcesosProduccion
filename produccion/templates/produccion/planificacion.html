@@ -2613,6 +2613,12 @@
                                 let textoNivel = rawTexto.replace(/\s+/g, '').replace(/[^\d-]/g, '');
                                 let prioridadManual = textoNivel !== '' ? parseInt(textoNivel, 10) : null;
                                 
+                                let prioCell = row.querySelector('.row-priority-cell');
+                                let rawPrioTexto = prioCell ? prioCell.textContent : '0';
+                                let textoPrio = rawPrioTexto.replace(/\s+/g, '').replace(/[^\d.-]/g, '');
+                                let prioridadArticulos = textoPrio !== '' ? parseFloat(textoPrio) : null;
+
+                                
                                 // Extraer Cantidad Producida y Tiempo de las celdas
                                 let cantidadCell = row.querySelector('.editable-cantidad');
                                 let cantidadProducida = null;
@@ -2662,11 +2668,11 @@
                                         orden_secuencia: index,
                                         prioridad: (index + 1) * 1000
                                     };
-                                    // En modo manual preservamos exclusivamente la secuencia arrastrada.
-                                    // El backend no debe reinterpretar estos valores como una prioridad automática.
-                                    if (ordenamientoMode !== 'manual' && prioridadManual !== null && !isNaN(prioridadManual)) {
+                                    if (prioridadManual !== null && !isNaN(prioridadManual)) {
                                         seq.nivel_planificacion = prioridadManual;
-                                        seq.prioridad_manual = prioridadManual;
+                                    }
+                                    if (prioridadArticulos !== null && !isNaN(prioridadArticulos)) {
+                                        seq.prioridad_articulos = prioridadArticulos;
                                     }
                                     if (cantidadProducida !== null && !isNaN(cantidadProducida)) {
                                         seq.cantidad_producida_manual = cantidadProducida;

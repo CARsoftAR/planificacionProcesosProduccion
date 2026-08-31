@@ -716,10 +716,8 @@ def planificacion_list(request):
 
             if override_node:
                 target_machine_id = str(override_node['maquina']).strip()
-                # CRÍTICO: La "Prioridad Pieza" (1, 2, 3...) se lee del campo 'nivel_manual'
-                # del registro PrioridadManual. NO usar 'prioridad' (FloatField con default 0.0
-                # usado únicamente para OrdenVisual). Esta convención la confirma services.py:280.
-                pieza_priority_val = override_node.get('nivel_manual')
+                # Corrección del cruce de cables: Prioridad Pieza viene de 'prioridad'
+                pieza_priority_val = override_node.get('prioridad')
 
                 current_machine_id = target_machine_id
                 current_machine_name = id_to_name.get(target_machine_id, target_machine_id)
@@ -728,14 +726,14 @@ def planificacion_list(request):
                 item['OrdenSecuencia'] = float(override_node.get('orden_secuencia', 999999))
                 item['ManualPriorityFlag'] = True
 
-                # Separación estricta de datos
+                # Corrección del cruce de cables: nivel_planificacion SÍ debe sobreescribirse con nivel_manual
                 if override_node.get('nivel_manual') is not None:
-                    item['nivel_planificacion'] = int(override_node['nivel_manual'])
+                    item['nivel_planificacion'] = int(float(override_node['nivel_manual']))
                     item['NivelManualFlag'] = True
                 else:
                     item['NivelManualFlag'] = False
 
-                # Asignación de la Prioridad de la pieza (1, 2, 3...) — desde nivel_manual, NO desde prioridad
+                # Asignación de la Prioridad de la pieza (1, 2, 3...) — desde prioridad
                 if pieza_priority_val is not None:
                     item['prioridad_pieza'] = int(float(pieza_priority_val))
                 else:
@@ -1494,11 +1492,11 @@ def planificacion_visual_OLD(request):
                      ov_data = virtual_overrides[p_id_int]
              except: pass
         
-        if ov_data and ov_data.get('nivel_manual') is not None:
-             task['prioridad_pieza'] = ov_data['nivel_manual']
-             # Debug: Show when manual nivel is applied
+        if ov_data and ov_data.get('prioridad') is not None:
+             task['prioridad_pieza'] = ov_data['prioridad']
+             # Debug: Show when manual prioridad is applied
              if p_id in [46543, 46542]:
-                 print(f"DEBUG OVERRIDE: Applied nivel_manual={ov_data['nivel_manual']} to task {p_id}")
+                 print(f"DEBUG OVERRIDE: Applied prioridad={ov_data['prioridad']} to task {p_id}")
              
     # Debug: Check Sample
     # print(f"DEBUG: Checking Mstnmbr/Nivel for deps. Count: {len(all_tasks_for_deps)}") 
@@ -3224,10 +3222,15 @@ def create_scenario(request):
                         if raw_nivel is None:
                             raw_nivel = seq.get('prioridad_manual')
                         nivel_final = sanitize_number(raw_nivel) if (raw_nivel is not None and str(raw_nivel).strip() != '') else None
+                        
+                        raw_prioridad_articulos = seq.get('prioridad_articulos')
+                        prioridad_articulos_final = sanitize_number(raw_prioridad_articulos) if (raw_prioridad_articulos is not None and str(raw_prioridad_articulos).strip() != '') else None
+                        
                         defaults_dict = {'orden_secuencia': orden_secuencia}
                         if nivel_final is not None:
                             defaults_dict['nivel_manual'] = nivel_final
-                            defaults_dict['prioridad'] = nivel_final
+                        if prioridad_articulos_final is not None:
+                            defaults_dict['prioridad'] = prioridad_articulos_final
                         PrioridadManual.objects.using('default').update_or_create(
                             scenario=scenario,
                             id_orden=id_orden,
@@ -3316,10 +3319,15 @@ def create_scenario(request):
                         if raw_nivel is None:
                             raw_nivel = seq.get('prioridad_manual')
                         nivel_final = sanitize_number(raw_nivel) if (raw_nivel is not None and str(raw_nivel).strip() != '') else None
+                        
+                        raw_prioridad_articulos = seq.get('prioridad_articulos')
+                        prioridad_articulos_final = sanitize_number(raw_prioridad_articulos) if (raw_prioridad_articulos is not None and str(raw_prioridad_articulos).strip() != '') else None
+
                         defaults_dict = {'orden_secuencia': orden_secuencia}
                         if nivel_final is not None:
                             defaults_dict['nivel_manual'] = nivel_final
-                            defaults_dict['prioridad'] = nivel_final
+                        if prioridad_articulos_final is not None:
+                            defaults_dict['prioridad'] = prioridad_articulos_final
                         PrioridadManual.objects.using('default').update_or_create(
                             scenario=new_scenario,
                             id_orden=id_orden,
@@ -4006,6 +4014,7 @@ def api_get_project_articles(request):
             ).values('id_orden', 'nivel_manual')
             
             op_to_nivel = {p['id_orden']: p['nivel_manual'] for p in p_manual_db if p['nivel_manual'] is not None}
+            op_to_prio = {p['id_orden']: p['prioridad'] for p in p_manual_db if p['prioridad'] is not None}
             
             # Enriquecemos los artículos con su nivel actual
             for art in articles:
@@ -4098,13 +4107,20 @@ def api_get_article_processes(request):
                 scenario=active_scenario,
                 id_orden__in=op_ids
             ).values('id_orden', 'nivel_manual')
-            
-            op_to_nivel = {p['id_orden']: p['nivel_manual'] for p in p_manual_db if p['nivel_manual'] is not None}
+                op_to_nivel = {p['id_orden']: p['nivel_manual'] for p in p_manual_db if p['nivel_manual'] is not None}
+            op_to_prio = {p['id_orden']: p['prioridad'] for p in p_manual_db if p['prioridad'] is not None}
             
             # Agrupamos por MSTNMBR (pieza/artículo madre) para auto-secuenciar las operaciones del proceso
             from collections import defaultdict
             groups = defaultdict(list)
             for r in results:
+                # prioridad_articulo: independiente, desde override manual si existe
+                oid = r['IdOrden']
+                if oid in op_to_prio:
+                    r['prioridad_articulo'] = int(op_to_prio[oid])
+                else:
+                    r['prioridad_articulo'] = None
+                
                 mst = r.get('MSTNMBR') or 0
                 groups[mst].append(r)
                 

@@ -957,6 +957,10 @@ def get_gantt_data(request, force_run=False):
                  # Ahora SÍ respetamos el nivel_manual si el usuario lo forzó en pantalla
                  if ov.get('nivel_manual') is not None and float(ov['nivel_manual']) != 0:
                      item['nivel_planificacion'] = float(ov['nivel_manual'])
+                 if ov.get('porcentaje_solapamiento') is not None:
+                     item['porcentaje_solapamiento'] = float(ov['porcentaje_solapamiento'])
+                 if ov.get('modo_solapamiento') is not None:
+                     item['modo_solapamiento'] = ov['modo_solapamiento']
                  if ov.get('manual_start'):
                      force_start_times_pass1[p_id] = ov['manual_start']
                      item['is_pinned'] = True
@@ -1044,6 +1048,73 @@ def get_gantt_data(request, force_run=False):
         x.get('secuencia_proceso', 999)
     ))
         
+    # --- FUNCION CALENDARIO INVERSO PARA SOLAPAMIENTO ---
+    def subtract_working_hours(end_time, hours_to_subtract, maquina_obj, non_working, half_days):
+        from django.utils import timezone
+        from datetime import timedelta, datetime
+        from .planning_service import is_non_working_holiday, is_half_day_holiday
+        
+        if hours_to_subtract <= 0: return end_time
+        curr = end_time
+        if timezone.is_aware(curr): curr = timezone.localtime(curr)
+        else: curr = timezone.make_aware(curr)
+            
+        from collections import defaultdict
+        schedules = defaultdict(list)
+        m_id = str(getattr(maquina_obj, 'id_maquina', '')).strip()
+        m_name = str(getattr(maquina_obj, 'nombre', '')).strip().upper()
+        if m_id == 'MAC00' or 'SIN ASIGNAR' in m_name:
+            schedules['LV'] = [{'start': datetime.strptime("07:00", "%H:%M").time(), 'end': datetime.strptime("22:00", "%H:%M").time()}]
+        else:
+            for h in maquina_obj.horarios.all().order_by('hora_inicio'):
+                schedules[h.dia].append({'start': h.hora_inicio, 'end': h.hora_fin})
+            for day in list(schedules.keys()):
+                if schedules[day]:
+                    schedules[day] = [{'start': min(s['start'] for s in schedules[day]), 'end': max(s['end'] for s in schedules[day])}]
+            if not schedules:
+                schedules['LV'] = [{'start': datetime.strptime("07:00", "%H:%M").time(), 'end': datetime.strptime("16:00", "%H:%M").time()}]
+                
+        remaining = hours_to_subtract
+        loops = 0
+        while remaining > 0.001 and loops < 10000:
+            loops += 1
+            if is_non_working_holiday(curr, non_working):
+                curr = (curr - timedelta(days=1)).replace(hour=23, minute=59, second=59)
+                continue
+                
+            weekday = curr.weekday()
+            day_type = 'LV' if 0 <= weekday <= 4 else ('SA' if weekday == 5 else ('DO' if weekday == 6 else None))
+            
+            if day_type in schedules:
+                matches = schedules[day_type]
+                is_half = is_half_day_holiday(curr, half_days)
+                curr_t = curr.time()
+                found_shift = False
+                for sch in matches:
+                    s = sch['start']
+                    e = sch['end']
+                    if is_half: e = datetime.strptime("12:00", "%H:%M").time()
+                    if s < e:
+                        if s <= curr_t <= e:
+                            avail_h = (datetime.combine(curr.date(), curr_t, tzinfo=curr.tzinfo) - datetime.combine(curr.date(), s, tzinfo=curr.tzinfo)).total_seconds() / 3600.0
+                            if avail_h >= remaining:
+                                curr = curr - timedelta(hours=remaining)
+                                remaining = 0
+                            else:
+                                remaining -= avail_h
+                                curr = datetime.combine(curr.date(), s, tzinfo=curr.tzinfo) - timedelta(seconds=1)
+                            found_shift = True
+                            break
+                        elif curr_t > e:
+                            curr = datetime.combine(curr.date(), e, tzinfo=curr.tzinfo)
+                            found_shift = True
+                            break
+                if found_shift and remaining <= 0: break
+                if not found_shift: curr = (curr - timedelta(days=1)).replace(hour=23, minute=59, second=59)
+            else:
+                curr = (curr - timedelta(days=1)).replace(hour=23, minute=59, second=59)
+        return curr
+
     # 3. Implementar diccionarios de rastreo global
     disponibilidad_maquina = {}
     disponibilidad_op = {}
@@ -1057,10 +1128,36 @@ def get_gantt_data(request, force_run=False):
         maq_id = tarea['_mid']
         op_id = tarea.get('ProyectoCode')
         maquina = tarea['_maq']
+        try:
+            t_id_str = str(int(float(tarea.get('Idorden', 0))))
+        except:
+            t_id_str = str(tarea.get('Idorden', ''))
         
         # Busca los tiempos disponibles (o usa la hora base)
         t_maq = disponibilidad_maquina.get(maq_id, start_simulation)
-        t_op = disponibilidad_op.get(op_id, start_simulation)
+        
+        # --- LOGICA DE SOLAPAMIENTO ---
+        solapamiento_porcentaje = 0.0
+        pred_info = disponibilidad_op.get(op_id)
+        if pred_info:
+            t_op = pred_info['end_time']
+            tiempo_proceso_predecesora = pred_info['duracion']
+            
+            # Extraer el valor del % de solapamiento de la tarea actual
+            ov_cfg = virtual_overrides.get(t_id_str, {})
+            modo_solap = ov_cfg.get('modo_solapamiento', 'automatico')
+            if modo_solap == 'manual':
+                solapamiento_porcentaje = float(ov_cfg.get('porcentaje_solapamiento', 0.0))
+            else:
+                solapamiento_porcentaje = float(tarea.get('porcentaje_solapamiento', 0.0))
+                
+            horas_anticipadas = 0
+            if solapamiento_porcentaje > 0 and tiempo_proceso_predecesora > 0:
+                horas_anticipadas = tiempo_proceso_predecesora * (solapamiento_porcentaje / 100.0)
+                # Restar usando el calendario laboral de la máquina de destino (sucesor)
+                t_op = subtract_working_hours(t_op, horas_anticipadas, maquina, non_working_days, half_day_holidays)
+        else:
+            t_op = start_simulation
         
         # El inicio es el momento en que AMBOS (máquina y pieza) están libres
         start_time = max(t_maq, t_op)
@@ -1080,20 +1177,23 @@ def get_gantt_data(request, force_run=False):
             # Recuperamos el finish_time real
             finish_time = ct_result[-1]['end_date']
             
-            # Asignar solapamiento (como no hay overlap real en este enfoque simplificado, es 0)
+            # Asignar solapamiento
             for seg in ct_result:
                 ov_cfg = virtual_overrides.get(t_id, {})
                 modo_solap = ov_cfg.get('modo_solapamiento', 'automatico')
                 seg['modo_solapamiento'] = modo_solap
                 if modo_solap == 'manual':
-                    seg['porcentaje_solapamiento'] = ov_cfg.get('porcentaje_solapamiento', 0.0)
+                    seg['porcentaje_solapamiento'] = float(ov_cfg.get('porcentaje_solapamiento', 0.0))
                 else:
-                    seg['porcentaje_solapamiento'] = 0.0
+                    seg['porcentaje_solapamiento'] = float(tarea.get('porcentaje_solapamiento', 0.0))
             
             # Actualiza los rastreadores
             disponibilidad_maquina[maq_id] = finish_time
             if op_id:
-                disponibilidad_op[op_id] = finish_time
+                dur_real = sum(seg.get('duration_real', 0) for seg in ct_result)
+                if dur_real <= 0.001:
+                    dur_real = float(tarea.get('Tiempo_Proceso', 0) or 0)
+                disponibilidad_op[op_id] = {'end_time': finish_time, 'duracion': dur_real}
                 
             final_timeline_map[maq_id]['tasks'].extend(ct_result)
             global_task_end_dates[t_id] = finish_time

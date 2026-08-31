@@ -272,6 +272,7 @@ def get_planificacion_data(filtros=None, exclude_completed=True):
         
     # --- MERGE: Overlay Manual Levels and Auto-Sequence ---
     op_to_nivel = {}
+    op_to_prio = {}
     if results and active_scenario:
         op_ids = [r['Idorden'] for r in results]
         # Collect all Master OP IDs to ensure we query their priorities too
@@ -288,8 +289,9 @@ def get_planificacion_data(filtros=None, exclude_completed=True):
         p_manual_db = PrioridadManual.objects.using('default').filter(
             scenario=active_scenario,
             id_orden__in=query_ids
-        ).values('id_orden', 'nivel_manual')
+        ).values('id_orden', 'nivel_manual', 'prioridad')
         op_to_nivel = {p['id_orden']: p['nivel_manual'] for p in p_manual_db if p['nivel_manual'] is not None}
+        op_to_prio = {p['id_orden']: p['prioridad'] for p in p_manual_db if p['prioridad'] is not None}
 
     # DEDUPLICAR / FILTRAR RESULTADOS (Asignación Única por Idorden)
     if results:
@@ -368,20 +370,20 @@ def get_planificacion_data(filtros=None, exclude_completed=True):
                 # 1. Secuencia correlativa de procesos
                 r['secuencia_proceso'] = i + 1
                 
-                # 2. Prioridad de pieza (nivel_manual en SQLite)
+                # 2. Prioridad de pieza (prioridad en SQLite)
                 try:
                     clean_oid = int(float(oid))
                 except:
                     clean_oid = oid
                 
-                prio = op_to_nivel.get(clean_oid)
+                prio = op_to_prio.get(clean_oid)
                 # Si no tiene prioridad manual a nivel de esta OP, buscamos si la tiene en la OP Master (mst)
                 if prio is None and mst:
                     try:
                         clean_mst = int(float(mst))
                     except:
                         clean_mst = mst
-                    prio = op_to_nivel.get(clean_mst)
+                    prio = op_to_prio.get(clean_mst)
                 
                 r['prioridad_pieza'] = int(prio) if prio is not None else None
                 
