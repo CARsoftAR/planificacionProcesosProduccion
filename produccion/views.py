@@ -737,11 +737,14 @@ def planificacion_list(request):
                 else:
                     item['NivelManualFlag'] = False
 
-                # Asignación de la Prioridad de la pieza (1, 2, 3...) — desde prioridad
-                if pieza_priority_val is not None:
+                # Reconexión visual al valor del modal guardado en 'prioridad' (pieza_priority_val)
+                # Ocultamos la matemática de ordenamiento (saltos >= 1000) de la columna visual
+                if pieza_priority_val is not None and float(pieza_priority_val) < 1000:
                     item['prioridad_pieza'] = int(float(pieza_priority_val))
-                else:
-                    item['prioridad_pieza'] = item.get('prioridad_pieza', 999)
+                elif item.get('prioridad_pieza') is None or float(item.get('prioridad_pieza', 0)) >= 1000:
+                    item['prioridad_pieza'] = 1 # Respaldo visual si fue pisado por el drag-and-drop
+                
+                item['orden_manual_index'] = float(pieza_priority_val) if pieza_priority_val is not None else 0
 
                 if override_node.get('tiempo_manual') is not None:
                     item['Tiempo_Proceso'] = float(override_node['tiempo_manual'])
@@ -3374,11 +3377,9 @@ def create_scenario(request):
                         maquina = seq.get('maquina')
                         # Extracción segura de nivel de planificación
                         orden_secuencia = seq.get('orden_secuencia', 0)
-                        raw_nivel = None
-                        if persistir_prioridad_manual:
-                            raw_nivel = seq.get('nivel_planificacion')
-                            if raw_nivel is None:
-                                raw_nivel = seq.get('prioridad_manual')
+                        raw_nivel = seq.get('nivel_planificacion')
+                        if raw_nivel is None:
+                            raw_nivel = seq.get('prioridad_manual')
                             
                         # Si encontramos un valor para el nivel en el POST, lo parseamos
                         nivel_final = None
@@ -3551,11 +3552,9 @@ def create_scenario(request):
                         maquina = seq.get('maquina')
                         # Extracción segura de nivel de planificación
                         orden_secuencia = seq.get('orden_secuencia', 0)
-                        raw_nivel = None
-                        if persistir_prioridad_manual:
-                            raw_nivel = seq.get('nivel_planificacion')
-                            if raw_nivel is None:
-                                raw_nivel = seq.get('prioridad_manual')
+                        raw_nivel = seq.get('nivel_planificacion')
+                        if raw_nivel is None:
+                            raw_nivel = seq.get('prioridad_manual')
                             
                         # Si encontramos un valor para el nivel en el POST, lo parseamos
                         nivel_final = None
@@ -4502,7 +4501,7 @@ def api_confirm_selected_tasks(request):
                     scenario=active_scenario,
                     maquina=maquina,
                     defaults={
-                        'nivel_manual': 1,
+                        'nivel_manual': None,
                         'prioridad': max_art_prio + 100.0,
                         'orden_secuencia': 0,
                     }
@@ -4553,7 +4552,6 @@ def api_confirm_selected_tasks(request):
                                 scenario=active_scenario,
                                 maquina=maquina,
                                 defaults={
-                                    'nivel_manual': int(prio_val),
                                     'prioridad': float(prio_val),
                                     'orden_secuencia': 0,
                                 }

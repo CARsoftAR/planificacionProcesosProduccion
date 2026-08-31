@@ -111,3 +111,33 @@ Implementación de un aislamiento lógico estricto ("Candado condicional") basad
 
 2. **Frontend (`produccion/templates/produccion/planificacion.html`):**
    - Confirmamos que al clickear en "Guardar", el frontend extraiga y pase el `ordenamientoMode` en curso, y que tras el éxito, el redireccionamiento mandatorio (`window.location.href = '?scenario_id=...&plan_mode=manual'`) respete la carga asincrónica con la variable protegida por el candado del backend.
+
+---
+
+## CASO 4: Contaminación Visual de "Prioridad Artículos" con la Matemática de Ordenamiento Manual
+
+**Síntoma:**
+Al usar la funcionalidad de reordenamiento manual (drag-and-drop), los valores de la columna "Prioridad Artículos" en la tabla principal se reemplazaban por números inflados (1000, 2000, 3000...), ocultando el valor real de la prioridad asignada a la pieza desde el Selector de Producción.
+
+**Causa Raíz:**
+Conflicto de re-utilización de campos en base de datos.
+1. El endpoint del modal de tareas nuevas (`api_confirm_selected_tasks`) recibía la "Prioridad Pieza" y la guardaba correctamente en la columna `prioridad` del modelo `PrioridadManual`.
+2. Sin embargo, cuando se reordenaban las filas, el sistema matemático guardaba los saltos de indexación visuales (los múltiplos de 1000) **en esa misma columna `prioridad`**.
+3. Al recargar la vista, `planificacion_list` tomaba ciegamente el valor guardado en `prioridad` e inyectaba los múltiplos de 1000 de vuelta al frontend, asumiendo que eran las prioridades legítimas de las piezas.
+
+**RECETA DE SOLUCIÓN:**
+
+1. **Backend - Reconexión y Escudo Lógico (`produccion/views.py` en `planificacion_list`):**
+   - Identificamos que el valor que viaja bajo `pieza_priority_val` contiene tanto la prioridad real de la pieza (1, 2, 3...) como la contaminación matemática si hubo drag-and-drop (>= 1000).
+   - Mapeamos nuevamente `pieza_priority_val` a la celda visual `prioridad_pieza` introduciendo una capa de filtrado:
+     ```python
+     # Reconexión visual al valor del modal guardado en 'prioridad' (pieza_priority_val)
+     # Ocultamos la matemática de ordenamiento (saltos >= 1000) de la columna visual
+     if pieza_priority_val is not None and float(pieza_priority_val) < 1000:
+         item['prioridad_pieza'] = int(float(pieza_priority_val))
+     elif item.get('prioridad_pieza') is None or float(item.get('prioridad_pieza', 0)) >= 1000:
+         item['prioridad_pieza'] = 1 # Respaldo visual si fue pisado por el drag-and-drop
+         
+     item['orden_manual_index'] = float(pieza_priority_val) if pieza_priority_val is not None else 0
+     ```
+   - De esta forma, las matemáticas del orden quedan estrictamente enjauladas en `orden_manual_index` para el motor del Gantt, mientras que la tabla visual solo renderiza las prioridades legítimas.
