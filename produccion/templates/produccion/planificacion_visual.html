@@ -4085,45 +4085,74 @@
         // AUTO-LAYOUT / COLLISION RESOLVER (MODO AUTO)
         // ============================================================
         function runAutoLayout() {
-            console.log("GanttEngine: Iniciando resolución de solapes en Modo Auto...");
+            console.log("GanttEngine: Iniciando resolución de solapes en Modo Auto por Máquina...");
+            
+            // FUENTE DE VERDAD: leer el mapa de orden visual guardado justo antes de navegar al Gantt
+            let ganttTableOrder = {};
+            try {
+                const stored = sessionStorage.getItem('ganttTableOrder');
+                if (stored) ganttTableOrder = JSON.parse(stored);
+            } catch(e) { console.warn('No se pudo leer ganttTableOrder:', e); }
+            console.log("GanttEngine: Orden visual leído desde sessionStorage:", ganttTableOrder);
+            
             const rows = document.querySelectorAll('.task-row');
             
             rows.forEach(row => {
-                // Obtener todas las tareas visibles de la fila ordenadas por tiempo original (left)
-                const tasks = Array.from(row.querySelectorAll('.task-block'))
-                                   .filter(t => t.style.display !== 'none')
-                                   .sort((a, b) => {
-                                       let leftA = a.dataset.originalLeft ? parseFloat(a.dataset.originalLeft) : parseFloat(a.style.left);
-                                       let leftB = b.dataset.originalLeft ? parseFloat(b.dataset.originalLeft) : parseFloat(b.style.left);
-                                       return leftA - leftB;
-                                   });
+                const machineId = row.getAttribute('data-machine-id');
                 
-                let lastEnd = 0;
+                // 1. Orden visual para esta máquina exacta (array de strings: ["47812", "47890", "47834"])
+                const orderedIds = ganttTableOrder[machineId] || [];
+                console.log("GanttEngine: Máquina", machineId, "→ orden:", orderedIds);
+                
+                // 2. Capturar bloques del Gantt para esta máquina
+                let taskBlocks = Array.from(row.querySelectorAll('.task-block'))
+                                      .filter(t => t.style.display !== 'none');
+                
+                // 3. Ordenar forzando la sincronización con la tabla
+                const tasks = taskBlocks.sort((a, b) => {
+                    const idA = a.getAttribute('data-task-id');
+                    const idB = b.getAttribute('data-task-id');
+                    
+                    let posA = orderedIds.indexOf(idA);
+                    let posB = orderedIds.indexOf(idB);
+                    
+                    // Fallback si hay un error de lectura
+                    if (posA === -1) posA = 999999;
+                    if (posB === -1) posB = 999999;
+                    
+                    return posA - posB;
+                });
+                
                 const MARGIN = 4; // Margen mínimo entre bloques
 
+                // Encontrar la posición de inicio del primer bloque (el más a la izquierda del backend)
+                // Así respetamos el "cuando empieza" el primer trabajo, y encadenamos el resto desde ahí
+                let anchorLeft = null;
+                tasks.forEach(task => {
+                    const orig = parseFloat(task.style.left) || 0;
+                    if (anchorLeft === null || orig < anchorLeft) anchorLeft = orig;
+                });
+                if (anchorLeft === null) anchorLeft = 0;
+
+                let cursor = anchorLeft; // desde donde empieza el siguiente bloque
+
                 tasks.forEach((task, index) => {
-                    if (!task.dataset.originalLeft) {
-                        task.dataset.originalLeft = parseFloat(task.style.left);
-                    }
-                    const origLeft = parseFloat(task.dataset.originalLeft);
-                    const currentWidth = parseFloat(task.style.width);
+                    const currentWidth = parseFloat(task.style.width) || 0;
                     
-                    let targetLeft = origLeft;
-                    // Si hay solape con el final del anterior (lastEnd), empujamos
-                    if (targetLeft < lastEnd + MARGIN) {
-                        targetLeft = lastEnd + MARGIN;
-                    }
+                    // Primer bloque: arranca en el anchor
+                    // Bloques siguientes: arranca donde terminó el anterior + margen
+                    const targetLeft = (index === 0) ? anchorLeft : cursor;
+                    
                     task.style.left = targetLeft + 'px';
 
                     // Calculamos el final real de esta tarea incluyendo su badge si existe
                     const delayBadge = task.querySelector('.delay-badge');
                     let effectiveWidth = currentWidth;
-                    
                     if (delayBadge && delayBadge.offsetWidth > currentWidth) {
                         effectiveWidth = delayBadge.offsetWidth + 10;
                     }
 
-                    lastEnd = targetLeft + effectiveWidth;
+                    cursor = targetLeft + effectiveWidth + MARGIN;
                 });
             });
 

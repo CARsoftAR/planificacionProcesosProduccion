@@ -802,6 +802,20 @@
                 }
             } catch(e) {}
 
+            // CAPTURA EL ORDEN VISUAL ANTES DE NAVEGAR: guarda el orden de cada máquina en sessionStorage
+            try {
+                const orderMap = {}; // { machineId: [id1, id2, id3, ...] }
+                const allTableRows = Array.from(document.querySelectorAll('tbody tr[data-id][data-maquina]'))
+                                          .filter(tr => tr.style.display !== 'none' && !tr.classList.contains('hidden-row'));
+                allTableRows.forEach(tr => {
+                    const mid = tr.getAttribute('data-maquina');
+                    const did = tr.getAttribute('data-id');
+                    if (!orderMap[mid]) orderMap[mid] = [];
+                    orderMap[mid].push(did);
+                });
+                sessionStorage.setItem('ganttTableOrder', JSON.stringify(orderMap));
+            } catch(e) { console.warn('No se pudo guardar el orden visual:', e); }
+
             // Redirect
             window.location.href = "{% url 'planificacion_visual' %}?" + params.toString();
         }

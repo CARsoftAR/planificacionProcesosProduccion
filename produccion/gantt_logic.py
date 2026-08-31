@@ -1035,18 +1035,27 @@ def get_gantt_data(request, force_run=False):
             t['_mid'] = mid
             all_global_tasks.append(t)
             
-    # 2. ORDENARLAS globalmente (ESTRICTAMENTE por la jerarquía solicitada)
-    # 1° PRIORIDAD PROYECTO
-    # 2° PRIORIDAD ARTICULO
-    # 3° NIVEL PLANIFICACION (Descendente)
-    all_global_tasks.sort(key=lambda x: (
-        int(x.get('prioridad_proyecto') if x.get('prioridad_proyecto') is not None else 999),
-        int(x.get('prioridad_pieza') if x.get('prioridad_pieza') is not None else 9999),
-        -int(get_nivel(x)),
-        # Desempates de seguridad nativos para garantizar continuidad si coinciden los 3 niveles
-        x.get('ProyectoCode', ''),
-        x.get('secuencia_proceso', 999)
-    ))
+    # 2. ORDENARLAS globalmente
+    # En modo manual: respetar el orden visual del usuario (OrdenSecuencia → OrdenVisual)
+    # En modo original: jerarquía automática (Proyecto → Artículo → Nivel DESC)
+    if plan_mode != 'original':
+        all_global_tasks.sort(key=lambda x: (
+            x.get('OrdenSecuencia', 999999),                                                        # 1. Secuencia manual del usuario
+            x.get('OrdenVisual', 999999),                                                           # 2. Prioridad visual (drag & drop)
+            int(x.get('prioridad_proyecto') if x.get('prioridad_proyecto') is not None else 999),  # 3. Proyecto ASC (fallback)
+            int(x.get('prioridad_pieza') if x.get('prioridad_pieza') is not None else 9999),       # 4. Artículo ASC (fallback)
+            -int(get_nivel(x)),                                                                     # 5. Nivel DESC (fallback)
+            x.get('ProyectoCode', ''),
+            x.get('secuencia_proceso', 999)
+        ))
+    else:
+        all_global_tasks.sort(key=lambda x: (
+            int(x.get('prioridad_proyecto') if x.get('prioridad_proyecto') is not None else 999),
+            int(x.get('prioridad_pieza') if x.get('prioridad_pieza') is not None else 9999),
+            -int(get_nivel(x)),
+            x.get('ProyectoCode', ''),
+            x.get('secuencia_proceso', 999)
+        ))
         
     # --- FUNCION CALENDARIO INVERSO PARA SOLAPAMIENTO ---
     def subtract_working_hours(end_time, hours_to_subtract, maquina_obj, non_working, half_days):
