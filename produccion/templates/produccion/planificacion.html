@@ -814,9 +814,48 @@
                     orderMap[mid].push(did);
                 });
                 sessionStorage.setItem('ganttTableOrder', JSON.stringify(orderMap));
+                
+                // Enviar el orden no guardado al backend por POST para que el cálculo Gantt
+                // lo tome en cuenta y NO particione las tareas erróneamente.
+                const form = document.createElement('form');
+                form.method = 'POST';
+                form.action = "{% url 'planificacion_visual' %}?" + params.toString();
+                
+                let csrfToken = '';
+                const csrfElement = document.querySelector('[name=csrfmiddlewaretoken]');
+                if (csrfElement) {
+                    csrfToken = csrfElement.value;
+                } else {
+                    const cookies = document.cookie.split(';');
+                    for (let i = 0; i < cookies.length; i++) {
+                        const cookie = cookies[i].trim();
+                        if (cookie.startsWith('csrftoken=')) {
+                            csrfToken = cookie.substring('csrftoken='.length, cookie.length);
+                            break;
+                        }
+                    }
+                }
+                
+                if (csrfToken) {
+                    const csrfInput = document.createElement('input');
+                    csrfInput.type = 'hidden';
+                    csrfInput.name = 'csrfmiddlewaretoken';
+                    csrfInput.value = csrfToken;
+                    form.appendChild(csrfInput);
+                }
+
+                const dataInput = document.createElement('input');
+                dataInput.type = 'hidden';
+                dataInput.name = 'unsaved_order';
+                dataInput.value = JSON.stringify(orderMap);
+                form.appendChild(dataInput);
+                
+                document.body.appendChild(form);
+                form.submit();
+                return; // Cortar la ejecución aquí
             } catch(e) { console.warn('No se pudo guardar el orden visual:', e); }
 
-            // Redirect
+            // Redirect (Fallback)
             window.location.href = "{% url 'planificacion_visual' %}?" + params.toString();
         }
 

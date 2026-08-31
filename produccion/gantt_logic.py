@@ -411,6 +411,28 @@ def get_gantt_data(request, force_run=False):
                     existing['prioridad'] = ov_data['prioridad']
 
 
+    # --- INJECT UNSAVED ORDER FROM FRONTEND (POST) ---
+    unsaved_order_json = request.POST.get('unsaved_order')
+    if unsaved_order_json:
+        import json
+        try:
+            unsaved_order = json.loads(unsaved_order_json)
+            for mid, op_list in unsaved_order.items():
+                for idx, op_id in enumerate(op_list):
+                    try:
+                        clean_id = str(int(float(op_id)))
+                    except:
+                        clean_id = str(op_id)
+                    
+                    if clean_id not in virtual_overrides:
+                        virtual_overrides[clean_id] = {'maquina': mid}
+                        
+                    virtual_overrides[clean_id]['orden_secuencia'] = idx
+                    virtual_overrides[clean_id]['prioridad'] = (idx + 1) * 1000.0
+                    virtual_overrides[clean_id]['maquina'] = mid
+        except Exception as e:
+            print("DEBUG: [Gantt] Error parsing unsaved_order:", e)
+
     tasks_moved_in_map = {}
     for oid, override_data in virtual_overrides.items():
         mid = str(override_data['maquina']).strip()

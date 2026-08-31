@@ -285,3 +285,16 @@ if (taskId === previousTaskId && previousOriginalLeft !== null && previousTarget
 }
 ```
 De esta forma, los saltos temporales obligatorios de la fábrica se respetan, mientras que los bloques independientes continúan resolviendo el solapamiento de forma dinámica.
+
+---
+
+## CASO 11: Fragmentos de tareas que se muestran cortados en el mismo día tras reordenar
+**SÍNTOMA:**
+Al reordenar manualmente tareas en la tabla y hacer clic en "Abrir Gantt" (sin guardar), las tareas que originalmente abarcaban dos días (y por lo tanto el backend partió en dos bloques) se renderizan en el nuevo horario como si estuvieran en el mismo día, pero todavía cortadas en dos piezas consecutivas.
+
+**CAUSA RAÍZ:**
+El backend particiona las tareas de acuerdo al horario *viejo* (ej. cruce de turno o noche). El motor del frontend (`runAutoLayout`) solo movía esas piezas ya cortadas al nuevo horario temprano del día, preservando el 'hueco' de la noche (que visualmente equivale a un separador de 10px). Como resultado, aparecían dos fragmentos contiguos cortados en medio de un mismo día, lo cual es lógicamente incorrecto dado que a esa hora la OP debería ser continua.
+
+**RECETA DE SOLUCIÓN:**
+El frontend (`runAutoLayout`) es incapaz de re-ensamblar bloques que fueron cortados por turnos del backend. Para que la tarea se muestre en el Gantt *exactamente* con la partición correcta, el cálculo de las fragmentaciones de tiempo debe hacerlo el backend usando el nuevo orden.
+Se modificó la función `openGantt()` en `planificacion.html` para que envíe el `ganttTableOrder` no guardado al backend mediante una petición POST encubierta. Luego en `get_gantt_data` de `gantt_logic.py`, este orden se intercepta y se inyecta dinámicamente en los overrides virtuales. Así, el backend re-simula la línea de tiempo usando el nuevo orden, enviando un solo bloque indivisible.
