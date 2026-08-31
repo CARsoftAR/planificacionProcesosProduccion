@@ -4305,10 +4305,9 @@
             setTimeout(updateActiveProjectsSidebar, 600);
         });
 
-        // Ejecutar si estamos en Modo Auto o al cargar
-        {% if plan_mode == 'original' %}
-            setTimeout(runAutoLayout, 850);
-        {% endif %}
+        // Aplicar el orden visual de la tabla siempre al cargar
+        // (sessionStorage captura el estado real de la tabla, guardado o no)
+        setTimeout(runAutoLayout, 850);
 
         // Sincronizar conectores de fragmentación (ya existente)
         document.querySelectorAll('.task-row').forEach(row => {

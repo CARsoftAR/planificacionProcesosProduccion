@@ -174,3 +174,87 @@ lista_tareas.sort(key=lambda x: (
     x.get('Idorden', 0)
 ))
 ```
+
+---
+
+## CASO 6: Desincronización del Motor de Renderizado del Gantt (Pérdida del DOM de Origen)
+
+**Síntoma:**
+Al ordenar manualmente las tareas en la tabla (`planificacion.html`), la tabla respetaba el orden correctamente. Sin embargo, al abrir el Gantt en otra pestaña o ventana (`planificacion_visual.html`), el gráfico mostraba los bloques en el orden original del backend, ignorando el orden visual de la tabla.
+
+**Causa Raíz:**
+El motor de Auto-Layout (`runAutoLayout`) intentaba buscar el DOM de la tabla a través de `window.opener` o `window.parent` para extraer el orden visual actualizado mediante el atributo `data-id`. Al ejecutarse una navegación completa (cambio de página), el documento original (la tabla) ya no existía en memoria, los selectores devolvían arrays vacíos, y el ordenamiento visual fallaba silenciosamente aplicando el "fallback" a todas las tareas.
+
+**RECETA DE SOLUCIÓN:**
+Se utilizó `sessionStorage` para guardar el estado del orden visual justo antes de abandonar la página.
+1. En `planificacion.html` (función `openGantt`), capturar el DOM visual y serializarlo por máquina:
+```javascript
+const orderMap = {};
+document.querySelectorAll('tbody tr[data-id][data-maquina]').forEach(tr => {
+    const mid = tr.getAttribute('data-maquina');
+    if (!orderMap[mid]) orderMap[mid] = [];
+    orderMap[mid].push(tr.getAttribute('data-id'));
+});
+sessionStorage.setItem('ganttTableOrder', JSON.stringify(orderMap));
+```
+2. En `planificacion_visual.html` (`runAutoLayout`), recuperar este mapa de orden en lugar de intentar acceder a un DOM que ya no existe y utilizar ese arreglo como fuente de verdad del orden.
+
+---
+
+## CASO 7: Sobreescritura del "origLeft" precalculado del Backend en Bloques Empujados
+
+**Síntoma:**
+Al ordenar manualmente un bloque que originalmente estaba muy adelante en el tiempo hacia el principio, el gráfico mostraba el bloque en la posición correcta visualmente, pero se empujaba hacia un punto temporal equivocado.
+
+**Causa Raíz:**
+El algoritmo de posicionamiento de `runAutoLayout` iteraba sobre los bloques ordenados, pero usaba el estilo `left` original (calculado por el backend, `origLeft`) como punto de inicio (targetLeft) antes de verificar solapes.
+Si el backend calculaba un bloque A en px=200 y el bloque B en px=0, y el sort visual los ponía [A, B], el algoritmo posicionaba A en 200, y B en 0 (que al ser < 200, lo empujaba a 209). El orden quedaba [A, B] pero arrancaban en 200px en lugar de la posición cero.
+
+**RECETA DE SOLUCIÓN:**
+Se modificó `runAutoLayout` para que ignore el `origLeft` del backend para todos los bloques subsecuentes, encadenándolos de forma estricta.
+1. Se determina el `anchorLeft` (el mínimo `origLeft` de todos los bloques, que marca el inicio real).
+2. El primer bloque se coloca en el `anchorLeft`.
+3. Todos los siguientes se colocan en `cursor`, donde `cursor = final del bloque anterior + margen`.
+
+---
+
+## CASO 8: Sobreescritura del Sort Global en Backend en Modo Manual
+
+**Síntoma:**
+El ordenamiento manual fallaba y la pantalla del Gantt siempre mostraba un orden basado en prioridades matemáticas a pesar de que el código JS estaba correcto.
+
+**Causa Raíz:**
+En `gantt_logic.py`, el bloque de código ejecutaba dos ordenamientos:
+1. Un sort por máquina que respetaba el `OrdenVisual` en modo manual.
+2. Un sort GLOBAL (`all_global_tasks.sort`) ejecutado más abajo que, incondicionalmente sin importar el modo, imponía la jerarquía: Proyecto -> Artículo -> Nivel DESC. Este segundo sort global aplastaba el esfuerzo del primer sort.
+
+**RECETA DE SOLUCIÓN:**
+Se separó la lógica del sort global en `gantt_logic.py` basándose en el modo de planificación.
+Si no es modo `original` (es decir, modo manual), el sort global también debe respetar primariamente el orden del usuario:
+```python
+if plan_mode != 'original':
+    all_global_tasks.sort(key=lambda x: (
+        x.get('OrdenSecuencia', 999999),
+        x.get('OrdenVisual', 999999),
+        # ... fallbacks
+    ))
+```
+
+---
+
+## CASO 9: Gantt No Refleja Cambios sin Guardar Previamente
+
+**Síntoma:**
+Tras arreglar todos los conflictos de orden, si el usuario arrastraba una tarea en la tabla y le daba "Abrir Gantt" sin guardar, el gráfico no aplicaba los cambios visuales, mostrando el orden antiguo.
+
+**Causa Raíz:**
+El motor `runAutoLayout` en `planificacion_visual.html` estaba condicionado en el template HTML de la siguiente manera:
+```html
+{% if plan_mode == 'original' %}
+    setTimeout(runAutoLayout, 850);
+{% endif %}
+```
+En modo manual, no se llamaba, confiando erróneamente que el orden que venía del backend ya era el final.
+
+**RECETA DE SOLUCIÓN:**
+Se removió la condición de Django. `runAutoLayout` debe ejecutarse SIEMPRE al cargar la página (independientemente del modo) para que aplique el mapa de orden de la sesión del usuario (capturado en el `sessionStorage`).
