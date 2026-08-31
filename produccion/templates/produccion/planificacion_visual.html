@@ -4135,13 +4135,36 @@
                 if (anchorLeft === null) anchorLeft = 0;
 
                 let cursor = anchorLeft; // desde donde empieza el siguiente bloque
+                let previousTaskId = null;
+                let previousOriginalLeft = null;
+                let previousTargetLeft = null;
 
                 tasks.forEach((task, index) => {
+                    const currentLeft = parseFloat(task.style.left) || 0;
                     const currentWidth = parseFloat(task.style.width) || 0;
+                    const taskId = task.getAttribute('data-task-id');
+                    
+                    let targetLeft;
                     
                     // Primer bloque: arranca en el anchor
-                    // Bloques siguientes: arranca donde terminó el anterior + margen
-                    const targetLeft = (index === 0) ? anchorLeft : cursor;
+                    if (index === 0) {
+                        targetLeft = anchorLeft;
+                    } else {
+                        // Si este fragmento es continuación de la misma OP (fue particionada por fin de turno/feriado)
+                        if (taskId === previousTaskId && previousOriginalLeft !== null && previousTargetLeft !== null) {
+                            // Preservar la distancia temporal exacta (ej. la noche o fin de semana) que calculó el backend
+                            const distance = currentLeft - previousOriginalLeft;
+                            targetLeft = previousTargetLeft + distance;
+                        } else {
+                            // Si es una OP diferente, arranca donde terminó el anterior + margen
+                            targetLeft = cursor;
+                        }
+                    }
+                    
+                    // Seguro anti-solapamiento estricto
+                    if (targetLeft < cursor) {
+                        targetLeft = cursor;
+                    }
                     
                     task.style.left = targetLeft + 'px';
 
@@ -4153,6 +4176,11 @@
                     }
 
                     cursor = targetLeft + effectiveWidth + MARGIN;
+                    
+                    // Actualizar rastreadores para el siguiente fragmento
+                    previousTaskId = taskId;
+                    previousOriginalLeft = currentLeft;
+                    previousTargetLeft = targetLeft;
                 });
             });
 

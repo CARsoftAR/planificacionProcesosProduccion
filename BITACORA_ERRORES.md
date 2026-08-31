@@ -258,3 +258,30 @@ En modo manual, no se llamaba, confiando erróneamente que el orden que venía d
 
 **RECETA DE SOLUCIÓN:**
 Se removió la condición de Django. `runAutoLayout` debe ejecutarse SIEMPRE al cargar la página (independientemente del modo) para que aplique el mapa de orden de la sesión del usuario (capturado en el `sessionStorage`).
+
+---
+
+## CASO 10: Compresión Errónea de Fragmentos de una Misma Tarea (Pérdida de Fines de Semana/Noches)
+
+**Síntoma:**
+Tareas de larga duración que superaban un turno y debían continuar al día siguiente (divididas por el backend correctamente en dos fragmentos antes y después de la noche), se renderizaban visualmente en el mismo día. Aparecían como dos pequeños bloques continuos conectados por la línea punteada de fragmentación pero sin el espacio temporal correspondiente a la noche o fin de semana.
+
+**Causa Raíz:**
+El motor `runAutoLayout` introducido en el front-end iteraba ciegamente sobre todos los elementos `.task-block`. Al encadenar las tareas (forzando `targetLeft = cursor`), este algoritmo arrastraba todos los fragmentos hacia la izquierda hasta tocar el fragmento anterior. 
+Si el backend calculaba que un fragmento iniciaba el Viernes (100px) y su continuación el Lunes (500px), el motor visual arrastraba el bloque del Lunes inmediatamente después del del Viernes (ej. a los 150px), eliminando por completo la escala de tiempo generada por el calendario de días no laborables del backend.
+
+**RECETA DE SOLUCIÓN:**
+Se agregó inteligencia contextual al motor de Auto-Layout (`runAutoLayout`) en `planificacion_visual.html` para detectar si múltiples fragmentos pertenecen a la MISMA tarea (`data-task-id`).
+En caso afirmativo, en lugar de pegarlos a la izquierda, el script lee la distancia temporal original calculada por el backend entre esos dos fragmentos y la mantiene rígidamente:
+
+```javascript
+if (taskId === previousTaskId && previousOriginalLeft !== null && previousTargetLeft !== null) {
+    // Preservar la distancia temporal exacta (ej. la noche o fin de semana) que calculó el backend
+    const distance = currentLeft - previousOriginalLeft;
+    targetLeft = previousTargetLeft + distance;
+} else {
+    // Si es una OP diferente, arranca donde terminó el anterior + margen
+    targetLeft = cursor;
+}
+```
+De esta forma, los saltos temporales obligatorios de la fábrica se respetan, mientras que los bloques independientes continúan resolviendo el solapamiento de forma dinámica.
